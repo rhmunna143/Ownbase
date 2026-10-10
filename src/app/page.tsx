@@ -6,6 +6,7 @@ import { BootstrapStepper } from '@/components/BootstrapStepper';
 import { DatabaseCard } from '@/components/DatabaseCard';
 import { ServicesTable } from '@/components/ServicesTable';
 import { RoutesTable } from '@/components/RoutesTable';
+import { LifecycleCard } from '@/components/LifecycleCard';
 import { LogViewer } from '@/components/LogViewer';
 import {
   SystemInfo,
@@ -18,8 +19,9 @@ import {
   ProcessStatus,
   CaddyStatus,
   TailscaleStatus,
+  LifecycleStatus,
 } from '@/shared/types';
-import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers, Play, CheckCircle2 } from 'lucide-react';
+import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers, Play, CheckCircle2, Clock } from 'lucide-react';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'routes' | 'logs'>('overview');
@@ -29,6 +31,7 @@ export default function DashboardPage() {
   const [processStatuses, setProcessStatuses] = useState<Record<string, ProcessStatus>>({});
   const [caddyStatus, setCaddyStatus] = useState<CaddyStatus | null>(null);
   const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatus | null>(null);
+  const [lifecycleStatus, setLifecycleStatus] = useState<LifecycleStatus | null>(null);
   const [bootstrapSteps, setBootstrapSteps] = useState<BootstrapStep[]>([
     { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
     { id: 'postgres-bin', name: 'PostgreSQL Binaries', description: 'Locating portable PostgreSQL distribution', status: 'pending' },
@@ -40,6 +43,7 @@ export default function DashboardPage() {
     { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
     { id: 'caddy-proxy', name: 'Dynamic Reverse Proxy', description: 'Caddy Admin REST API & dynamic routing', status: 'pending' },
     { id: 'tailscale-mesh', name: 'Tailscale Mesh VPN', description: 'WireGuard encrypted mesh overlay', status: 'pending' },
+    { id: 'lifecycle-init', name: '24/7 Server Persistence', description: 'System tray & Windows power suspension blocker', status: 'pending' },
     { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
   ]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
@@ -58,7 +62,7 @@ export default function DashboardPage() {
 
     setIsRefreshing(true);
     try {
-      const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses, caddy, tailscale] = await Promise.all([
+      const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses, caddy, tailscale, life] = await Promise.all([
         window.electronAPI.getSystemInfo().catch(() => null),
         window.electronAPI.getPostgresStatus().catch(() => null),
         window.electronAPI.getMigrationStatus().catch(() => null),
@@ -69,6 +73,7 @@ export default function DashboardPage() {
         window.electronAPI.getProcessStatuses().catch(() => ({})),
         window.electronAPI.getCaddyStatus?.().catch(() => null),
         window.electronAPI.getTailscaleStatus?.().catch(() => null),
+        window.electronAPI.getLifecycleStatus?.().catch(() => null),
       ]);
 
       if (sys) setSystemInfo(sys);
@@ -81,6 +86,7 @@ export default function DashboardPage() {
       setProcessStatuses(procStatuses || {});
       if (caddy) setCaddyStatus(caddy);
       if (tailscale) setTailscaleStatus(tailscale);
+      if (life) setLifecycleStatus(life);
     } catch (e) {
       console.error('Data fetch error:', e);
     } finally {
@@ -235,6 +241,47 @@ export default function DashboardPage() {
     if (ts) setTailscaleStatus(ts);
   };
 
+  // Phase 4: Lifecycle Handlers
+  const handleToggleAutoStart = async (enabled: boolean) => {
+    if (!window.electronAPI?.setAutoStart) {
+      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
+      return;
+    }
+    const res = await window.electronAPI.setAutoStart(enabled, true);
+    if (res.success) {
+      setLifecycleStatus((prev) => (prev ? { ...prev, autoStart: res.autoStart } : null));
+    }
+  };
+
+  const handleTogglePowerBlocker = async (enabled: boolean) => {
+    if (!window.electronAPI?.setPowerSaveBlocker) {
+      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
+      return;
+    }
+    const res = await window.electronAPI.setPowerSaveBlocker(enabled);
+    if (res.success) {
+      setLifecycleStatus((prev) => (prev ? { ...prev, powerBlocker: res.powerBlocker } : null));
+    }
+  };
+
+  const handleMinimizeToTray = async () => {
+    if (!window.electronAPI?.minimizeToTray) {
+      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
+      return;
+    }
+    await window.electronAPI.minimizeToTray();
+  };
+
+  const handleQuitApp = async () => {
+    if (!window.electronAPI?.quitApp) {
+      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
+      return;
+    }
+    if (confirm('Are you sure you want to stop all server processes and exit Native Windows Server Hub?')) {
+      await window.electronAPI.quitApp();
+    }
+  };
+
   const runningServicesCount = services.filter((s) => {
     const p = processStatuses[s.id];
     return p ? p.status === 'running' : s.status === 'running';
@@ -318,6 +365,16 @@ export default function DashboardPage() {
               postgresStatus={postgresStatus}
               migrationStatus={migrationStatus}
               onPing={handlePing}
+            />
+
+            {/* Phase 4: 24/7 Server Persistence & Lifecycle */}
+            <LifecycleCard
+              lifecycleStatus={lifecycleStatus}
+              onToggleAutoStart={handleToggleAutoStart}
+              onTogglePowerBlocker={handleTogglePowerBlocker}
+              onMinimizeToTray={handleMinimizeToTray}
+              onQuitApp={handleQuitApp}
+              isLoading={isRefreshing}
             />
 
             {/* Phase 2 Supervisor Highlights */}

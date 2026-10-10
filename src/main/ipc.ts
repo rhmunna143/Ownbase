@@ -5,6 +5,7 @@ import { PrismaManager } from './prisma';
 import { ProcessSupervisor } from './supervisor';
 import { CaddyManager } from './caddy';
 import { TailscaleManager } from './tailscale';
+import { LifecycleManager } from './lifecycle';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
 
@@ -14,6 +15,7 @@ export function registerIpcHandlers(
   supervisor: ProcessSupervisor,
   caddyManager: CaddyManager,
   tailscaleManager: TailscaleManager,
+  lifecycleManager: LifecycleManager,
   getBootstrapSteps: () => BootstrapStep[]
 ) {
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
@@ -170,6 +172,31 @@ export function registerIpcHandlers(
   ipcMain.handle('tailscale:disconnect', async () => {
     logger.info('ipc', 'Received tailscale:disconnect request');
     return await tailscaleManager.disconnect();
+  });
+
+  // Phase 4: System Integration & App Lifecycle Handlers
+  ipcMain.handle('lifecycle:get-status', async () => {
+    return lifecycleManager.getStatus();
+  });
+
+  ipcMain.handle('lifecycle:set-auto-start', async (_event, enabled: boolean, openAsHidden?: boolean) => {
+    logger.info('ipc', `Received lifecycle:set-auto-start request: enabled=${enabled}, openAsHidden=${openAsHidden}`);
+    return await lifecycleManager.setAutoStart(enabled, openAsHidden);
+  });
+
+  ipcMain.handle('lifecycle:set-power-blocker', async (_event, enabled: boolean) => {
+    logger.info('ipc', `Received lifecycle:set-power-blocker request: enabled=${enabled}`);
+    return await lifecycleManager.setPowerSaveBlocker(enabled);
+  });
+
+  ipcMain.handle('lifecycle:minimize-to-tray', async () => {
+    logger.info('ipc', 'Received lifecycle:minimize-to-tray request');
+    lifecycleManager.minimizeToTray();
+  });
+
+  ipcMain.handle('lifecycle:quit-app', async () => {
+    logger.info('ipc', 'Received lifecycle:quit-app request');
+    lifecycleManager.quitApp();
   });
 
   ipcMain.handle('get-logs', async () => {

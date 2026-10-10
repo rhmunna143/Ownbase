@@ -151,6 +151,13 @@ export interface ElectronAPI {
   connectTailscale: (authKey: string, hostname?: string) => Promise<{ success: boolean; ip?: string; error?: string }>;
   disconnectTailscale: () => Promise<{ success: boolean; error?: string }>;
 
+  // Phase 4: System Integration & App Lifecycle
+  getLifecycleStatus: () => Promise<LifecycleStatus>;
+  setAutoStart: (enabled: boolean, openAsHidden?: boolean) => Promise<{ success: boolean; autoStart: { enabled: boolean; openAsHidden: boolean } }>;
+  setPowerSaveBlocker: (enabled: boolean) => Promise<{ success: boolean; powerBlocker: { active: boolean; blockerId: number | null; type: 'prevent-app-suspension' } }>;
+  minimizeToTray: () => Promise<void>;
+  quitApp: () => Promise<void>;
+
   // Logs & Events
   getLogs: () => Promise<LogEntry[]>;
   onLogAdded: (callback: (log: LogEntry) => void) => () => void;
@@ -160,8 +167,23 @@ export interface ElectronAPI {
   onServiceLog: (callback: (data: { serviceId: string; log: LogEntry }) => void) => () => void;
 }
 
+export interface LifecycleStatus {
+  trayActive: boolean;
+  isMinimizedToTray: boolean;
+  powerBlocker: {
+    active: boolean;
+    blockerId: number | null;
+    type: 'prevent-app-suspension';
+  };
+  autoStart: {
+    enabled: boolean;
+    openAsHidden: boolean;
+  };
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
   }
 }
+

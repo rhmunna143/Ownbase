@@ -1,5 +1,14 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ElectronAPI, LogEntry, BootstrapStep, PostgresStatus, ProcessStatus, CaddyStatus, TailscaleStatus } from '../shared/types';
+import {
+  ElectronAPI,
+  LogEntry,
+  BootstrapStep,
+  PostgresStatus,
+  ProcessStatus,
+  CaddyStatus,
+  TailscaleStatus,
+  LifecycleStatus,
+} from '../shared/types';
 
 const api: ElectronAPI = {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
@@ -30,6 +39,13 @@ const api: ElectronAPI = {
   getTailscaleStatus: () => ipcRenderer.invoke('tailscale:get-status'),
   connectTailscale: (authKey: string, hostname?: string) => ipcRenderer.invoke('tailscale:connect', authKey, hostname),
   disconnectTailscale: () => ipcRenderer.invoke('tailscale:disconnect'),
+
+  // Phase 4: System Integration & App Lifecycle
+  getLifecycleStatus: () => ipcRenderer.invoke('lifecycle:get-status'),
+  setAutoStart: (enabled: boolean, openAsHidden?: boolean) => ipcRenderer.invoke('lifecycle:set-auto-start', enabled, openAsHidden),
+  setPowerSaveBlocker: (enabled: boolean) => ipcRenderer.invoke('lifecycle:set-power-blocker', enabled),
+  minimizeToTray: () => ipcRenderer.invoke('lifecycle:minimize-to-tray'),
+  quitApp: () => ipcRenderer.invoke('lifecycle:quit-app'),
 
   getLogs: () => ipcRenderer.invoke('get-logs'),
 

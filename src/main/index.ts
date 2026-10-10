@@ -6,6 +6,7 @@ import { PrismaManager } from './prisma';
 import { ProcessSupervisor } from './supervisor';
 import { CaddyManager } from './caddy';
 import { TailscaleManager } from './tailscale';
+import { LifecycleManager } from './lifecycle';
 import { registerIpcHandlers } from './ipc';
 import { logger } from './logger';
 import { BootstrapStep } from '../shared/types';
@@ -16,6 +17,7 @@ let prismaManager: PrismaManager;
 let supervisor: ProcessSupervisor;
 let caddyManager: CaddyManager;
 let tailscaleManager: TailscaleManager;
+let lifecycleManager: LifecycleManager;
 
 const bootstrapSteps: BootstrapStep[] = [
   { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
@@ -28,6 +30,7 @@ const bootstrapSteps: BootstrapStep[] = [
   { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
   { id: 'caddy-proxy', name: 'Dynamic Reverse Proxy', description: 'Caddy Admin REST API & dynamic routing', status: 'pending' },
   { id: 'tailscale-mesh', name: 'Tailscale Mesh VPN', description: 'WireGuard encrypted mesh overlay', status: 'pending' },
+  { id: 'lifecycle-init', name: '24/7 Server Persistence', description: 'System tray & Windows power suspension blocker', status: 'pending' },
   { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
 ];
 
@@ -178,7 +181,16 @@ async function startBootstrap() {
     updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
   }
 
-  // Step 11: Mount UI
+  // Step 11: Phase 4 24/7 Server Persistence & Power Suspension Blocker
+  updateStep('lifecycle-init', 'running', 'Engaging power suspension blocker & system tray');
+  try {
+    await lifecycleManager.bootstrap();
+    updateStep('lifecycle-init', 'success', 'Tray active & prevent-app-suspension engaged');
+  } catch (err: any) {
+    updateStep('lifecycle-init', 'error', err.message);
+  }
+
+  // Step 12: Mount UI
   updateStep('ui-ready', 'running', 'Mounting user interface');
   await loadFrontend();
   updateStep('ui-ready', 'success', 'IPC channels active and dashboard mounted');
@@ -188,6 +200,7 @@ async function loadFrontend() {
   if (!mainWindow) return;
 
   const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+  const isHidden = process.argv.includes('--hidden');
   const devUrl = 'http://localhost:3000';
 
   if (isDev) {
@@ -202,7 +215,11 @@ async function loadFrontend() {
     await loadStaticBundle();
   }
 
-  mainWindow.show();
+  if (!isHidden) {
+    mainWindow.show();
+  } else {
+    logger.info('electron', 'Started with --hidden flag. Running silently in Windows system tray.');
+  }
 }
 
 async function loadStaticBundle() {
@@ -231,22 +248,44 @@ app.whenReady().then(async () => {
   supervisor = new ProcessSupervisor(prismaManager);
   caddyManager = new CaddyManager(prismaManager);
   tailscaleManager = new TailscaleManager(prismaManager);
+  lifecycleManager = new LifecycleManager(prismaManager);
 
-  registerIpcHandlers(postgresManager, prismaManager, supervisor, caddyManager, tailscaleManager, () => bootstrapSteps);
+  registerIpcHandlers(
+    postgresManager,
+    prismaManager,
+    supervisor,
+    caddyManager,
+    tailscaleManager,
+    lifecycleManager,
+    () => bootstrapSteps
+  );
 
   await createWindow();
+  if (mainWindow) {
+    lifecycleManager.setWindow(mainWindow);
+  }
+
   await startBootstrap();
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
+      createWindow().then((win) => {
+        if (win) lifecycleManager.setWindow(win);
+      });
+    } else if (mainWindow) {
+      lifecycleManager.restoreWindow();
     }
   });
 });
 
-// Phase 2: Graceful Termination with taskkill /pid <PID> /T /F before quit
+// Phase 2 & 4: Graceful Termination with taskkill /pid <PID> /T /F before quit
 app.on('before-quit', async (event) => {
   logger.info('electron', 'Application quitting. Terminating all supervised processes...');
+  if (lifecycleManager) {
+    lifecycleManager.setIsQuitting(true);
+    lifecycleManager.destroy();
+  }
+
   if (supervisor) {
     try {
       await supervisor.stopAll();
@@ -267,18 +306,20 @@ app.on('before-quit', async (event) => {
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') {
+  if (process.platform !== 'darwin' && lifecycleManager && lifecycleManager.getIsQuitting()) {
     app.quit();
   }
 });
 
 process.on('SIGINT', async () => {
+  if (lifecycleManager) lifecycleManager.destroy();
   if (supervisor) await supervisor.stopAll();
   if (postgresManager) await postgresManager.stop();
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
+  if (lifecycleManager) lifecycleManager.destroy();
   if (supervisor) await supervisor.stopAll();
   if (postgresManager) await postgresManager.stop();
   process.exit(0);
