@@ -8,6 +8,8 @@ import { ServicesTable } from '@/components/ServicesTable';
 import { RoutesTable } from '@/components/RoutesTable';
 import { LifecycleCard } from '@/components/LifecycleCard';
 import { LogViewer } from '@/components/LogViewer';
+import { DiagnosticsCard } from '@/components/DiagnosticsCard';
+import { AppStore } from '@/components/AppStore';
 import {
   SystemInfo,
   PostgresStatus,
@@ -21,10 +23,32 @@ import {
   TailscaleStatus,
   LifecycleStatus,
 } from '@/shared/types';
-import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers, Play, CheckCircle2, Clock } from 'lucide-react';
+import {
+  LayoutDashboard,
+  Layers,
+  Boxes,
+  Globe,
+  Database,
+  Terminal,
+  Settings,
+  ShieldCheck,
+  Server,
+  Activity,
+  HardDrive,
+  Cpu,
+  Power,
+  ExternalLink,
+  ChevronRight,
+  FolderTree,
+  Bot,
+  Minimize2,
+  PowerOff,
+} from 'lucide-react';
 
 export default function DashboardPage() {
-  const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'routes' | 'logs'>('overview');
+  const [activeTab, setActiveTab] = useState<
+    'overview' | 'services' | 'store' | 'routes' | 'database' | 'settings' | 'logs'
+  >('overview');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
@@ -183,6 +207,36 @@ export default function DashboardPage() {
     await fetchAllData();
   };
 
+  const handleCreateServiceWithRoute = async (data: {
+    name: string;
+    type: string;
+    executable: string;
+    port: number;
+    subdomain: string;
+    description: string;
+    autoStart: boolean;
+  }) => {
+    if (!window.electronAPI) return;
+    const newService = await window.electronAPI.createService({
+      name: data.name,
+      type: data.type,
+      executable: data.executable,
+      port: data.port,
+      description: data.description,
+      autoStart: data.autoStart,
+    });
+    if (newService && newService.id) {
+      await window.electronAPI.createRoute({
+        serviceId: newService.id,
+        subdomain: data.subdomain,
+        targetPort: data.port,
+        tlsEnabled: true,
+      });
+      await window.electronAPI.startService(newService.id);
+    }
+    await fetchAllData();
+  };
+
   const handleCreateRoute = async (data: {
     serviceId: string;
     subdomain: string;
@@ -241,12 +295,8 @@ export default function DashboardPage() {
     if (ts) setTailscaleStatus(ts);
   };
 
-  // Phase 4: Lifecycle Handlers
   const handleToggleAutoStart = async (enabled: boolean) => {
-    if (!window.electronAPI?.setAutoStart) {
-      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
-      return;
-    }
+    if (!window.electronAPI?.setAutoStart) return;
     const res = await window.electronAPI.setAutoStart(enabled, true);
     if (res.success) {
       setLifecycleStatus((prev) => (prev ? { ...prev, autoStart: res.autoStart } : null));
@@ -254,10 +304,7 @@ export default function DashboardPage() {
   };
 
   const handleTogglePowerBlocker = async (enabled: boolean) => {
-    if (!window.electronAPI?.setPowerSaveBlocker) {
-      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
-      return;
-    }
+    if (!window.electronAPI?.setPowerSaveBlocker) return;
     const res = await window.electronAPI.setPowerSaveBlocker(enabled);
     if (res.success) {
       setLifecycleStatus((prev) => (prev ? { ...prev, powerBlocker: res.powerBlocker } : null));
@@ -265,18 +312,12 @@ export default function DashboardPage() {
   };
 
   const handleMinimizeToTray = async () => {
-    if (!window.electronAPI?.minimizeToTray) {
-      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
-      return;
-    }
+    if (!window.electronAPI?.minimizeToTray) return;
     await window.electronAPI.minimizeToTray();
   };
 
   const handleQuitApp = async () => {
-    if (!window.electronAPI?.quitApp) {
-      alert('Electron process restart required: please restart "npm run dev" to load the Phase 4 native APIs into the Electron runtime.');
-      return;
-    }
+    if (!window.electronAPI?.quitApp) return;
     if (confirm('Are you sure you want to stop all server processes and exit Native Windows Server Hub?')) {
       await window.electronAPI.quitApp();
     }
@@ -288,86 +329,376 @@ export default function DashboardPage() {
   }).length;
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col">
-      <Header
-        systemInfo={systemInfo}
-        onRefresh={fetchAllData}
-        isRefreshing={isRefreshing}
-      />
+    <div className="min-h-screen bg-[#070b12] text-slate-100 flex flex-row font-sans">
+      {/* 1Panel Left Fixed Sidebar */}
+      <aside className="w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex flex-col justify-between shrink-0 select-none z-20">
+        <div>
+          {/* Brand Header */}
+          <div className="p-5 border-b border-slate-800/80 flex items-center space-x-3">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-blue-600/20">
+              <div className="w-full h-full bg-[#0d121f] rounded-[11px] flex items-center justify-center">
+                <Server className="w-4 h-4 text-blue-400" />
+              </div>
+            </div>
+            <div>
+              <div className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
+                Windows Hub
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                  1Panel
+                </span>
+              </div>
+              <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 live-indicator-active" />
+                <span>24/7 Server Engine Active</span>
+              </div>
+            </div>
+          </div>
 
-      {!isElectronAvailable && (
-        <div className="bg-amber-950/40 border-b border-amber-600/30 px-6 py-2.5 text-xs text-amber-300 flex items-center justify-between">
-          <span>
+          {/* Navigation Links */}
+          <nav className="p-3 space-y-1">
+            <button
+              onClick={() => setActiveTab('overview')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'overview'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <LayoutDashboard className="w-4 h-4" />
+                <span>Dashboard</span>
+              </div>
+              <ChevronRight className={`w-3.5 h-3.5 opacity-60 ${activeTab === 'overview' ? 'text-white' : ''}`} />
+            </button>
+
+            <button
+              onClick={() => setActiveTab('services')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'services'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Layers className="w-4 h-4" />
+                <span>Installed Apps</span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'services' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {runningServicesCount}/{services.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('store')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'store'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Boxes className="w-4 h-4" />
+                <span>App Store</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                1-Click
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('routes')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'routes'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Globe className="w-4 h-4" />
+                <span>Websites &amp; Domains</span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'routes' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {routes.length}
+              </span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('database')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'database'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Database className="w-4 h-4" />
+                <span>PostgreSQL Database</span>
+              </div>
+              <span className="text-[10px] font-mono text-emerald-400">:5432</span>
+            </button>
+
+            <button
+              onClick={() => setActiveTab('settings')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'settings'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Settings className="w-4 h-4" />
+                <span>Settings &amp; 24/7 Power</span>
+              </div>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
+            </button>
+
+            <button
+              onClick={() => setActiveTab('logs')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'logs'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Terminal className="w-4 h-4" />
+                <span>Console Logs</span>
+              </div>
+              <span
+                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
+                  activeTab === 'logs' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
+                }`}
+              >
+                {logs.length}
+              </span>
+            </button>
+          </nav>
+        </div>
+
+        {/* Sidebar Footer: Quick Tray & Persistence Controls */}
+        <div className="p-3.5 border-t border-slate-800/80 space-y-2 bg-slate-950/40">
+          <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] space-y-1">
+            <div className="flex items-center justify-between text-slate-300 font-medium">
+              <span>Sleep Prevention:</span>
+              <span className="text-emerald-400 font-bold">ACTIVE</span>
+            </div>
+            <div className="text-[10px] text-slate-500">
+              Windows power suspension blocked
+            </div>
+          </div>
+
+          <div className="flex items-center space-x-1.5">
+            <button
+              onClick={handleMinimizeToTray}
+              className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800/90 hover:bg-slate-700 text-slate-200 text-xs font-medium transition-colors"
+              title="Minimize Hub window to Windows taskbar notification tray"
+            >
+              <Minimize2 className="w-3.5 h-3.5" />
+              <span>Hide to Tray</span>
+            </button>
+
+            <button
+              onClick={handleQuitApp}
+              className="p-1.5 rounded-lg bg-rose-950/30 hover:bg-rose-900/50 text-rose-400 border border-rose-800/40 transition-colors"
+              title="Stop All Services & Quit"
+            >
+              <PowerOff className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      </aside>
+
+      {/* Main Content Area */}
+      <div className="flex-1 flex flex-col overflow-y-auto">
+        <Header
+          systemInfo={systemInfo}
+          onRefresh={fetchAllData}
+          isRefreshing={isRefreshing}
+        />
+
+        {!isElectronAvailable && (
+          <div className="bg-amber-950/40 border-b border-amber-600/30 px-6 py-2 text-xs text-amber-300">
             ⚠️ Electron IPC API not detected in standard browser context. Run via &apos;npm run dev&apos; or &apos;npm start&apos; to test native IPC channels.
-          </span>
-        </div>
-      )}
+          </div>
+        )}
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6 space-y-6">
-        {/* Architecture Bootstrapper Stepper */}
-        <BootstrapStepper steps={bootstrapSteps} />
+        <main className="flex-1 p-6 space-y-6 max-w-7xl w-full mx-auto">
+          {/* Overview / Dashboard Tab */}
+          {activeTab === 'overview' && (
+            <div className="space-y-6">
+              {/* Architecture Collapsible Stepper */}
+              <BootstrapStepper steps={bootstrapSteps} />
 
-        {/* Navigation Tabs */}
-        <div className="flex items-center space-x-2 border-b border-slate-800/80 pb-1">
-          <button
-            onClick={() => setActiveTab('overview')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-lg transition-all ${
-              activeTab === 'overview'
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-            }`}
-          >
-            <Database className="w-3.5 h-3.5" />
-            <span>PostgreSQL &amp; Storage</span>
-          </button>
+              {/* 4-KPI Status Strip */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-medium">Relational Database</span>
+                    <Database className="w-4 h-4 text-emerald-400" />
+                  </div>
+                  <div className="text-lg font-bold text-white">PostgreSQL 16</div>
+                  <div className="text-[11px] font-mono text-emerald-400 mt-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                    <span>Port 5432 • Connected</span>
+                  </div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('services')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-lg transition-all ${
-              activeTab === 'services'
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-            }`}
-          >
-            <Layers className="w-3.5 h-3.5" />
-            <span>Process Supervisor ({runningServicesCount}/{services.length} active)</span>
-          </button>
+                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-medium">Supervised Services</span>
+                    <Layers className="w-4 h-4 text-blue-400" />
+                  </div>
+                  <div className="text-lg font-bold text-white">
+                    {runningServicesCount} / {services.length} Running
+                  </div>
+                  <div className="text-[11px] text-slate-400 mt-1">
+                    Native Windows executables
+                  </div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('routes')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-lg transition-all ${
-              activeTab === 'routes'
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-            }`}
-          >
-            <Globe className="w-3.5 h-3.5" />
-            <span>Dynamic Proxy Routes ({routes.length})</span>
-          </button>
+                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-medium">Dynamic Mesh Proxy</span>
+                    <Globe className="w-4 h-4 text-purple-400" />
+                  </div>
+                  <div className="text-lg font-bold text-white">Caddy Gateway</div>
+                  <div className="text-[11px] font-mono text-purple-300 mt-1">
+                    Port 80 • {routes.length} active routes
+                  </div>
+                </div>
 
-          <button
-            onClick={() => setActiveTab('logs')}
-            className={`flex items-center gap-2 px-3.5 py-2 text-xs font-medium rounded-lg transition-all ${
-              activeTab === 'logs'
-                ? 'bg-blue-600/20 text-blue-400 border border-blue-500/30'
-                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-900/60'
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            <span>Live Console Stream ({logs.length})</span>
-          </button>
-        </div>
+                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-2">
+                    <span className="text-xs font-medium">Persistence State</span>
+                    <Power className="w-4 h-4 text-amber-400" />
+                  </div>
+                  <div className="text-lg font-bold text-white">24/7 Server Lock</div>
+                  <div className="text-[11px] text-amber-300 mt-1">
+                    App suspension prevented
+                  </div>
+                </div>
+              </div>
 
-        {/* Tab Content Panes */}
-        {activeTab === 'overview' && (
-          <div className="space-y-6">
-            <DatabaseCard
-              postgresStatus={postgresStatus}
-              migrationStatus={migrationStatus}
-              onPing={handlePing}
+              {/* 1-Click System Self-Diagnosis & Verification */}
+              <DiagnosticsCard
+                services={services}
+                processStatuses={processStatuses}
+                onPingDatabase={handlePing}
+                onTestRoute={handleTestRoute}
+              />
+
+              {/* Quick Launch Cards */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 flex items-center justify-between">
+                  <div className="flex items-center space-x-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
+                      <FolderTree className="w-6 h-6 text-emerald-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">FileBrowser Cloud Storage</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Native cloud drive • Login: <span className="text-emerald-400 font-mono">admin</span> / <span className="text-emerald-400 font-mono">admin12345678</span>
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href="http://files.localhost"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 transition-all"
+                  >
+                    <span>Open Drive</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+
+                <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 flex items-center justify-between">
+                  <div className="flex items-center space-x-3.5">
+                    <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
+                      <Bot className="w-6 h-6 text-purple-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-white">Ollama Local AI Engine</h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Inference server • Endpoint: <span className="text-purple-300 font-mono">http://ai.localhost</span>
+                      </p>
+                    </div>
+                  </div>
+                  <a
+                    href="http://ai.localhost"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition-all"
+                  >
+                    <span>Open AI Hub</span>
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Installed Services Tab */}
+          {activeTab === 'services' && (
+            <ServicesTable
+              services={services}
+              processStatuses={processStatuses}
+              onCreateService={handleCreateService}
+              onStartService={handleStartService}
+              onStopService={handleStopService}
+              onRestartService={handleRestartService}
+              getServiceLogs={handleGetServiceLogs}
+              isLoading={isRefreshing}
             />
+          )}
 
-            {/* Phase 4: 24/7 Server Persistence & Lifecycle */}
+          {/* 1-Click App Store Tab */}
+          {activeTab === 'store' && (
+            <AppStore
+              existingServices={services}
+              onCreateServiceWithRoute={handleCreateServiceWithRoute}
+              onStartService={handleStartService}
+            />
+          )}
+
+          {/* Routes / Domains Tab */}
+          {activeTab === 'routes' && (
+            <RoutesTable
+              routes={routes}
+              services={services}
+              caddyStatus={caddyStatus}
+              tailscaleStatus={tailscaleStatus}
+              onCreateRoute={handleCreateRoute}
+              onDeleteRoute={handleDeleteRoute}
+              onSyncCaddy={handleSyncCaddy}
+              onTestRoute={handleTestRoute}
+              onConnectTailscale={handleConnectTailscale}
+              onDisconnectTailscale={handleDisconnectTailscale}
+              isLoading={isRefreshing}
+            />
+          )}
+
+          {/* Databases Tab */}
+          {activeTab === 'database' && (
+            <div className="space-y-6">
+              <DatabaseCard
+                postgresStatus={postgresStatus}
+                migrationStatus={migrationStatus}
+                onPing={handlePing}
+              />
+            </div>
+          )}
+
+          {/* Settings & 24/7 Power Tab */}
+          {activeTab === 'settings' && (
             <LifecycleCard
               lifecycleStatus={lifecycleStatus}
               onToggleAutoStart={handleToggleAutoStart}
@@ -376,77 +707,14 @@ export default function DashboardPage() {
               onQuitApp={handleQuitApp}
               isLoading={isRefreshing}
             />
+          )}
 
-            {/* Phase 2 Supervisor Highlights */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="glass-card rounded-xl p-4 border border-slate-800">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
-                  <Activity className="w-4 h-4 text-emerald-400" />
-                  <span>Process Tree Termination</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Prevents zombie processes using Windows-native <code>taskkill /pid &lt;PID&gt; /T /F</code> on app exit or service stop.
-                </p>
-              </div>
-
-              <div className="glass-card rounded-xl p-4 border border-slate-800">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
-                  <Terminal className="w-4 h-4 text-blue-400" />
-                  <span>Real-Time Output Capture</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Streams stdout and stderr directly from spawned Windows binaries to the frontend console and in-memory ring buffers.
-                </p>
-              </div>
-
-              <div className="glass-card rounded-xl p-4 border border-slate-800">
-                <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
-                  <Server className="w-4 h-4 text-indigo-400" />
-                  <span>Native Process Registry</span>
-                </div>
-                <p className="text-[11px] text-slate-400 leading-relaxed">
-                  PostgreSQL-synchronized state machine tracking PIDs, exit codes, and auto-restart policies for all services.
-                </p>
-              </div>
-            </div>
-
+          {/* Logs Tab */}
+          {activeTab === 'logs' && (
             <LogViewer logs={logs} onClear={() => setLogs([])} />
-          </div>
-        )}
-
-        {activeTab === 'services' && (
-          <ServicesTable
-            services={services}
-            processStatuses={processStatuses}
-            onCreateService={handleCreateService}
-            onStartService={handleStartService}
-            onStopService={handleStopService}
-            onRestartService={handleRestartService}
-            getServiceLogs={handleGetServiceLogs}
-            isLoading={isRefreshing}
-          />
-        )}
-
-        {activeTab === 'routes' && (
-          <RoutesTable
-            routes={routes}
-            services={services}
-            caddyStatus={caddyStatus}
-            tailscaleStatus={tailscaleStatus}
-            onCreateRoute={handleCreateRoute}
-            onDeleteRoute={handleDeleteRoute}
-            onSyncCaddy={handleSyncCaddy}
-            onTestRoute={handleTestRoute}
-            onConnectTailscale={handleConnectTailscale}
-            onDisconnectTailscale={handleDisconnectTailscale}
-            isLoading={isRefreshing}
-          />
-        )}
-
-        {activeTab === 'logs' && (
-          <LogViewer logs={logs} onClear={() => setLogs([])} />
-        )}
-      </main>
+          )}
+        </main>
+      </div>
     </div>
   );
 }

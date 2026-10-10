@@ -43,6 +43,7 @@ export class ProcessSupervisor {
     // Candidate search directories in priority order
     const candidatePaths = [
       path.join(resourcesPath, 'extraResources', 'bin', executable),
+      path.join(resourcesPath, 'bin', executable),
       path.join(resourcesPath, 'extraResources', executable),
       path.join(process.cwd(), 'extraResources', 'bin', executable),
       path.join(process.cwd(), 'extraResources', executable),
@@ -86,10 +87,26 @@ export class ProcessSupervisor {
       } else if (service.type === 'filebrowser') {
         const appData = (app && typeof app.getPath === 'function')
           ? app.getPath('userData')
-          : path.join(process.env.APPDATA || '.', 'NativeWindowsServerHub');
+          : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
         const storageDir = path.join(appData, 'storage');
         const dbPath = path.join(appData, 'filebrowser.db');
         if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
+
+        // Ensure default credentials (admin / admin12345678) on fresh database initialization
+        if (!fs.existsSync(dbPath)) {
+          try {
+            const execPath = this.resolveExecutablePath(service.executable);
+            if (execPath) {
+              const cp = require('child_process');
+              cp.execSync(`"${execPath}" config init -d "${dbPath}"`, { windowsHide: true });
+              cp.execSync(`"${execPath}" users add admin admin12345678 --perm.admin -d "${dbPath}"`, { windowsHide: true });
+              logger.success('supervisor', 'Initialized FileBrowser database with default credentials: admin / admin12345678');
+            }
+          } catch (e: any) {
+            logger.warn('supervisor', `FileBrowser auto-initialization notice: ${e.message}`);
+          }
+        }
+
         args = ['-p', (service.port || 8080).toString(), '-a', '127.0.0.1', '-r', storageDir, '-d', dbPath];
       } else if (service.type === 'ollama') {
         args = ['serve'];

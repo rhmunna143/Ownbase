@@ -21,6 +21,7 @@ export class TailscaleManager {
     const candidates = [
       path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Tailscale', 'tailscale.exe'),
       path.join(resourcesPath, 'extraResources', 'bin', 'tailscale.exe'),
+      path.join(resourcesPath, 'bin', 'tailscale.exe'),
       path.join(process.cwd(), 'extraResources', 'bin', 'tailscale.exe'),
     ];
 

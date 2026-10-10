@@ -150,6 +150,13 @@ export class CaddyManager {
       handle: [
         {
           handler: 'reverse_proxy',
+          headers: {
+            request: {
+              set: {
+                Host: ['{http.reverse_proxy.upstream.hostport}'],
+              },
+            },
+          },
           upstreams: [
             {
               dial: `${route.targetHost}:${route.targetPort}`,

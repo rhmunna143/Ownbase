@@ -1,0 +1,78 @@
+{
+  "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
+  "appId": "com.nativewindows.serverhub",
+  "productName": "Native Windows Server Hub",
+  "copyright": "Copyright © 2026 Native Windows Server Hub",
+  "directories": {
+    "output": "release",
+    "buildResources": "assets"
+  },
+  "files": [
+    "dist/electron/**/*",
+    "out/**/*",
+    "package.json",
+    "assets/**/*",
+    "prisma/**/*"
+  ],
+  "asar": true,
+  "asarUnpack": [
+    "node_modules/@prisma/client/**/*",
+    "node_modules/.prisma/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "extraResources/bin",
+      "to": "bin",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "extraResources/bin",
+      "to": "extraResources/bin",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "extraResources/pgsql",
+      "to": "pgsql",
+      "filter": ["bin/**/*", "lib/**/*", "share/**/*"]
+    },
+    {
+      "from": "extraResources/pgsql",
+      "to": "extraResources/pgsql",
+      "filter": ["bin/**/*", "lib/**/*", "share/**/*"]
+    },
+    {
+      "from": "assets",
+      "to": "assets",
+      "filter": ["**/*"]
+    },
+    {
+      "from": "prisma",
+      "to": "prisma",
+      "filter": ["**/*"]
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": ["x64"]
+      }
+    ],
+    "icon": "assets/icon.ico",
+    "requestedExecutionLevel": "asInvoker",
+    "sign": "./scripts/custom-sign.js",
+    "signAndEditExecutable": false
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "allowElevation": true,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "shortcutName": "Native Windows Server Hub",
+    "uninstallDisplayName": "Native Windows Server Hub",
+    "deleteAppDataOnUninstall": false,
+    "installerIcon": "assets/icon.ico",
+    "uninstallerIcon": "assets/icon.ico"
+  }
+}

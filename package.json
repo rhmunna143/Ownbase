@@ -18,7 +18,10 @@
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
-    "setup:postgres": "node scripts/setup-postgres.js"
+    "setup:postgres": "node scripts/setup-postgres.js",
+    "dist:dir": "npm run build && electron-builder --dir",
+    "dist:win": "npm run build && electron-builder --win nsis:x64",
+    "package": "npm run dist:win"
   },
   "dependencies": {
     "@prisma/client": "^6.4.0",
