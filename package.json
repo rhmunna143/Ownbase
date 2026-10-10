@@ -1,0 +1,48 @@
+{
+  "name": "native-windows-server-hub",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Native Windows Server Hub - Standalone server orchestration without Docker or WSL2",
+  "main": "dist/electron/main/index.js",
+  "prisma": {
+    "schema": "prisma/schema"
+  },
+  "scripts": {
+    "dev": "concurrently -k \"npm run dev:next\" \"npm run dev:electron\"",
+    "dev:next": "next dev -p 3000",
+    "dev:electron": "wait-on http://localhost:3000 && tsc -p tsconfig.electron.json && electron . --dev",
+    "build": "npm run build:next && npm run build:electron",
+    "build:next": "next build",
+    "build:electron": "tsc -p tsconfig.electron.json",
+    "start": "tsc -p tsconfig.electron.json && electron .",
+    "prisma:generate": "prisma generate",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:deploy": "prisma migrate deploy",
+    "setup:postgres": "node scripts/setup-postgres.js"
+  },
+  "dependencies": {
+    "@prisma/client": "^6.4.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.453.0",
+    "next": "^14.2.15",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "tailwind-merge": "^2.5.4"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@types/react": "^18.3.12",
+    "@types/react-dom": "^18.3.1",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^32.2.0",
+    "electron-builder": "^25.1.8",
+    "postcss": "^8.4.47",
+    "prisma": "^6.4.0",
+    "tailwindcss": "^3.4.14",
+    "tsx": "^4.19.1",
+    "typescript": "^5.6.3",
+    "wait-on": "^8.0.1"
+  }
+}

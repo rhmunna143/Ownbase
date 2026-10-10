@@ -1,0 +1,15 @@
+model Route {
+  id          String   @id @default(uuid())
+  serviceId   String
+  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  subdomain   String   @unique
+  targetPort  Int
+  targetHost  String   @default("127.0.0.1")
+  tlsEnabled  Boolean  @default(true)
+  customDomain String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("routes")
+}

@@ -1,0 +1,20 @@
+model SystemConfig {
+  key         String   @id
+  value       String
+  category    String   @default("general")
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_configs")
+}
+
+model AuditLog {
+  id        String   @id @default(uuid())
+  level     String   // info, warn, error, success
+  source    String   // postgres, prisma, supervisor, electron, caddy, tailscale
+  message   String
+  metadata  Json?
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs")
+}
