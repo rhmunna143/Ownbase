@@ -15,14 +15,16 @@ import {
   ServiceRecord,
   RouteRecord,
   LogEntry,
+  ProcessStatus,
 } from '@/shared/types';
-import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers } from 'lucide-react';
+import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers, Play, CheckCircle2 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<'overview' | 'services' | 'routes' | 'logs'>('overview');
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
+  const [processStatuses, setProcessStatuses] = useState<Record<string, ProcessStatus>>({});
   const [bootstrapSteps, setBootstrapSteps] = useState<BootstrapStep[]>([
     { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
     { id: 'postgres-bin', name: 'PostgreSQL Binaries', description: 'Locating portable PostgreSQL distribution', status: 'pending' },
@@ -31,6 +33,7 @@ export default function DashboardPage() {
     { id: 'postgres-port', name: 'TCP Port Probe', description: 'Verifying database port 5432 is listening', status: 'pending' },
     { id: 'prisma-migration', name: 'Prisma Migrations', description: 'Executing programmatic database migrations', status: 'pending' },
     { id: 'prisma-client', name: 'Data Layer', description: 'Initializing Prisma client and verifying models', status: 'pending' },
+    { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
     { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
   ]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
@@ -49,7 +52,7 @@ export default function DashboardPage() {
 
     setIsRefreshing(true);
     try {
-      const [sys, pg, mig, steps, srvs, rts, initialLogs] = await Promise.all([
+      const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses] = await Promise.all([
         window.electronAPI.getSystemInfo().catch(() => null),
         window.electronAPI.getPostgresStatus().catch(() => null),
         window.electronAPI.getMigrationStatus().catch(() => null),
@@ -57,6 +60,7 @@ export default function DashboardPage() {
         window.electronAPI.getServices().catch(() => []),
         window.electronAPI.getRoutes().catch(() => []),
         window.electronAPI.getLogs().catch(() => []),
+        window.electronAPI.getProcessStatuses().catch(() => ({})),
       ]);
 
       if (sys) setSystemInfo(sys);
@@ -66,6 +70,7 @@ export default function DashboardPage() {
       setServices(srvs || []);
       setRoutes(rts || []);
       setLogs(initialLogs || []);
+      setProcessStatuses(procStatuses || {});
     } catch (e) {
       console.error('Data fetch error:', e);
     } finally {
@@ -89,10 +94,28 @@ export default function DashboardPage() {
         setPostgresStatus(status);
       });
 
+      const cleanupProcStatus = window.electronAPI.onProcessStatusChanged?.((proc) => {
+        setProcessStatuses((prev) => ({
+          ...prev,
+          [proc.serviceId]: proc,
+        }));
+        setServices((prev) =>
+          prev.map((s) =>
+            s.id === proc.serviceId ? { ...s, status: proc.status, pid: proc.pid ?? null } : s
+          )
+        );
+      });
+
+      const cleanupServiceLog = window.electronAPI.onServiceLog?.(({ log }) => {
+        setLogs((prev) => [...prev, log]);
+      });
+
       return () => {
         cleanupLog?.();
         cleanupSteps?.();
         cleanupPg?.();
+        cleanupProcStatus?.();
+        cleanupServiceLog?.();
       };
     }
   }, [fetchAllData]);
@@ -102,6 +125,32 @@ export default function DashboardPage() {
       return { success: false, latencyMs: 0, error: 'Electron IPC unavailable' };
     }
     return await window.electronAPI.pingDatabase();
+  };
+
+  const handleStartService = async (serviceId: string) => {
+    if (!window.electronAPI) return;
+    const res = await window.electronAPI.startService(serviceId);
+    if (!res.success && res.error) {
+      alert(`Start failed: ${res.error}`);
+    }
+    await fetchAllData();
+  };
+
+  const handleStopService = async (serviceId: string) => {
+    if (!window.electronAPI) return;
+    await window.electronAPI.stopService(serviceId);
+    await fetchAllData();
+  };
+
+  const handleRestartService = async (serviceId: string) => {
+    if (!window.electronAPI) return;
+    await window.electronAPI.restartService(serviceId);
+    await fetchAllData();
+  };
+
+  const handleGetServiceLogs = async (serviceId: string) => {
+    if (!window.electronAPI) return [];
+    return await window.electronAPI.getServiceLogs(serviceId);
   };
 
   const handleCreateService = async (data: {
@@ -115,6 +164,7 @@ export default function DashboardPage() {
     if (!window.electronAPI) return;
     const newService = await window.electronAPI.createService(data);
     setServices((prev) => [...prev, newService]);
+    await fetchAllData();
   };
 
   const handleCreateRoute = async (data: {
@@ -128,6 +178,11 @@ export default function DashboardPage() {
     const newRoute = await window.electronAPI.createRoute(data);
     setRoutes((prev) => [...prev, newRoute]);
   };
+
+  const runningServicesCount = services.filter((s) => {
+    const p = processStatuses[s.id];
+    return p ? p.status === 'running' : s.status === 'running';
+  }).length;
 
   return (
     <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col">
@@ -146,7 +201,7 @@ export default function DashboardPage() {
       )}
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-6 py-6 space-y-6">
-        {/* Phase 1 Bootstrapper Stepper */}
+        {/* Architecture Bootstrapper Stepper */}
         <BootstrapStepper steps={bootstrapSteps} />
 
         {/* Navigation Tabs */}
@@ -172,7 +227,7 @@ export default function DashboardPage() {
             }`}
           >
             <Layers className="w-3.5 h-3.5" />
-            <span>Prisma Services Manifest ({services.length})</span>
+            <span>Process Supervisor ({runningServicesCount}/{services.length} active)</span>
           </button>
 
           <button
@@ -196,7 +251,7 @@ export default function DashboardPage() {
             }`}
           >
             <Terminal className="w-3.5 h-3.5" />
-            <span>Supervised Logs ({logs.length})</span>
+            <span>Live Console Stream ({logs.length})</span>
           </button>
         </div>
 
@@ -209,34 +264,35 @@ export default function DashboardPage() {
               onPing={handlePing}
             />
 
+            {/* Phase 2 Supervisor Highlights */}
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div className="glass-card rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
-                  <ShieldCheck className="w-4 h-4 text-emerald-400" />
-                  <span>IPC Security Model</span>
+                  <Activity className="w-4 h-4 text-emerald-400" />
+                  <span>Process Tree Termination</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  Renderer communicates with Node.js exclusively through isolated Electron contextBridge channels. Node integration is disabled in renderer.
+                  Prevents zombie processes using Windows-native <code>taskkill /pid &lt;PID&gt; /T /F</code> on app exit or service stop.
                 </p>
               </div>
 
               <div className="glass-card rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
-                  <Activity className="w-4 h-4 text-blue-400" />
-                  <span>Port Supervision</span>
+                  <Terminal className="w-4 h-4 text-blue-400" />
+                  <span>Real-Time Output Capture</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  PostgreSQL engine runs on dedicated loopback port 5432. Active TCP probe verifies port readiness before applying schema migrations.
+                  Streams stdout and stderr directly from spawned Windows binaries to the frontend console and in-memory ring buffers.
                 </p>
               </div>
 
               <div className="glass-card rounded-xl p-4 border border-slate-800">
                 <div className="flex items-center gap-2 text-xs font-semibold text-slate-200 mb-1">
                   <Server className="w-4 h-4 text-indigo-400" />
-                  <span>Zero Virtualization</span>
+                  <span>Native Process Registry</span>
                 </div>
                 <p className="text-[11px] text-slate-400 leading-relaxed">
-                  No Docker daemon or WSL2 hypervisor required. Operates with portable Windows binaries inside AppData and extraResources.
+                  PostgreSQL-synchronized state machine tracking PIDs, exit codes, and auto-restart policies for all services.
                 </p>
               </div>
             </div>
@@ -248,7 +304,12 @@ export default function DashboardPage() {
         {activeTab === 'services' && (
           <ServicesTable
             services={services}
+            processStatuses={processStatuses}
             onCreateService={handleCreateService}
+            onStartService={handleStartService}
+            onStopService={handleStopService}
+            onRestartService={handleRestartService}
+            getServiceLogs={handleGetServiceLogs}
             isLoading={isRefreshing}
           />
         )}

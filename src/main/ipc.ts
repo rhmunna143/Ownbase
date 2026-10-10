@@ -2,12 +2,14 @@ import { ipcMain, app } from 'electron';
 import os from 'os';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
+import { ProcessSupervisor } from './supervisor';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
 
 export function registerIpcHandlers(
   postgresManager: PostgresManager,
   prismaManager: PrismaManager,
+  supervisor: ProcessSupervisor,
   getBootstrapSteps: () => BootstrapStep[]
 ) {
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
@@ -45,7 +47,12 @@ export function registerIpcHandlers(
 
   ipcMain.handle('get-services', async () => {
     try {
-      return await prismaManager.getServices();
+      const services = await prismaManager.getServices();
+      // Also register services with supervisor
+      for (const s of services) {
+        supervisor.registerService(s);
+      }
+      return services;
     } catch (err: any) {
       logger.error('ipc', `Failed to get services: ${err.message}`);
       return [];
@@ -54,7 +61,9 @@ export function registerIpcHandlers(
 
   ipcMain.handle('create-service', async (_event, data) => {
     logger.info('ipc', `Creating service via Prisma: ${data.name} (${data.type})`);
-    return await prismaManager.createService(data);
+    const service = await prismaManager.createService(data);
+    supervisor.registerService(service);
+    return service;
   });
 
   ipcMain.handle('get-routes', async () => {
@@ -69,6 +78,30 @@ export function registerIpcHandlers(
   ipcMain.handle('create-route', async (_event, data) => {
     logger.info('ipc', `Creating route via Prisma: subdomain=${data.subdomain} -> port=${data.targetPort}`);
     return await prismaManager.createRoute(data);
+  });
+
+  // Phase 2: Process Supervisor IPC Handlers
+  ipcMain.handle('supervisor:start-service', async (_event, serviceId: string) => {
+    logger.info('ipc', `Requested to start service ID: ${serviceId}`);
+    return await supervisor.startService(serviceId);
+  });
+
+  ipcMain.handle('supervisor:stop-service', async (_event, serviceId: string) => {
+    logger.info('ipc', `Requested to stop service ID: ${serviceId}`);
+    return await supervisor.stopService(serviceId);
+  });
+
+  ipcMain.handle('supervisor:restart-service', async (_event, serviceId: string) => {
+    logger.info('ipc', `Requested to restart service ID: ${serviceId}`);
+    return await supervisor.restartService(serviceId);
+  });
+
+  ipcMain.handle('supervisor:get-process-statuses', async () => {
+    return supervisor.getAllStatuses();
+  });
+
+  ipcMain.handle('supervisor:get-service-logs', async (_event, serviceId: string) => {
+    return supervisor.getServiceLogs(serviceId);
   });
 
   ipcMain.handle('get-logs', async () => {

@@ -21,6 +21,7 @@ extraResources/*.zip
 extraResources/postgresql.zip
 extraResources/pgsql/
 extraResources/postgres/
+extraResources/bin/
 !extraResources/.gitkeep
 
 # Local PostgreSQL Data Directories & Lockfiles

@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
+import { ProcessSupervisor } from './supervisor';
 import { registerIpcHandlers } from './ipc';
 import { logger } from './logger';
 import { BootstrapStep } from '../shared/types';
@@ -10,6 +11,7 @@ import { BootstrapStep } from '../shared/types';
 let mainWindow: BrowserWindow | null = null;
 let postgresManager: PostgresManager;
 let prismaManager: PrismaManager;
+let supervisor: ProcessSupervisor;
 
 const bootstrapSteps: BootstrapStep[] = [
   { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
@@ -19,6 +21,7 @@ const bootstrapSteps: BootstrapStep[] = [
   { id: 'postgres-port', name: 'TCP Port Probe', description: 'Verifying database port 5432 is listening', status: 'pending' },
   { id: 'prisma-migration', name: 'Prisma Migrations', description: 'Executing programmatic database migrations', status: 'pending' },
   { id: 'prisma-client', name: 'Data Layer', description: 'Initializing Prisma client and verifying models', status: 'pending' },
+  { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
   { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
 ];
 
@@ -52,6 +55,9 @@ async function createWindow() {
   });
 
   logger.setWindow(mainWindow);
+  if (supervisor) {
+    supervisor.setWindow(mainWindow);
+  }
 
   // Hook status updates to window
   postgresManager.setStatusCallback((status) => {
@@ -64,6 +70,9 @@ async function createWindow() {
   mainWindow.on('closed', () => {
     mainWindow = null;
     logger.setWindow(null);
+    if (supervisor) {
+      supervisor.setWindow(null);
+    }
   });
 
   return mainWindow;
@@ -92,7 +101,6 @@ async function startBootstrap() {
     updateStep('postgres-start', 'error', err.message);
     updateStep('postgres-port', 'error', err.message);
     logger.error('postgres', `Database initialization error: ${err.message}`);
-    // Still load window so error is visible in UI
     await loadFrontend();
     return;
   }
@@ -120,7 +128,17 @@ async function startBootstrap() {
     updateStep('prisma-client', 'error', err.message);
   }
 
-  // Step 8: Mount UI
+  // Step 8: Phase 2 Process Supervisor Bootstrapping
+  updateStep('supervisor-init', 'running', 'Initializing ProcessSupervisor & registry');
+  try {
+    await supervisor.syncAndAutoStart();
+    updateStep('supervisor-init', 'success', 'Supervisor active with process tree isolation');
+  } catch (err: any) {
+    updateStep('supervisor-init', 'error', err.message);
+    logger.error('supervisor', `Supervisor sync error: ${err.message}`);
+  }
+
+  // Step 9: Mount UI
   updateStep('ui-ready', 'running', 'Mounting user interface');
   await loadFrontend();
   updateStep('ui-ready', 'success', 'IPC channels active and dashboard mounted');
@@ -149,7 +167,6 @@ async function loadFrontend() {
 
 async function loadStaticBundle() {
   if (!mainWindow) return;
-  // Locate static export index.html
   const candidateHtmlPaths = [
     path.join(process.cwd(), 'out', 'index.html'),
     path.join(__dirname, '..', '..', '..', 'out', 'index.html'),
@@ -171,8 +188,9 @@ async function loadStaticBundle() {
 app.whenReady().then(async () => {
   postgresManager = new PostgresManager(5432);
   prismaManager = new PrismaManager(5432, 'postgres');
+  supervisor = new ProcessSupervisor(prismaManager);
 
-  registerIpcHandlers(postgresManager, prismaManager, () => bootstrapSteps);
+  registerIpcHandlers(postgresManager, prismaManager, supervisor, () => bootstrapSteps);
 
   await createWindow();
   await startBootstrap();
@@ -184,10 +202,19 @@ app.whenReady().then(async () => {
   });
 });
 
-// Clean shutdown: gracefully terminate PostgreSQL before quit
+// Phase 2: Graceful Termination with taskkill /pid <PID> /T /F before quit
 app.on('before-quit', async (event) => {
+  logger.info('electron', 'Application quitting. Terminating all supervised processes...');
+  if (supervisor) {
+    try {
+      await supervisor.stopAll();
+    } catch (e: any) {
+      logger.warn('supervisor', `Error during supervisor stopAll: ${e.message}`);
+    }
+  }
+
   if (postgresManager) {
-    logger.info('electron', 'Application quitting. Stopping PostgreSQL supervisor...');
+    logger.info('electron', 'Stopping PostgreSQL supervisor...');
     try {
       await postgresManager.stop();
       await prismaManager.disconnect();
@@ -201,4 +228,17 @@ app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') {
     app.quit();
   }
+});
+
+// Process signal safety cleanup
+process.on('SIGINT', async () => {
+  if (supervisor) await supervisor.stopAll();
+  if (postgresManager) await postgresManager.stop();
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  if (supervisor) await supervisor.stopAll();
+  if (postgresManager) await postgresManager.stop();
+  process.exit(0);
 });

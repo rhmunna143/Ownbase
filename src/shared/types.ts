@@ -71,12 +71,24 @@ export interface RouteRecord {
   };
 }
 
+export interface ProcessStatus {
+  serviceId: string;
+  name: string;
+  type: string;
+  status: 'stopped' | 'starting' | 'running' | 'stopping' | 'error' | 'crashed';
+  pid?: number;
+  startTime?: string;
+  restartCount: number;
+  error?: string;
+}
+
 export interface LogEntry {
   id: string;
   level: 'info' | 'warn' | 'error' | 'success';
-  source: 'electron' | 'postgres' | 'prisma' | 'ipc' | 'system';
+  source: 'electron' | 'postgres' | 'prisma' | 'ipc' | 'system' | 'supervisor' | 'caddy' | 'filebrowser' | 'ollama' | string;
   message: string;
   timestamp: string;
+  serviceId?: string;
 }
 
 export interface ElectronAPI {
@@ -105,11 +117,20 @@ export interface ElectronAPI {
     customDomain?: string;
   }) => Promise<RouteRecord>;
   
-  // Logs
+  // Phase 2: Process Supervisor operations
+  startService: (serviceId: string) => Promise<{ success: boolean; pid?: number; error?: string }>;
+  stopService: (serviceId: string) => Promise<{ success: boolean; error?: string }>;
+  restartService: (serviceId: string) => Promise<{ success: boolean; pid?: number; error?: string }>;
+  getProcessStatuses: () => Promise<Record<string, ProcessStatus>>;
+  getServiceLogs: (serviceId: string) => Promise<LogEntry[]>;
+  
+  // Logs & Events
   getLogs: () => Promise<LogEntry[]>;
   onLogAdded: (callback: (log: LogEntry) => void) => () => void;
   onBootstrapUpdate: (callback: (steps: BootstrapStep[]) => void) => () => void;
   onPostgresStatusChange: (callback: (status: PostgresStatus) => void) => () => void;
+  onProcessStatusChanged: (callback: (status: ProcessStatus) => void) => () => void;
+  onServiceLog: (callback: (data: { serviceId: string; log: LogEntry }) => void) => () => void;
 }
 
 declare global {
