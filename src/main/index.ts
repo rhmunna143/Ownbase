@@ -4,6 +4,8 @@ import fs from 'fs';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
 import { ProcessSupervisor } from './supervisor';
+import { CaddyManager } from './caddy';
+import { TailscaleManager } from './tailscale';
 import { registerIpcHandlers } from './ipc';
 import { logger } from './logger';
 import { BootstrapStep } from '../shared/types';
@@ -12,6 +14,8 @@ let mainWindow: BrowserWindow | null = null;
 let postgresManager: PostgresManager;
 let prismaManager: PrismaManager;
 let supervisor: ProcessSupervisor;
+let caddyManager: CaddyManager;
+let tailscaleManager: TailscaleManager;
 
 const bootstrapSteps: BootstrapStep[] = [
   { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
@@ -22,6 +26,8 @@ const bootstrapSteps: BootstrapStep[] = [
   { id: 'prisma-migration', name: 'Prisma Migrations', description: 'Executing programmatic database migrations', status: 'pending' },
   { id: 'prisma-client', name: 'Data Layer', description: 'Initializing Prisma client and verifying models', status: 'pending' },
   { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
+  { id: 'caddy-proxy', name: 'Dynamic Reverse Proxy', description: 'Caddy Admin REST API & dynamic routing', status: 'pending' },
+  { id: 'tailscale-mesh', name: 'Tailscale Mesh VPN', description: 'WireGuard encrypted mesh overlay', status: 'pending' },
   { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
 ];
 
@@ -138,7 +144,41 @@ async function startBootstrap() {
     logger.error('supervisor', `Supervisor sync error: ${err.message}`);
   }
 
-  // Step 9: Mount UI
+  // Step 9: Phase 3 Caddy Dynamic Reverse Proxy
+  updateStep('caddy-proxy', 'running', 'Verifying Caddy Admin REST API & syncing routes');
+  try {
+    // Wait briefly for Caddy to start listening if auto-started
+    setTimeout(async () => {
+      try {
+        const caddyStatus = await caddyManager.getStatus();
+        if (caddyStatus.isListening) {
+          const syncRes = await caddyManager.syncAllRoutes();
+          updateStep('caddy-proxy', 'success', `Caddy REST API active (${syncRes.count} routes mapped)`);
+        } else {
+          updateStep('caddy-proxy', 'pending', 'Caddy process idle (start service to activate proxy)');
+        }
+      } catch {
+        updateStep('caddy-proxy', 'pending', 'Caddy process idle (start service to activate proxy)');
+      }
+    }, 2000);
+  } catch (err: any) {
+    updateStep('caddy-proxy', 'error', err.message);
+  }
+
+  // Step 10: Phase 3 Tailscale Mesh Tunneling
+  updateStep('tailscale-mesh', 'running', 'Checking Tailscale mesh state');
+  try {
+    const tsStatus = await tailscaleManager.getStatus();
+    if (tsStatus.connected && tsStatus.ip) {
+      updateStep('tailscale-mesh', 'success', `Connected (Mesh IP: ${tsStatus.ip})`);
+    } else {
+      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (configure Auth Key to connect)');
+    }
+  } catch (err: any) {
+    updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
+  }
+
+  // Step 11: Mount UI
   updateStep('ui-ready', 'running', 'Mounting user interface');
   await loadFrontend();
   updateStep('ui-ready', 'success', 'IPC channels active and dashboard mounted');
@@ -189,8 +229,10 @@ app.whenReady().then(async () => {
   postgresManager = new PostgresManager(5432);
   prismaManager = new PrismaManager(5432, 'postgres');
   supervisor = new ProcessSupervisor(prismaManager);
+  caddyManager = new CaddyManager(prismaManager);
+  tailscaleManager = new TailscaleManager(prismaManager);
 
-  registerIpcHandlers(postgresManager, prismaManager, supervisor, () => bootstrapSteps);
+  registerIpcHandlers(postgresManager, prismaManager, supervisor, caddyManager, tailscaleManager, () => bootstrapSteps);
 
   await createWindow();
   await startBootstrap();
@@ -230,7 +272,6 @@ app.on('window-all-closed', () => {
   }
 });
 
-// Process signal safety cleanup
 process.on('SIGINT', async () => {
   if (supervisor) await supervisor.stopAll();
   if (postgresManager) await postgresManager.stop();

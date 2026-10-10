@@ -16,6 +16,8 @@ import {
   RouteRecord,
   LogEntry,
   ProcessStatus,
+  CaddyStatus,
+  TailscaleStatus,
 } from '@/shared/types';
 import { Server, Database, Globe, Terminal, ShieldCheck, Activity, Layers, Play, CheckCircle2 } from 'lucide-react';
 
@@ -25,6 +27,8 @@ export default function DashboardPage() {
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
   const [processStatuses, setProcessStatuses] = useState<Record<string, ProcessStatus>>({});
+  const [caddyStatus, setCaddyStatus] = useState<CaddyStatus | null>(null);
+  const [tailscaleStatus, setTailscaleStatus] = useState<TailscaleStatus | null>(null);
   const [bootstrapSteps, setBootstrapSteps] = useState<BootstrapStep[]>([
     { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
     { id: 'postgres-bin', name: 'PostgreSQL Binaries', description: 'Locating portable PostgreSQL distribution', status: 'pending' },
@@ -34,6 +38,8 @@ export default function DashboardPage() {
     { id: 'prisma-migration', name: 'Prisma Migrations', description: 'Executing programmatic database migrations', status: 'pending' },
     { id: 'prisma-client', name: 'Data Layer', description: 'Initializing Prisma client and verifying models', status: 'pending' },
     { id: 'supervisor-init', name: 'Process Supervisor', description: 'Supervising native processes (caddy, filebrowser, ollama)', status: 'pending' },
+    { id: 'caddy-proxy', name: 'Dynamic Reverse Proxy', description: 'Caddy Admin REST API & dynamic routing', status: 'pending' },
+    { id: 'tailscale-mesh', name: 'Tailscale Mesh VPN', description: 'WireGuard encrypted mesh overlay', status: 'pending' },
     { id: 'ui-ready', name: 'User Interface', description: 'Mounting dashboard and establishing IPC channels', status: 'pending' },
   ]);
   const [services, setServices] = useState<ServiceRecord[]>([]);
@@ -52,7 +58,7 @@ export default function DashboardPage() {
 
     setIsRefreshing(true);
     try {
-      const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses] = await Promise.all([
+      const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses, caddy, tailscale] = await Promise.all([
         window.electronAPI.getSystemInfo().catch(() => null),
         window.electronAPI.getPostgresStatus().catch(() => null),
         window.electronAPI.getMigrationStatus().catch(() => null),
@@ -61,6 +67,8 @@ export default function DashboardPage() {
         window.electronAPI.getRoutes().catch(() => []),
         window.electronAPI.getLogs().catch(() => []),
         window.electronAPI.getProcessStatuses().catch(() => ({})),
+        window.electronAPI.getCaddyStatus?.().catch(() => null),
+        window.electronAPI.getTailscaleStatus?.().catch(() => null),
       ]);
 
       if (sys) setSystemInfo(sys);
@@ -71,6 +79,8 @@ export default function DashboardPage() {
       setRoutes(rts || []);
       setLogs(initialLogs || []);
       setProcessStatuses(procStatuses || {});
+      if (caddy) setCaddyStatus(caddy);
+      if (tailscale) setTailscaleStatus(tailscale);
     } catch (e) {
       console.error('Data fetch error:', e);
     } finally {
@@ -177,6 +187,52 @@ export default function DashboardPage() {
     if (!window.electronAPI) return;
     const newRoute = await window.electronAPI.createRoute(data);
     setRoutes((prev) => [...prev, newRoute]);
+    const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+    if (caddy) setCaddyStatus(caddy);
+  };
+
+  const handleDeleteRoute = async (routeId: string) => {
+    if (!window.electronAPI) return;
+    const success = await window.electronAPI.deleteRoute(routeId);
+    if (success) {
+      setRoutes((prev) => prev.filter((r) => r.id !== routeId));
+      const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+      if (caddy) setCaddyStatus(caddy);
+    }
+  };
+
+  const handleSyncCaddy = async () => {
+    if (!window.electronAPI) return;
+    const res = await window.electronAPI.syncCaddyRoutes();
+    const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+    if (caddy) setCaddyStatus(caddy);
+    if (!res.success && res.error) {
+      alert(`Caddy sync error: ${res.error}`);
+    }
+  };
+
+  const handleTestRoute = async (host: string) => {
+    if (!window.electronAPI) {
+      return { success: false, latencyMs: 0, error: 'Electron IPC unavailable' };
+    }
+    return await window.electronAPI.testCaddyRoute(host);
+  };
+
+  const handleConnectTailscale = async (authKey: string, hostname?: string) => {
+    if (!window.electronAPI) return;
+    const res = await window.electronAPI.connectTailscale(authKey, hostname);
+    const ts = await window.electronAPI.getTailscaleStatus?.().catch(() => null);
+    if (ts) setTailscaleStatus(ts);
+    if (!res.success && res.error) {
+      alert(`Tailscale connect failed: ${res.error}`);
+    }
+  };
+
+  const handleDisconnectTailscale = async () => {
+    if (!window.electronAPI) return;
+    await window.electronAPI.disconnectTailscale();
+    const ts = await window.electronAPI.getTailscaleStatus?.().catch(() => null);
+    if (ts) setTailscaleStatus(ts);
   };
 
   const runningServicesCount = services.filter((s) => {
@@ -318,7 +374,14 @@ export default function DashboardPage() {
           <RoutesTable
             routes={routes}
             services={services}
+            caddyStatus={caddyStatus}
+            tailscaleStatus={tailscaleStatus}
             onCreateRoute={handleCreateRoute}
+            onDeleteRoute={handleDeleteRoute}
+            onSyncCaddy={handleSyncCaddy}
+            onTestRoute={handleTestRoute}
+            onConnectTailscale={handleConnectTailscale}
+            onDisconnectTailscale={handleDisconnectTailscale}
             isLoading={isRefreshing}
           />
         )}

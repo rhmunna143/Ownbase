@@ -3,6 +3,8 @@ import os from 'os';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
 import { ProcessSupervisor } from './supervisor';
+import { CaddyManager } from './caddy';
+import { TailscaleManager } from './tailscale';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
 
@@ -10,6 +12,8 @@ export function registerIpcHandlers(
   postgresManager: PostgresManager,
   prismaManager: PrismaManager,
   supervisor: ProcessSupervisor,
+  caddyManager: CaddyManager,
+  tailscaleManager: TailscaleManager,
   getBootstrapSteps: () => BootstrapStep[]
 ) {
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
@@ -48,7 +52,6 @@ export function registerIpcHandlers(
   ipcMain.handle('get-services', async () => {
     try {
       const services = await prismaManager.getServices();
-      // Also register services with supervisor
       for (const s of services) {
         supervisor.registerService(s);
       }
@@ -77,13 +80,41 @@ export function registerIpcHandlers(
 
   ipcMain.handle('create-route', async (_event, data) => {
     logger.info('ipc', `Creating route via Prisma: subdomain=${data.subdomain} -> port=${data.targetPort}`);
-    return await prismaManager.createRoute(data);
+    const route = await prismaManager.createRoute(data);
+    // Phase 3: dynamically register with Caddy Admin REST API without server restart
+    try {
+      await caddyManager.registerRoute(route);
+    } catch (err: any) {
+      logger.warn('caddy', `Notice: could not register route with Caddy REST API yet: ${err.message}`);
+    }
+    return route;
+  });
+
+  ipcMain.handle('delete-route', async (_event, routeId: string) => {
+    logger.info('ipc', `Deleting route ID: ${routeId}`);
+    try {
+      const client = prismaManager.getClient();
+      await client.route.delete({ where: { id: routeId } });
+      await caddyManager.removeRoute(routeId);
+      return true;
+    } catch (err: any) {
+      logger.error('ipc', `Failed to delete route: ${err.message}`);
+      return false;
+    }
   });
 
   // Phase 2: Process Supervisor IPC Handlers
   ipcMain.handle('supervisor:start-service', async (_event, serviceId: string) => {
     logger.info('ipc', `Requested to start service ID: ${serviceId}`);
-    return await supervisor.startService(serviceId);
+    const res = await supervisor.startService(serviceId);
+    // If starting Caddy, sync all routes after it launches
+    const status = supervisor.getStatus(serviceId);
+    if (res.success && status?.type === 'caddy') {
+      setTimeout(() => {
+        caddyManager.syncAllRoutes().catch(() => {});
+      }, 1500);
+    }
+    return res;
   });
 
   ipcMain.handle('supervisor:stop-service', async (_event, serviceId: string) => {
@@ -93,7 +124,14 @@ export function registerIpcHandlers(
 
   ipcMain.handle('supervisor:restart-service', async (_event, serviceId: string) => {
     logger.info('ipc', `Requested to restart service ID: ${serviceId}`);
-    return await supervisor.restartService(serviceId);
+    const res = await supervisor.restartService(serviceId);
+    const status = supervisor.getStatus(serviceId);
+    if (res.success && status?.type === 'caddy') {
+      setTimeout(() => {
+        caddyManager.syncAllRoutes().catch(() => {});
+      }, 1500);
+    }
+    return res;
   });
 
   ipcMain.handle('supervisor:get-process-statuses', async () => {
@@ -102,6 +140,36 @@ export function registerIpcHandlers(
 
   ipcMain.handle('supervisor:get-service-logs', async (_event, serviceId: string) => {
     return supervisor.getServiceLogs(serviceId);
+  });
+
+  // Phase 3: Caddy Dynamic Reverse Proxy Handlers
+  ipcMain.handle('caddy:get-status', async () => {
+    return await caddyManager.getStatus();
+  });
+
+  ipcMain.handle('caddy:sync-routes', async () => {
+    logger.info('ipc', 'Received caddy:sync-routes request');
+    return await caddyManager.syncAllRoutes();
+  });
+
+  ipcMain.handle('caddy:test-route', async (_event, host: string) => {
+    logger.info('ipc', `Testing upstream proxy for host: ${host}`);
+    return await caddyManager.testRoute(host);
+  });
+
+  // Phase 3: Tailscale Mesh Tunneling Handlers
+  ipcMain.handle('tailscale:get-status', async () => {
+    return await tailscaleManager.getStatus();
+  });
+
+  ipcMain.handle('tailscale:connect', async (_event, authKey: string, hostname?: string) => {
+    logger.info('ipc', 'Received tailscale:connect request');
+    return await tailscaleManager.connect(authKey, hostname);
+  });
+
+  ipcMain.handle('tailscale:disconnect', async () => {
+    logger.info('ipc', 'Received tailscale:disconnect request');
+    return await tailscaleManager.disconnect();
   });
 
   ipcMain.handle('get-logs', async () => {

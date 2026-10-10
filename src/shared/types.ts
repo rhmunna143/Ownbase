@@ -82,10 +82,26 @@ export interface ProcessStatus {
   error?: string;
 }
 
+export interface CaddyStatus {
+  adminApiUrl: string;
+  isListening: boolean;
+  activeRoutesCount: number;
+  error?: string;
+}
+
+export interface TailscaleStatus {
+  connected: boolean;
+  ip: string | null;
+  binaryPath: string;
+  authKeyMasked?: string;
+  lastChecked?: string;
+  error?: string;
+}
+
 export interface LogEntry {
   id: string;
   level: 'info' | 'warn' | 'error' | 'success';
-  source: 'electron' | 'postgres' | 'prisma' | 'ipc' | 'system' | 'supervisor' | 'caddy' | 'filebrowser' | 'ollama' | string;
+  source: 'electron' | 'postgres' | 'prisma' | 'ipc' | 'system' | 'supervisor' | 'caddy' | 'filebrowser' | 'ollama' | 'tailscale' | string;
   message: string;
   timestamp: string;
   serviceId?: string;
@@ -116,6 +132,7 @@ export interface ElectronAPI {
     tlsEnabled?: boolean;
     customDomain?: string;
   }) => Promise<RouteRecord>;
+  deleteRoute: (routeId: string) => Promise<boolean>;
   
   // Phase 2: Process Supervisor operations
   startService: (serviceId: string) => Promise<{ success: boolean; pid?: number; error?: string }>;
@@ -124,6 +141,16 @@ export interface ElectronAPI {
   getProcessStatuses: () => Promise<Record<string, ProcessStatus>>;
   getServiceLogs: (serviceId: string) => Promise<LogEntry[]>;
   
+  // Phase 3: Networking & Dynamic Proxy Routing
+  getCaddyStatus: () => Promise<CaddyStatus>;
+  syncCaddyRoutes: () => Promise<{ success: boolean; count: number; error?: string }>;
+  testCaddyRoute: (host: string) => Promise<{ success: boolean; status?: number; latencyMs: number; error?: string }>;
+  
+  // Phase 3: Tailscale Mesh Tunneling
+  getTailscaleStatus: () => Promise<TailscaleStatus>;
+  connectTailscale: (authKey: string, hostname?: string) => Promise<{ success: boolean; ip?: string; error?: string }>;
+  disconnectTailscale: () => Promise<{ success: boolean; error?: string }>;
+
   // Logs & Events
   getLogs: () => Promise<LogEntry[]>;
   onLogAdded: (callback: (log: LogEntry) => void) => () => void;

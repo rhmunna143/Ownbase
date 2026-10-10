@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { ElectronAPI, LogEntry, BootstrapStep, PostgresStatus, ProcessStatus } from '../shared/types';
+import { ElectronAPI, LogEntry, BootstrapStep, PostgresStatus, ProcessStatus, CaddyStatus, TailscaleStatus } from '../shared/types';
 
 const api: ElectronAPI = {
   getSystemInfo: () => ipcRenderer.invoke('get-system-info'),
@@ -12,6 +12,7 @@ const api: ElectronAPI = {
   createService: (data) => ipcRenderer.invoke('create-service', data),
   getRoutes: () => ipcRenderer.invoke('get-routes'),
   createRoute: (data) => ipcRenderer.invoke('create-route', data),
+  deleteRoute: (routeId: string) => ipcRenderer.invoke('delete-route', routeId),
 
   // Phase 2: Process Supervisor
   startService: (serviceId: string) => ipcRenderer.invoke('supervisor:start-service', serviceId),
@@ -19,6 +20,16 @@ const api: ElectronAPI = {
   restartService: (serviceId: string) => ipcRenderer.invoke('supervisor:restart-service', serviceId),
   getProcessStatuses: () => ipcRenderer.invoke('supervisor:get-process-statuses'),
   getServiceLogs: (serviceId: string) => ipcRenderer.invoke('supervisor:get-service-logs', serviceId),
+
+  // Phase 3: Caddy Dynamic Reverse Proxy
+  getCaddyStatus: () => ipcRenderer.invoke('caddy:get-status'),
+  syncCaddyRoutes: () => ipcRenderer.invoke('caddy:sync-routes'),
+  testCaddyRoute: (host: string) => ipcRenderer.invoke('caddy:test-route', host),
+
+  // Phase 3: Tailscale Mesh Tunneling
+  getTailscaleStatus: () => ipcRenderer.invoke('tailscale:get-status'),
+  connectTailscale: (authKey: string, hostname?: string) => ipcRenderer.invoke('tailscale:connect', authKey, hostname),
+  disconnectTailscale: () => ipcRenderer.invoke('tailscale:disconnect'),
 
   getLogs: () => ipcRenderer.invoke('get-logs'),
 
