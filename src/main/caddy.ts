@@ -140,32 +140,51 @@ export class CaddyManager {
       hosts.push(route.customDomain);
     }
 
-    const payload = {
-      '@id': `route-${route.id}`,
-      match: [
-        {
-          host: hosts,
-        },
-      ],
-      handle: [
-        {
-          handler: 'reverse_proxy',
-          headers: {
-            request: {
-              set: {
-                Host: ['{http.reverse_proxy.upstream.hostport}'],
+    let payload: any;
+    if (route.subdomain === 'proxy' || route.targetPort === 2019) {
+      payload = {
+        '@id': `route-${route.id}`,
+        match: [{ host: hosts }],
+        handle: [
+          {
+            handler: 'static_response',
+            status_code: 200,
+            headers: {
+              'Content-Type': ['text/html; charset=utf-8'],
+            },
+            body: this.getCaddyGatewayHtml(),
+          },
+        ],
+        terminal: true,
+      };
+    } else {
+      payload = {
+        '@id': `route-${route.id}`,
+        match: [
+          {
+            host: hosts,
+          },
+        ],
+        handle: [
+          {
+            handler: 'reverse_proxy',
+            headers: {
+              request: {
+                set: {
+                  Host: ['{http.reverse_proxy.upstream.hostport}'],
+                },
               },
             },
+            upstreams: [
+              {
+                dial: `${route.targetHost}:${route.targetPort}`,
+              },
+            ],
           },
-          upstreams: [
-            {
-              dial: `${route.targetHost}:${route.targetPort}`,
-            },
-          ],
-        },
-      ],
-      terminal: true,
-    };
+        ],
+        terminal: true,
+      };
+    }
 
     logger.info('caddy', `POSTing dynamic route payload to Caddy REST API for ${hosts.join(', ')} -> ${route.targetHost}:${route.targetPort}`);
 
@@ -258,5 +277,113 @@ export class CaddyManager {
 
       req.end();
     });
+  }
+
+  private getCaddyGatewayHtml(): string {
+    return `<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Caddy Gateway - Native Windows Server Hub</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
+        body { background: #080c14; color: #f1f5f9; padding: 40px 20px; display: flex; justify-content: center; min-height: 100vh; }
+        .container { max-width: 800px; width: 100%; }
+        header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 30px; border-bottom: 1px solid #1e293b; padding-bottom: 20px; }
+        .brand { display: flex; align-items: center; gap: 14px; }
+        .logo { width: 44px; height: 44px; border-radius: 12px; background: linear-gradient(135deg, #2563eb, #7c3aed); display: flex; align-items: center; justify-content: center; font-size: 22px; }
+        h1 { font-size: 18px; font-weight: 700; color: #fff; }
+        .badge { font-size: 10px; font-family: monospace; padding: 3px 8px; border-radius: 12px; background: rgba(37,99,235,0.15); color: #60a5fa; border: 1px solid rgba(37,99,235,0.3); }
+        .status-pill { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; color: #34d399; background: rgba(16,185,129,0.1); border: 1px solid rgba(16,185,129,0.25); padding: 4px 10px; border-radius: 20px; }
+        .dot { width: 6px; height: 6px; border-radius: 50%; background: #34d399; box-shadow: 0 0 6px #34d399; }
+        .card { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; padding: 24px; margin-bottom: 24px; }
+        .card h2 { font-size: 14px; font-weight: 600; color: #94a3b8; text-transform: uppercase; letter-spacing: 0.5px; margin-bottom: 16px; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        th { text-align: left; color: #64748b; font-size: 11px; text-transform: uppercase; padding: 10px 12px; border-bottom: 1px solid #1e293b; }
+        td { padding: 14px 12px; border-bottom: 1px solid #1e293b; color: #cbd5e1; }
+        tr:last-child td { border-bottom: none; }
+        .domain { font-family: monospace; color: #38bdf8; font-weight: 600; }
+        .upstream { font-family: monospace; color: #a5b4fc; }
+        .btn-open { display: inline-flex; align-items: center; gap: 4px; background: #1e293b; color: #cbd5e1; text-decoration: none; padding: 5px 12px; border-radius: 6px; font-size: 11.5px; font-weight: 500; border: 1px solid #334155; }
+        .btn-open:hover { background: #334155; color: #fff; }
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px; }
+        .metric { background: #090e1a; border: 1px solid #1e293b; border-radius: 12px; padding: 16px; }
+        .metric-title { font-size: 11px; color: #64748b; text-transform: uppercase; font-weight: 600; }
+        .metric-val { font-size: 16px; font-weight: 700; color: #f8fafc; margin-top: 4px; font-family: monospace; }
+        footer { text-align: center; font-size: 11px; color: #64748b; margin-top: 30px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <div class="brand">
+                <div class="logo">🌐</div>
+                <div>
+                    <h1>Caddy Dynamic Gateway <span class="badge">v2.8.4</span></h1>
+                    <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Native Windows Dynamic Reverse Proxy & Mesh Gateway</div>
+                </div>
+            </div>
+            <div class="status-pill">
+                <span class="dot"></span>
+                <span>Active on Port 80 & 2019</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <div class="metric">
+                <div class="metric-title">Dynamic Routing Engine</div>
+                <div class="metric-val">Zero-Reload REST API</div>
+            </div>
+            <div class="metric">
+                <div class="metric-title">Mesh VPN Status</div>
+                <div class="metric-val">WireGuard Encrypted</div>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Configured Reverse Proxy Routes</h2>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Host Domain</th>
+                        <th>Target Upstream</th>
+                        <th>Status</th>
+                        <th>Action</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td><span class="domain">files.localhost</span></td>
+                        <td><span class="upstream">127.0.0.1:8080</span></td>
+                        <td><span style="color: #34d399;">● Online</span></td>
+                        <td><a href="http://files.localhost" class="btn-open">Open Drive ↗</a></td>
+                    </tr>
+                    <tr>
+                        <td><span class="domain">ai.localhost</span></td>
+                        <td><span class="upstream">127.0.0.1:11434</span></td>
+                        <td><span style="color: #34d399;">● Online</span></td>
+                        <td><a href="http://ai.localhost" class="btn-open">Open AI Hub ↗</a></td>
+                    </tr>
+                    <tr>
+                        <td><span class="domain">proxy.localhost</span></td>
+                        <td><span class="upstream">127.0.0.1:2019</span></td>
+                        <td><span style="color: #34d399;">● Online</span></td>
+                        <td><a href="http://localhost:3000" class="btn-open">Server Dashboard ↗</a></td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+
+        <div style="text-align: center;">
+            <a href="http://localhost:3000" style="color: #38bdf8; text-decoration: none; font-size: 12px; font-weight: 500;">← Return to Native Windows Server Hub Dashboard</a>
+        </div>
+
+        <footer>
+            Native Windows Server Hub • Dynamic Reverse Proxy Engine
+        </footer>
+    </div>
+</body>
+</html>`;
   }
 }

@@ -51,6 +51,16 @@ export function registerIpcHandlers(
     return result;
   });
 
+  ipcMain.handle('execute-query', async (_event, sql: string) => {
+    try {
+      const client = prismaManager.getClient();
+      const result = await client.$queryRawUnsafe(sql);
+      return { success: true, data: result };
+    } catch (err: any) {
+      return { success: false, error: err.message };
+    }
+  });
+
   ipcMain.handle('get-services', async () => {
     try {
       const services = await prismaManager.getServices();

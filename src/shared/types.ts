@@ -113,6 +113,7 @@ export interface ElectronAPI {
   getMigrationStatus: () => Promise<MigrationStatus>;
   getBootstrapSteps: () => Promise<BootstrapStep[]>;
   pingDatabase: () => Promise<{ success: boolean; latencyMs: number; time?: string; error?: string }>;
+  executeQuery?: (sql: string) => Promise<{ success: boolean; data?: any; error?: string }>;
   
   // Prisma operations
   getServices: () => Promise<ServiceRecord[]>;

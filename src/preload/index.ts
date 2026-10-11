@@ -16,6 +16,7 @@ const api: ElectronAPI = {
   getMigrationStatus: () => ipcRenderer.invoke('get-migration-status'),
   getBootstrapSteps: () => ipcRenderer.invoke('get-bootstrap-steps'),
   pingDatabase: () => ipcRenderer.invoke('ping-database'),
+  executeQuery: (sql: string) => ipcRenderer.invoke('execute-query', sql),
 
   getServices: () => ipcRenderer.invoke('get-services'),
   createService: (data) => ipcRenderer.invoke('create-service', data),
