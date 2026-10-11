@@ -11,6 +11,7 @@ import { LogViewer } from '@/components/LogViewer';
 import { DiagnosticsCard } from '@/components/DiagnosticsCard';
 import { AppStore } from '@/components/AppStore';
 import { NetworkAccessCard } from '@/components/NetworkAccessCard';
+import { serverApi } from '@/shared/apiClient';
 import {
   SystemInfo,
   PostgresStatus,
@@ -80,25 +81,23 @@ export default function DashboardPage() {
   const fetchAllData = useCallback(async () => {
     if (typeof window === 'undefined') return;
 
-    if (!window.electronAPI) {
-      setIsElectronAvailable(false);
-      return;
-    }
+    const hasElectron = serverApi.isElectron();
+    setIsElectronAvailable(hasElectron);
 
     setIsRefreshing(true);
     try {
       const [sys, pg, mig, steps, srvs, rts, initialLogs, procStatuses, caddy, tailscale, life] = await Promise.all([
-        window.electronAPI.getSystemInfo().catch(() => null),
-        window.electronAPI.getPostgresStatus().catch(() => null),
-        window.electronAPI.getMigrationStatus().catch(() => null),
-        window.electronAPI.getBootstrapSteps().catch(() => []),
-        window.electronAPI.getServices().catch(() => []),
-        window.electronAPI.getRoutes().catch(() => []),
-        window.electronAPI.getLogs().catch(() => []),
-        window.electronAPI.getProcessStatuses().catch(() => ({})),
-        window.electronAPI.getCaddyStatus?.().catch(() => null),
-        window.electronAPI.getTailscaleStatus?.().catch(() => null),
-        window.electronAPI.getLifecycleStatus?.().catch(() => null),
+        serverApi.getSystemInfo().catch(() => null),
+        serverApi.getPostgresStatus().catch(() => null),
+        serverApi.getMigrationStatus().catch(() => null),
+        serverApi.getBootstrapSteps().catch(() => []),
+        serverApi.getServices().catch(() => []),
+        serverApi.getRoutes().catch(() => []),
+        serverApi.getLogs().catch(() => []),
+        serverApi.getProcessStatuses().catch(() => ({})),
+        serverApi.getCaddyStatus().catch(() => null),
+        serverApi.getTailscaleStatus().catch(() => null),
+        serverApi.getLifecycleStatus().catch(() => null),
       ]);
 
       if (sys) setSystemInfo(sys);
@@ -122,20 +121,20 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchAllData();
 
-    if (typeof window !== 'undefined' && window.electronAPI) {
-      const cleanupLog = window.electronAPI.onLogAdded((log) => {
+    if (typeof window !== 'undefined') {
+      const cleanupLog = serverApi.onLogAdded((log) => {
         setLogs((prev) => [...prev, log]);
       });
 
-      const cleanupSteps = window.electronAPI.onBootstrapUpdate((steps) => {
+      const cleanupSteps = serverApi.onBootstrapUpdate((steps) => {
         setBootstrapSteps(steps);
       });
 
-      const cleanupPg = window.electronAPI.onPostgresStatusChange((status) => {
+      const cleanupPg = serverApi.onPostgresStatusChange((status) => {
         setPostgresStatus(status);
       });
 
-      const cleanupProcStatus = window.electronAPI.onProcessStatusChanged?.((proc) => {
+      const cleanupProcStatus = serverApi.onProcessStatusChanged((proc) => {
         setProcessStatuses((prev) => ({
           ...prev,
           [proc.serviceId]: proc,
@@ -147,9 +146,14 @@ export default function DashboardPage() {
         );
       });
 
-      const cleanupServiceLog = window.electronAPI.onServiceLog?.(({ log }) => {
+      const cleanupServiceLog = serverApi.onServiceLog(({ log }) => {
         setLogs((prev) => [...prev, log]);
       });
+
+      // Polling timer for standard web browser session to keep real-time parity with Electron
+      const pollTimer = setInterval(() => {
+        fetchAllData();
+      }, 4000);
 
       return () => {
         cleanupLog?.();
@@ -157,20 +161,17 @@ export default function DashboardPage() {
         cleanupPg?.();
         cleanupProcStatus?.();
         cleanupServiceLog?.();
+        clearInterval(pollTimer);
       };
     }
   }, [fetchAllData]);
 
   const handlePing = async () => {
-    if (!window.electronAPI) {
-      return { success: false, latencyMs: 0, error: 'Electron IPC unavailable' };
-    }
-    return await window.electronAPI.pingDatabase();
+    return await serverApi.pingDatabase();
   };
 
   const handleStartService = async (serviceId: string) => {
-    if (!window.electronAPI) return;
-    const res = await window.electronAPI.startService(serviceId);
+    const res = await serverApi.startService(serviceId);
     if (!res.success && res.error) {
       alert(`Start failed: ${res.error}`);
     }
@@ -178,20 +179,17 @@ export default function DashboardPage() {
   };
 
   const handleStopService = async (serviceId: string) => {
-    if (!window.electronAPI) return;
-    await window.electronAPI.stopService(serviceId);
+    await serverApi.stopService(serviceId);
     await fetchAllData();
   };
 
   const handleRestartService = async (serviceId: string) => {
-    if (!window.electronAPI) return;
-    await window.electronAPI.restartService(serviceId);
+    await serverApi.restartService(serviceId);
     await fetchAllData();
   };
 
   const handleGetServiceLogs = async (serviceId: string) => {
-    if (!window.electronAPI) return [];
-    return await window.electronAPI.getServiceLogs(serviceId);
+    return await serverApi.getServiceLogs(serviceId);
   };
 
   const handleCreateService = async (data: {
@@ -202,8 +200,7 @@ export default function DashboardPage() {
     description?: string;
     autoStart?: boolean;
   }) => {
-    if (!window.electronAPI) return;
-    const newService = await window.electronAPI.createService(data);
+    const newService = await serverApi.createService(data);
     setServices((prev) => [...prev, newService]);
     await fetchAllData();
   };
@@ -217,8 +214,7 @@ export default function DashboardPage() {
     description: string;
     autoStart: boolean;
   }) => {
-    if (!window.electronAPI) return;
-    const newService = await window.electronAPI.createService({
+    const newService = await serverApi.createService({
       name: data.name,
       type: data.type,
       executable: data.executable,
@@ -227,13 +223,13 @@ export default function DashboardPage() {
       autoStart: data.autoStart,
     });
     if (newService && newService.id) {
-      await window.electronAPI.createRoute({
+      await serverApi.createRoute({
         serviceId: newService.id,
         subdomain: data.subdomain,
         targetPort: data.port,
         tlsEnabled: true,
       });
-      await window.electronAPI.startService(newService.id);
+      await serverApi.startService(newService.id);
     }
     await fetchAllData();
   };
@@ -245,27 +241,24 @@ export default function DashboardPage() {
     tlsEnabled?: boolean;
     customDomain?: string;
   }) => {
-    if (!window.electronAPI) return;
-    const newRoute = await window.electronAPI.createRoute(data);
+    const newRoute = await serverApi.createRoute(data);
     setRoutes((prev) => [...prev, newRoute]);
-    const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+    const caddy = await serverApi.getCaddyStatus().catch(() => null);
     if (caddy) setCaddyStatus(caddy);
   };
 
   const handleDeleteRoute = async (routeId: string) => {
-    if (!window.electronAPI) return;
-    const success = await window.electronAPI.deleteRoute(routeId);
+    const success = await serverApi.deleteRoute(routeId);
     if (success) {
       setRoutes((prev) => prev.filter((r) => r.id !== routeId));
-      const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+      const caddy = await serverApi.getCaddyStatus().catch(() => null);
       if (caddy) setCaddyStatus(caddy);
     }
   };
 
   const handleSyncCaddy = async () => {
-    if (!window.electronAPI) return;
-    const res = await window.electronAPI.syncCaddyRoutes();
-    const caddy = await window.electronAPI.getCaddyStatus?.().catch(() => null);
+    const res = await serverApi.syncCaddyRoutes();
+    const caddy = await serverApi.getCaddyStatus().catch(() => null);
     if (caddy) setCaddyStatus(caddy);
     if (!res.success && res.error) {
       alert(`Caddy sync error: ${res.error}`);
@@ -273,16 +266,12 @@ export default function DashboardPage() {
   };
 
   const handleTestRoute = async (host: string) => {
-    if (!window.electronAPI) {
-      return { success: false, latencyMs: 0, error: 'Electron IPC unavailable' };
-    }
-    return await window.electronAPI.testCaddyRoute(host);
+    return await serverApi.testCaddyRoute(host);
   };
 
   const handleConnectTailscale = async (authKey: string, hostname?: string) => {
-    if (!window.electronAPI) return;
-    const res = await window.electronAPI.connectTailscale(authKey, hostname);
-    const ts = await window.electronAPI.getTailscaleStatus?.().catch(() => null);
+    const res = await serverApi.connectTailscale(authKey, hostname);
+    const ts = await serverApi.getTailscaleStatus().catch(() => null);
     if (ts) setTailscaleStatus(ts);
     if (!res.success && res.error) {
       alert(`Tailscale connect failed: ${res.error}`);
@@ -290,37 +279,32 @@ export default function DashboardPage() {
   };
 
   const handleDisconnectTailscale = async () => {
-    if (!window.electronAPI) return;
-    await window.electronAPI.disconnectTailscale();
-    const ts = await window.electronAPI.getTailscaleStatus?.().catch(() => null);
+    await serverApi.disconnectTailscale();
+    const ts = await serverApi.getTailscaleStatus().catch(() => null);
     if (ts) setTailscaleStatus(ts);
   };
 
   const handleToggleAutoStart = async (enabled: boolean) => {
-    if (!window.electronAPI?.setAutoStart) return;
-    const res = await window.electronAPI.setAutoStart(enabled, true);
+    const res = await serverApi.setAutoStart(enabled, true);
     if (res.success) {
       setLifecycleStatus((prev) => (prev ? { ...prev, autoStart: res.autoStart } : null));
     }
   };
 
   const handleTogglePowerBlocker = async (enabled: boolean) => {
-    if (!window.electronAPI?.setPowerSaveBlocker) return;
-    const res = await window.electronAPI.setPowerSaveBlocker(enabled);
+    const res = await serverApi.setPowerSaveBlocker(enabled);
     if (res.success) {
       setLifecycleStatus((prev) => (prev ? { ...prev, powerBlocker: res.powerBlocker } : null));
     }
   };
 
   const handleMinimizeToTray = async () => {
-    if (!window.electronAPI?.minimizeToTray) return;
-    await window.electronAPI.minimizeToTray();
+    await serverApi.minimizeToTray();
   };
 
   const handleQuitApp = async () => {
-    if (!window.electronAPI?.quitApp) return;
     if (confirm('Are you sure you want to stop all server processes and exit Native Windows Server Hub?')) {
-      await window.electronAPI.quitApp();
+      await serverApi.quitApp();
     }
   };
 
@@ -526,8 +510,14 @@ export default function DashboardPage() {
         />
 
         {!isElectronAvailable && (
-          <div className="bg-amber-950/40 border-b border-amber-600/30 px-6 py-2 text-xs text-amber-300">
-            ⚠️ Electron IPC API not detected in standard browser context. Run via &apos;npm run dev&apos; or &apos;npm start&apos; to test native IPC channels.
+          <div className="bg-blue-950/40 border-b border-blue-600/30 px-6 py-2 text-xs text-blue-300 flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 live-indicator-active" />
+              <span>Remote Web Management Session Active • Connected to Native Windows Server Hub</span>
+            </div>
+            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
+              Web REST Bridge Active
+            </span>
           </div>
         )}
 

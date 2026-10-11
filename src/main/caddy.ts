@@ -112,25 +112,7 @@ export class CaddyManager {
     }
 
     logger.info('caddy', 'Initializing Caddy HTTP server container srv0 via /load...');
-    const initConfig = {
-      apps: {
-        http: {
-          servers: {
-            srv0: {
-              listen: [':80'],
-              routes: [],
-            },
-          },
-        },
-      },
-    };
-
-    const res = await this.request('POST', '/load', initConfig);
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      logger.success('caddy', 'Caddy HTTP server srv0 initialized successfully.');
-      return true;
-    }
-    throw new Error(`Failed to initialize Caddy HTTP server: ${JSON.stringify(res.data)}`);
+    return await this.syncAllRoutes().then((res) => res.success);
   }
 
   public getLocalIpv4Addresses(): string[] {
@@ -149,56 +131,96 @@ export class CaddyManager {
   }
 
   public async registerRoute(route: RouteRecord): Promise<boolean> {
-    await this.ensureServerInitialized();
+    logger.info('caddy', `Registering route for subdomain "${route.subdomain}" -> port ${route.targetPort}...`);
+    const res = await this.syncAllRoutes();
+    return res.success;
+  }
 
-    const localIps = this.getLocalIpv4Addresses();
-    const hosts = [
-      `${route.subdomain}.localhost`,
-      `${route.subdomain}.local`,
-    ];
+  public async removeRoute(routeId: string): Promise<boolean> {
+    logger.info('caddy', `Removing dynamic route route-${routeId} from Caddy...`);
+    const res = await this.syncAllRoutes();
+    return res.success;
+  }
 
-    // Automatically register wildcard nip.io & sslip.io for every LAN / Wi-Fi IP address
-    // so any phone, tablet, or external PC on the local network can resolve and access the service!
-    for (const ip of localIps) {
-      hosts.push(`${route.subdomain}.${ip}.nip.io`);
-      hosts.push(`${route.subdomain}.${ip}.sslip.io`);
-    }
+  public async syncAllRoutes(): Promise<{ success: boolean; count: number; error?: string }> {
+    try {
+      const routes = await this.prismaManager.getRoutes().catch(() => []);
+      const activeRoutes = routes.filter((r) => r.isActive);
+      const localIps = this.getLocalIpv4Addresses();
 
-    if (route.customDomain) {
-      hosts.push(route.customDomain);
-    }
+      logger.info('caddy', `Synchronizing ${activeRoutes.length} service routes, Web API bridge, and Catch-All Server Hub...`);
 
-    let payload: any;
-    if (route.subdomain === 'proxy' || route.targetPort === 2019) {
-      for (const ip of localIps) {
-        hosts.push(ip); // Match direct IP navigation: http://<LAN_IP>/
+      const caddyRoutes: any[] = [];
+
+      // 1. Service subdomains (e.g. files, ai, s3)
+      for (const route of activeRoutes) {
+        if (route.subdomain === 'proxy') continue; // Handled by Catch-All Hub and API bridge
+
+        const hosts = [
+          `${route.subdomain}.localhost`,
+          `${route.subdomain}.local`,
+        ];
+
+        for (const ip of localIps) {
+          hosts.push(`${route.subdomain}.${ip}.nip.io`);
+          hosts.push(`${route.subdomain}.${ip}.sslip.io`);
+        }
+
+        if (route.customDomain) {
+          hosts.push(route.customDomain);
+        }
+
+        caddyRoutes.push({
+          '@id': `route-${route.id}`,
+          match: [{ host: hosts }],
+          handle: [
+            {
+              handler: 'reverse_proxy',
+              headers: {
+                request: {
+                  set: {
+                    Host: ['{http.reverse_proxy.upstream.hostport}'],
+                  },
+                },
+              },
+              upstreams: [
+                {
+                  dial: `${route.targetHost}:${route.targetPort}`,
+                },
+              ],
+            },
+          ],
+          terminal: true,
+        });
       }
-      hosts.push('localhost');
-      hosts.push('127.0.0.1');
 
-      payload = {
-        '@id': `route-${route.id}`,
-        match: [{ host: hosts }],
+      // 2. Web API Bridge Route (/api/* -> 127.0.0.1:3001)
+      caddyRoutes.push({
+        '@id': 'route-api-bridge',
+        match: [{ path: ['/api/*', '/api'] }],
         handle: [
           {
-            handler: 'static_response',
-            status_code: 200,
+            handler: 'reverse_proxy',
             headers: {
-              'Content-Type': ['text/html; charset=utf-8'],
+              request: {
+                set: {
+                  Host: ['127.0.0.1:3001'],
+                },
+              },
             },
-            body: this.getCaddyGatewayHtml(),
+            upstreams: [
+              {
+                dial: '127.0.0.1:3001',
+              },
+            ],
           },
         ],
         terminal: true,
-      };
-    } else {
-      payload = {
-        '@id': `route-${route.id}`,
-        match: [
-          {
-            host: hosts,
-          },
-        ],
+      });
+
+      // 3. Catch-All Route: Any incoming IP (LAN / Tailscale) or domain -> Server Gateway Hub (127.0.0.1:3000)
+      caddyRoutes.push({
+        '@id': 'route-hub-dashboard',
         handle: [
           {
             handler: 'reverse_proxy',
@@ -211,54 +233,34 @@ export class CaddyManager {
             },
             upstreams: [
               {
-                dial: `${route.targetHost}:${route.targetPort}`,
+                dial: '127.0.0.1:3000',
               },
             ],
           },
         ],
         terminal: true,
+      });
+
+      const fullConfig = {
+        apps: {
+          http: {
+            servers: {
+              srv0: {
+                listen: [':80'],
+                routes: caddyRoutes,
+              },
+            },
+          },
+        },
       };
-    }
 
-    logger.info('caddy', `POSTing dynamic route payload to Caddy REST API for ${hosts.join(', ')} -> ${route.targetHost}:${route.targetPort}`);
-
-    // Remove existing if present to avoid duplicate ID
-    try {
-      await this.request('DELETE', `/id/route-${route.id}`);
-    } catch {}
-
-    const res = await this.request('POST', '/config/apps/http/servers/srv0/routes', payload);
-    if (res.statusCode >= 200 && res.statusCode < 300) {
-      logger.success('caddy', `Route for ${hosts.join(', ')} dynamically registered in Caddy without server restart.`);
-      return true;
-    }
-
-    throw new Error(`Caddy API error (${res.statusCode}): ${JSON.stringify(res.data)}`);
-  }
-
-  public async removeRoute(routeId: string): Promise<boolean> {
-    logger.info('caddy', `Removing dynamic route route-${routeId} from Caddy...`);
-    try {
-      const res = await this.request('DELETE', `/id/route-${routeId}`);
-      return res.statusCode >= 200 && res.statusCode < 300;
-    } catch (err: any) {
-      logger.warn('caddy', `Could not delete route-${routeId} from Caddy: ${err.message}`);
-      return false;
-    }
-  }
-
-  public async syncAllRoutes(): Promise<{ success: boolean; count: number; error?: string }> {
-    try {
-      await this.ensureServerInitialized();
-      const routes = await this.prismaManager.getRoutes();
-      const activeRoutes = routes.filter((r) => r.isActive);
-
-      logger.info('caddy', `Synchronizing ${activeRoutes.length} routes from PostgreSQL to Caddy Admin API...`);
-      for (const route of activeRoutes) {
-        await this.registerRoute(route);
+      const res = await this.request('POST', '/load', fullConfig);
+      if (res.statusCode >= 200 && res.statusCode < 300) {
+        logger.success('caddy', `Caddy routes synchronized: ${activeRoutes.length} services + Web API + Server Hub Dashboard on port 80.`);
+        return { success: true, count: activeRoutes.length };
       }
 
-      return { success: true, count: activeRoutes.length };
+      throw new Error(`Caddy /load API error (${res.statusCode}): ${JSON.stringify(res.data)}`);
     } catch (err: any) {
       logger.error('caddy', `Route synchronization failed: ${err.message}`);
       return { success: false, count: 0, error: err.message };

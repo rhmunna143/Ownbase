@@ -37,6 +37,8 @@ export interface SystemInfo {
   totalMemoryMb: number;
   freeMemoryMb: number;
   localIp?: string;
+  tailscaleIp?: string;
+  allIps?: string[];
 }
 
 export interface ServiceRecord {

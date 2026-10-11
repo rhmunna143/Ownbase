@@ -176,7 +176,7 @@ export class ProcessSupervisor {
         stdio: ['ignore', 'pipe', 'pipe'],
         env: {
           ...process.env,
-          OLLAMA_HOST: '127.0.0.1:11434',
+          OLLAMA_HOST: '0.0.0.0:11434',
         },
       });
 

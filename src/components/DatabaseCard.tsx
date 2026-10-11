@@ -18,6 +18,7 @@ import {
   Table,
 } from 'lucide-react';
 import { PostgresStatus, MigrationStatus } from '@/shared/types';
+import { serverApi } from '@/shared/apiClient';
 
 interface DatabaseCardProps {
   postgresStatus: PostgresStatus | null;
@@ -66,15 +67,9 @@ export const DatabaseCard: React.FC<DatabaseCardProps> = ({
 
   const handleExecuteSql = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
-    if (!window.electronAPI?.executeQuery) {
-      // Fallback: ping query
-      const res = await handlePing();
-      return;
-    }
-
     setIsExecutingSql(true);
     try {
-      const res = await window.electronAPI.executeQuery(sqlQuery);
+      const res = await serverApi.executeQuery(sqlQuery);
       setSqlResult(res);
     } catch (err: any) {
       setSqlResult({ success: false, error: err.message });

@@ -7,6 +7,7 @@ import { ProcessSupervisor } from './supervisor';
 import { CaddyManager } from './caddy';
 import { TailscaleManager } from './tailscale';
 import { LifecycleManager } from './lifecycle';
+import { WebApiServer } from './httpServer';
 import { registerIpcHandlers } from './ipc';
 import { logger } from './logger';
 import { BootstrapStep } from '../shared/types';
@@ -18,6 +19,7 @@ let supervisor: ProcessSupervisor;
 let caddyManager: CaddyManager;
 let tailscaleManager: TailscaleManager;
 let lifecycleManager: LifecycleManager;
+let webApiServer: WebApiServer;
 
 const bootstrapSteps: BootstrapStep[] = [
   { id: 'electron-init', name: 'Electron Shell', description: 'Initializing desktop runtime environment', status: 'pending' },
@@ -260,6 +262,17 @@ app.whenReady().then(async () => {
     () => bootstrapSteps
   );
 
+  webApiServer = new WebApiServer(
+    postgresManager,
+    prismaManager,
+    supervisor,
+    caddyManager,
+    tailscaleManager,
+    lifecycleManager,
+    () => bootstrapSteps
+  );
+  await webApiServer.start();
+
   await createWindow();
   if (mainWindow) {
     lifecycleManager.setWindow(mainWindow);
@@ -281,6 +294,12 @@ app.whenReady().then(async () => {
 // Phase 2 & 4: Graceful Termination with taskkill /pid <PID> /T /F before quit
 app.on('before-quit', async (event) => {
   logger.info('electron', 'Application quitting. Terminating all supervised processes...');
+  if (webApiServer) {
+    try {
+      await webApiServer.stop();
+    } catch {}
+  }
+
   if (lifecycleManager) {
     lifecycleManager.setIsQuitting(true);
     lifecycleManager.destroy();

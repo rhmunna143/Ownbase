@@ -21,13 +21,20 @@ export function registerIpcHandlers(
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
     const interfaces = os.networkInterfaces();
     let localIp = '127.0.0.1';
+    let tailscaleIp: string | undefined = undefined;
+    const allIps: string[] = [];
+
     for (const name of Object.keys(interfaces)) {
       const netList = interfaces[name];
       if (!netList) continue;
       for (const net of netList) {
         if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
-          localIp = net.address;
-          break;
+          allIps.push(net.address);
+          if (name.toLowerCase().includes('tailscale') || net.address.startsWith('100.')) {
+            tailscaleIp = net.address;
+          } else if (localIp === '127.0.0.1') {
+            localIp = net.address;
+          }
         }
       }
     }
@@ -38,11 +45,13 @@ export function registerIpcHandlers(
       release: os.release(),
       nodeVersion: process.versions.node,
       electronVersion: process.versions.electron,
-      appDataDir: app.getPath('userData'),
-      appVersion: app.getVersion(),
+      appDataDir: (app && typeof app.getPath === 'function') ? app.getPath('userData') : process.cwd(),
+      appVersion: (app && typeof app.getVersion === 'function') ? app.getVersion() : '0.1.0',
       totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
       freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
       localIp,
+      tailscaleIp,
+      allIps,
     };
   });
 
