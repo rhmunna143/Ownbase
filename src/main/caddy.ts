@@ -1,4 +1,5 @@
 import http from 'http';
+import os from 'os';
 import { logger } from './logger';
 import { PrismaManager } from './prisma';
 import { RouteRecord, CaddyStatus } from '../shared/types';
@@ -132,16 +133,49 @@ export class CaddyManager {
     throw new Error(`Failed to initialize Caddy HTTP server: ${JSON.stringify(res.data)}`);
   }
 
+  public getLocalIpv4Addresses(): string[] {
+    const interfaces = os.networkInterfaces();
+    const ips: string[] = [];
+    for (const name of Object.keys(interfaces)) {
+      const netList = interfaces[name];
+      if (!netList) continue;
+      for (const net of netList) {
+        if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
+          ips.push(net.address);
+        }
+      }
+    }
+    return ips;
+  }
+
   public async registerRoute(route: RouteRecord): Promise<boolean> {
     await this.ensureServerInitialized();
 
-    const hosts = [`${route.subdomain}.localhost`];
+    const localIps = this.getLocalIpv4Addresses();
+    const hosts = [
+      `${route.subdomain}.localhost`,
+      `${route.subdomain}.local`,
+    ];
+
+    // Automatically register wildcard nip.io & sslip.io for every LAN / Wi-Fi IP address
+    // so any phone, tablet, or external PC on the local network can resolve and access the service!
+    for (const ip of localIps) {
+      hosts.push(`${route.subdomain}.${ip}.nip.io`);
+      hosts.push(`${route.subdomain}.${ip}.sslip.io`);
+    }
+
     if (route.customDomain) {
       hosts.push(route.customDomain);
     }
 
     let payload: any;
     if (route.subdomain === 'proxy' || route.targetPort === 2019) {
+      for (const ip of localIps) {
+        hosts.push(ip); // Match direct IP navigation: http://<LAN_IP>/
+      }
+      hosts.push('localhost');
+      hosts.push('127.0.0.1');
+
       payload = {
         '@id': `route-${route.id}`,
         match: [{ host: hosts }],

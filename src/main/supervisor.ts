@@ -107,9 +107,16 @@ export class ProcessSupervisor {
           }
         }
 
-        args = ['-p', (service.port || 8080).toString(), '-a', '127.0.0.1', '-r', storageDir, '-d', dbPath];
+        args = ['-p', (service.port || 8080).toString(), '-a', '0.0.0.0', '-r', storageDir, '-d', dbPath];
       } else if (service.type === 'ollama') {
         args = ['serve'];
+      } else if (service.type === 'minio') {
+        const appData = (app && typeof app.getPath === 'function')
+          ? app.getPath('userData')
+          : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
+        const storageDir = path.join(appData, 'minio-data');
+        if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
+        args = ['server', storageDir, '--address', `:${service.port || 9000}`];
       }
     }
 

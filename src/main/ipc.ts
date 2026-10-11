@@ -19,6 +19,19 @@ export function registerIpcHandlers(
   getBootstrapSteps: () => BootstrapStep[]
 ) {
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
+    const interfaces = os.networkInterfaces();
+    let localIp = '127.0.0.1';
+    for (const name of Object.keys(interfaces)) {
+      const netList = interfaces[name];
+      if (!netList) continue;
+      for (const net of netList) {
+        if (net.family === 'IPv4' && !net.internal && !net.address.startsWith('169.254.')) {
+          localIp = net.address;
+          break;
+        }
+      }
+    }
+
     return {
       platform: os.platform(),
       arch: os.arch(),
@@ -29,6 +42,7 @@ export function registerIpcHandlers(
       appVersion: app.getVersion(),
       totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
       freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
+      localIp,
     };
   });
 

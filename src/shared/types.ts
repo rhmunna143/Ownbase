@@ -36,6 +36,7 @@ export interface SystemInfo {
   appVersion: string;
   totalMemoryMb: number;
   freeMemoryMb: number;
+  localIp?: string;
 }
 
 export interface ServiceRecord {

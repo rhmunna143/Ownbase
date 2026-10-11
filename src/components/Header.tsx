@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Server, Cpu, Layers, HardDrive, RefreshCw } from 'lucide-react';
+import { Server, Cpu, Layers, HardDrive, RefreshCw, Wifi } from 'lucide-react';
 import { SystemInfo } from '@/shared/types';
 
 interface HeaderProps {
@@ -58,8 +58,8 @@ export const Header: React.FC<HeaderProps> = ({ systemInfo, onRefresh, isRefresh
               </div>
               <span className="text-slate-700">|</span>
               <div className="flex items-center gap-1.5 text-slate-400">
-                <Layers className="w-3.5 h-3.5 text-purple-400" />
-                <span>Electron <span className="font-mono text-slate-200">v{systemInfo.electronVersion}</span></span>
+                <Wifi className="w-3.5 h-3.5 text-blue-400" />
+                <span>LAN: <span className="font-mono text-emerald-300 font-semibold">{systemInfo.localIp || '127.0.0.1'}</span></span>
               </div>
             </div>
           )}

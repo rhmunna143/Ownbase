@@ -10,6 +10,7 @@ import { LifecycleCard } from '@/components/LifecycleCard';
 import { LogViewer } from '@/components/LogViewer';
 import { DiagnosticsCard } from '@/components/DiagnosticsCard';
 import { AppStore } from '@/components/AppStore';
+import { NetworkAccessCard } from '@/components/NetworkAccessCard';
 import {
   SystemInfo,
   PostgresStatus,
@@ -593,6 +594,14 @@ export default function DashboardPage() {
                 processStatuses={processStatuses}
                 onPingDatabase={handlePing}
                 onTestRoute={handleTestRoute}
+              />
+
+              {/* Mobile, Local Wi-Fi Network & Tailscale VPN Access */}
+              <NetworkAccessCard
+                systemInfo={systemInfo}
+                tailscaleStatus={tailscaleStatus}
+                onConnectTailscale={handleConnectTailscale}
+                onDisconnectTailscale={handleDisconnectTailscale}
               />
 
               {/* Quick Launch Cards */}

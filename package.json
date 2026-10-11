@@ -19,6 +19,7 @@
     "prisma:migrate": "prisma migrate dev",
     "prisma:deploy": "prisma migrate deploy",
     "setup:postgres": "node scripts/setup-postgres.js",
+    "compile:minio": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources/bin/minio.exe /target:exe scripts/minio_server.cs",
     "dist:dir": "npm run build && electron-builder --dir",
     "dist:win": "npm run build && electron-builder --win nsis:x64",
     "package": "npm run dist:win"
