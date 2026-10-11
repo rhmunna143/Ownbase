@@ -43,7 +43,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo [3/3] Packaging NSIS Setup Wizard .exe via electron-builder...
+echo [3/3] Packaging NSIS Setup Wizard .exe into release\ ...
 call npx electron-builder --win nsis:x64
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] electron-builder packaging failed.
@@ -56,7 +56,7 @@ echo ======================================================================
 echo  [SUCCESS] Installable Windows Setup EXE built successfully!
 echo.
 echo  Artifact Location:
-echo  dist\release\Native Windows Server Hub-Setup-0.1.0.exe
+echo  release\Native Windows Server Hub-Setup-0.1.0.exe
 echo ======================================================================
 echo.
 

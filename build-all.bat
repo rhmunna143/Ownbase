@@ -33,7 +33,7 @@ if %ERRORLEVEL% neq 0 (
 )
 
 echo.
-echo [3/3] Packaging Both NSIS Setup + Portable .exe via electron-builder...
+echo [3/3] Packaging Both NSIS Setup + Portable .exe into release\ ...
 call npx electron-builder --win nsis:x64 portable:x64
 if %ERRORLEVEL% neq 0 (
     echo [ERROR] electron-builder packaging failed.
@@ -46,7 +46,7 @@ echo ======================================================================
 echo  [SUCCESS] All distribution packages built successfully!
 echo.
 echo  Output Directory:
-echo    dist\release\
+echo    release\
 echo.
 echo  Artifacts Created:
 echo    1. Setup Installer : Native Windows Server Hub-Setup-0.1.0.exe

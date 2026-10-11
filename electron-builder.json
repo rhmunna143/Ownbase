@@ -1,8 +1,8 @@
 {
   "$schema": "https://raw.githubusercontent.com/electron-userland/electron-builder/master/packages/app-builder-lib/scheme.json",
-  "appId": "com.nativewindows.serverhub",
+  "appId": "com.rhmunna143.nativewindowsserverhub",
   "productName": "Native Windows Server Hub",
-  "copyright": "Copyright © 2026 Native Windows Server Hub",
+  "copyright": "Copyright © 2026 rhmunna143",
   "directories": {
     "output": "release",
     "buildResources": "assets"
@@ -56,6 +56,10 @@
       {
         "target": "nsis",
         "arch": ["x64"]
+      },
+      {
+        "target": "portable",
+        "arch": ["x64"]
       }
     ],
     "icon": "assets/icon.ico",
@@ -64,8 +68,9 @@
     "signAndEditExecutable": false
   },
   "nsis": {
-    "oneClick": true,
+    "oneClick": false,
     "perMachine": false,
+    "allowToChangeInstallationDirectory": true,
     "allowElevation": true,
     "createDesktopShortcut": true,
     "createStartMenuShortcut": true,
@@ -73,6 +78,10 @@
     "uninstallDisplayName": "Native Windows Server Hub",
     "deleteAppDataOnUninstall": false,
     "installerIcon": "assets/icon.ico",
-    "uninstallerIcon": "assets/icon.ico"
+    "uninstallerIcon": "assets/icon.ico",
+    "artifactName": "${productName}-Setup-${version}.${ext}"
+  },
+  "portable": {
+    "artifactName": "${productName}-Portable-${version}.${ext}"
   }
 }

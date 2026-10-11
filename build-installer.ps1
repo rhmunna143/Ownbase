@@ -33,7 +33,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-Write-Host "`n[3/3] Packaging NSIS Setup Wizard .exe via electron-builder..." -ForegroundColor Yellow
+Write-Host "`n[3/3] Packaging NSIS Setup Wizard .exe into release\ ..." -ForegroundColor Yellow
 npx electron-builder --win nsis:x64
 if ($LASTEXITCODE -ne 0) {
     Write-Error "electron-builder packaging failed with exit code $LASTEXITCODE."
@@ -44,5 +44,5 @@ Write-Host "`n==================================================================
 Write-Host " [SUCCESS] Windows Setup Installer built successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host " Output File:" -ForegroundColor White
-Write-Host "   dist\release\Native Windows Server Hub-Setup-0.1.0.exe" -ForegroundColor Green
+Write-Host "   release\Native Windows Server Hub-Setup-0.1.0.exe" -ForegroundColor Green
 Write-Host "======================================================================" -ForegroundColor Green

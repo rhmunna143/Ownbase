@@ -162,16 +162,16 @@ New-NetFirewallRule -DisplayName "Windows Server Hub" -Direction Inbound -LocalP
 | `npm run setup:postgres` | Downloads and unpacks portable PostgreSQL 16 into `extraResources/pgsql` |
 | `npm run prisma:generate` | Regenerates Prisma Client models |
 | `npm run prisma:deploy` | Deploys pending Prisma database migrations to PostgreSQL |
-| `npm run dist:dir` | Builds unpacked Windows application directory (`dist/release/win-unpacked`) |
-| `npm run build:installer` | Creates standalone Windows setup wizard installer (`dist/release/*.exe`) |
-| `npm run build:portable` | Creates standalone single-file portable Windows executable (`dist/release/*-Portable-*.exe`) |
+| `npm run dist:dir` | Builds unpacked Windows application directory (`release/win-unpacked`) |
+| `npm run build:installer` | Creates standalone Windows setup wizard installer (`release/*.exe`) |
+| `npm run build:portable` | Creates standalone single-file portable Windows executable (`release/*-Portable-*.exe`) |
 | `npm run build:all` | Compiles both the NSIS installer and portable `.exe` in one pass |
 
 ---
 
 ## 📦 Packaging & Building Executables (.exe)
 
-Native Windows Server Hub provides dedicated build scripts to generate both **portable** and **installable** 64-bit Windows executables with all native services bundled (`caddy.exe`, `filebrowser.exe`, `minio.exe`, `ollama.exe`, `tailscale.exe`, and portable `PostgreSQL 16`).
+Native Windows Server Hub provides dedicated build scripts to generate both **portable** and **installable** 64-bit Windows executables with all native services bundled (`caddy.exe`, `filebrowser.exe`, `minio.exe`, `ollama.exe`, `tailscale.exe`, and portable `PostgreSQL 16`). All output binaries are written directly to your `release/` directory.
 
 ### 1. Standalone Portable Executable (`.exe`)
 The portable executable runs immediately from any folder, USB flash drive, or desktop without installation, registry modification, or administrator privileges:
@@ -188,7 +188,7 @@ The portable executable runs immediately from any folder, USB flash drive, or de
   npm run build:portable
   ```
 - **Output Artifact:**
-  `dist\release\Native Windows Server Hub-Portable-0.1.0.exe`
+  `release\Native Windows Server Hub-Portable-0.1.0.exe`
 
 ### 2. Windows NSIS Setup Installer (`.exe`)
 The installable setup wizard installs the application into `Program Files` or a custom directory, creates Desktop and Start Menu shortcuts, and provides clean uninstallation:
@@ -205,7 +205,7 @@ The installable setup wizard installs the application into `Program Files` or a 
   npm run build:installer
   ```
 - **Output Artifact:**
-  `dist\release\Native Windows Server Hub-Setup-0.1.0.exe`
+  `release\Native Windows Server Hub-Setup-0.1.0.exe`
 
 ### 3. Build Both Simultaneously
 To compile both portable and installer packages in a single run:
