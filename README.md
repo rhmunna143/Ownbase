@@ -55,11 +55,14 @@ flowchart TD
 ## ✨ Key Features
 
 - **Zero Virtualization Overhead:** Runs directly on Windows 10/11 without WSL2, Docker Desktop, or Hyper-V. Saves gigabytes of RAM and starts in under 2 seconds.
+- **100% Mobile-Friendly & Responsive:** Sleek mobile-first interface featuring a slide-out drawer, bottom navigation bar, and touch-optimized controls for phones (iOS/Android) and tablets.
+- **Native File Explorer & High-Performance Media Streaming:** Interactive file browser with 1-tap folder opening, multi-file uploads, and **HTTP 206 Partial Content (Byte-Range requests)** streaming for playing 1080p/4K MKV, MP4, and WebM videos smoothly on mobile phones without buffering.
+- **Google Photos & Memories Gallery Service:** Chronological photo and video timeline ("Today", "Yesterday", "October 2026"), 1-tap direct camera upload from mobile, full-screen lightbox, favorites, and albums.
+- **Universal REST APIs & OpenAPI 3.0 Specification:** Complete documented REST endpoints for every subsystem (Files, Media Streaming, Photos, Database, Caddy, Supervisor, Tailscale) with an interactive live runner and complete [API Documentation](API_DOCUMENTATION.md) for building custom mobile apps (Flutter, React Native, Swift).
 - **Embedded Portable PostgreSQL 16:** Automatically initializes a standalone database cluster (`initdb`), runs as a silent native engine on port `5432`, and executes automated Prisma ORM migrations (`prisma migrate deploy`). Includes an interactive SQL query runner.
 - **Robust Native Process Supervisor:** Spawns, monitors, restarts, and streams live console logs for Windows executables. Eliminates zombie processes on app exit using tree termination (`taskkill /PID <PID> /T /F`).
 - **Dynamic Caddy Reverse Proxy:** Zero-downtime, zero-config route registration via Caddy's Admin REST API (port `2019`). Automatically maps subdomains and wildcard domains (`*.nip.io` / `*.sslip.io`) without editing hosts files.
 - **Tailscale Mesh VPN Integration:** Access your home/office Windows server from anywhere in the world across cellular data or coffee shop Wi-Fi without router port forwarding or public static IPs.
-- **Universal Remote Web Management:** Built-in Web REST API bridge (`:3001`) lets you manage services, check server metrics, and view logs from your phone or tablet just like 1Panel.
 - **24/7 Server Persistence & Power Lock:** Integrates Windows System Tray minimization, automatic startup on Windows boot (`app.setLoginItemSettings`), and power suspension blocker (`powerSaveBlocker.start('prevent-app-suspension')`) so your server keeps running with the laptop lid closed.
 - **1-Click App Store:** Provision native services with automatic route configuration in seconds.
 

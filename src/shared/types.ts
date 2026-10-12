@@ -185,6 +185,76 @@ export interface LifecycleStatus {
   };
 }
 
+export interface FileItem {
+  name: string;
+  path: string;
+  isDirectory: boolean;
+  size: number;
+  modifiedAt: string;
+  extension: string;
+  mimeType: string;
+  isVideo: boolean;
+  isImage: boolean;
+  isAudio: boolean;
+  isText: boolean;
+}
+
+export interface FileListResponse {
+  currentPath: string;
+  parentPath: string | null;
+  items: FileItem[];
+  totalCount: number;
+  totalSize: number;
+  storageRoot: string;
+}
+
+export interface PhotoItem {
+  id: string;
+  name: string;
+  path: string;
+  type: 'photo' | 'video';
+  mimeType: string;
+  size: number;
+  date: string;
+  dateFormatted: string;
+  groupKey: string;
+  mediaUrl: string;
+  streamUrl: string;
+  isFavorite: boolean;
+  durationSec?: number;
+}
+
+export interface PhotoTimelineSection {
+  dateHeader: string;
+  items: PhotoItem[];
+}
+
+export interface PhotosResponse {
+  timeline: PhotoTimelineSection[];
+  totalCount: number;
+  photosCount: number;
+  videosCount: number;
+}
+
+export interface ApiEndpointDoc {
+  id: string;
+  method: 'GET' | 'POST' | 'PUT' | 'DELETE';
+  path: string;
+  category: string;
+  summary: string;
+  description: string;
+  parameters?: Array<{
+    name: string;
+    type: string;
+    required?: boolean;
+    description: string;
+    in: 'query' | 'body' | 'path';
+    default?: any;
+  }>;
+  sampleRequest?: any;
+  sampleResponse?: any;
+}
+
 declare global {
   interface Window {
     electronAPI: ElectronAPI;

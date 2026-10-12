@@ -218,7 +218,40 @@ export class CaddyManager {
         terminal: true,
       });
 
-      // 3. Catch-All Route: Any incoming IP (LAN / Tailscale) or domain -> Server Gateway Hub (127.0.0.1:3000)
+      // 3. Photos Service Subdomain (photos.localhost, photos.<IP>.nip.io)
+      const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+      const hubDial = isDev ? '127.0.0.1:3000' : '127.0.0.1:3001';
+
+      const photoHosts = ['photos.localhost', 'photos.local'];
+      for (const ip of localIps) {
+        photoHosts.push(`photos.${ip}.nip.io`);
+        photoHosts.push(`photos.${ip}.sslip.io`);
+      }
+
+      caddyRoutes.push({
+        '@id': 'route-photos-hub',
+        match: [{ host: photoHosts }],
+        handle: [
+          {
+            handler: 'reverse_proxy',
+            headers: {
+              request: {
+                set: {
+                  Host: [hubDial],
+                },
+              },
+            },
+            upstreams: [
+              {
+                dial: hubDial,
+              },
+            ],
+          },
+        ],
+        terminal: true,
+      });
+
+      // 4. Catch-All Route: Any incoming IP (LAN / Tailscale) or domain -> Server Gateway Hub
       caddyRoutes.push({
         '@id': 'route-hub-dashboard',
         handle: [
@@ -233,7 +266,7 @@ export class CaddyManager {
             },
             upstreams: [
               {
-                dial: '127.0.0.1:3000',
+                dial: hubDial,
               },
             ],
           },

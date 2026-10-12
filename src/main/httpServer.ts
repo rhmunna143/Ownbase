@@ -1,5 +1,7 @@
 import http from 'http';
 import os from 'os';
+import fs from 'fs';
+import path from 'path';
 import { app } from 'electron';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
@@ -7,12 +9,15 @@ import { ProcessSupervisor } from './supervisor';
 import { CaddyManager } from './caddy';
 import { TailscaleManager } from './tailscale';
 import { LifecycleManager } from './lifecycle';
+import { FileManager } from './fileManager';
+import { API_ENDPOINTS, getOpenApiSpec } from './openApiSpec';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
 
 export class WebApiServer {
   private server: http.Server | null = null;
   private port: number = 3001;
+  private fileManager: FileManager;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -22,15 +27,22 @@ export class WebApiServer {
     private tailscaleManager: TailscaleManager,
     private lifecycleManager: LifecycleManager,
     private getBootstrapSteps: () => BootstrapStep[]
-  ) {}
+  ) {
+    this.fileManager = new FileManager();
+  }
+
+  public getFileManager(): FileManager {
+    return this.fileManager;
+  }
 
   public start(): Promise<boolean> {
     return new Promise((resolve) => {
       this.server = http.createServer(async (req, res) => {
-        // Universal CORS headers
+        // Universal CORS headers for web & mobile clients
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
 
         if (req.method === 'OPTIONS') {
           res.writeHead(200);
@@ -42,6 +54,9 @@ export class WebApiServer {
         const pathname = parsedUrl.pathname;
 
         try {
+          // ==========================================
+          // 1. SYSTEM & SUPERVISOR APIS
+          // ==========================================
           if (pathname === '/api/system-info' && req.method === 'GET') {
             const interfaces = os.networkInterfaces();
             let localIp = '127.0.0.1';
@@ -242,6 +257,116 @@ export class WebApiServer {
             return;
           }
 
+          // ==========================================
+          // 2. FILE EXPLORER & MOBILE MEDIA STREAMING
+          // ==========================================
+          if (pathname === '/api/files/list' && req.method === 'GET') {
+            const subPath = parsedUrl.searchParams.get('path') || '';
+            const list = this.fileManager.listFiles(subPath);
+            this.sendJson(res, list);
+            return;
+          }
+
+          if (pathname === '/api/files/stream' && req.method === 'GET') {
+            const subPath = parsedUrl.searchParams.get('path') || '';
+            this.fileManager.streamMedia(subPath, req, res);
+            return;
+          }
+
+          if (pathname === '/api/files/download' && req.method === 'GET') {
+            const subPath = parsedUrl.searchParams.get('path') || '';
+            this.fileManager.downloadFile(subPath, res);
+            return;
+          }
+
+          if (pathname === '/api/files/content' && req.method === 'GET') {
+            const subPath = parsedUrl.searchParams.get('path') || '';
+            const text = this.fileManager.readFileContent(subPath);
+            this.sendJson(res, { content: text });
+            return;
+          }
+
+          if (pathname === '/api/files/mkdir' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.createDirectory(body.targetPath || '', body.folderName || 'New Folder');
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (pathname === '/api/files/rename' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.renameItem(body.oldPath, body.newName);
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (pathname === '/api/files/delete' && (req.method === 'DELETE' || req.method === 'POST')) {
+            const body = req.method === 'DELETE'
+              ? { path: parsedUrl.searchParams.get('path') || '' }
+              : await this.parseJsonBody(req);
+            const ok = this.fileManager.deleteItem(body.path);
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (pathname === '/api/files/upload' && req.method === 'POST') {
+            const targetPath = parsedUrl.searchParams.get('targetPath') || '';
+            const filename = parsedUrl.searchParams.get('filename') || `upload_${Date.now()}`;
+            const buffer = await this.readRawBody(req);
+            const savedPath = this.fileManager.saveFileBuffer(targetPath, filename, buffer);
+            this.sendJson(res, { success: true, path: savedPath });
+            return;
+          }
+
+          // ==========================================
+          // 3. GOOGLE PHOTOS & MEMORIES GALLERY
+          // ==========================================
+          if (pathname === '/api/photos/timeline' && req.method === 'GET') {
+            const favoritesOnly = parsedUrl.searchParams.get('favoritesOnly') === 'true';
+            const typeFilter = parsedUrl.searchParams.get('type') as any || 'all';
+            const photosData = this.fileManager.getPhotosTimeline({
+              favoritesOnly,
+              type: typeFilter,
+            });
+            this.sendJson(res, photosData);
+            return;
+          }
+
+          if (pathname === '/api/photos/media' && req.method === 'GET') {
+            const subPath = parsedUrl.searchParams.get('path') || '';
+            this.fileManager.streamMedia(subPath, req, res);
+            return;
+          }
+
+          if (pathname === '/api/photos/favorite' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const isFav = this.fileManager.toggleFavorite(body.path);
+            this.sendJson(res, { success: true, isFavorite: isFav });
+            return;
+          }
+
+          // ==========================================
+          // 4. OPENAPI 3.0 & INTERACTIVE DOCS
+          // ==========================================
+          if (pathname === '/api/openapi.json' && req.method === 'GET') {
+            const host = req.headers.host || `127.0.0.1:${this.port}`;
+            this.sendJson(res, getOpenApiSpec(host));
+            return;
+          }
+
+          if (pathname === '/api/docs/endpoints' && req.method === 'GET') {
+            this.sendJson(res, API_ENDPOINTS);
+            return;
+          }
+
+          // ==========================================
+          // 5. STATIC WEB APP SERVING (Next.js out/ for mobile & remote clients)
+          // ==========================================
+          if (!pathname.startsWith('/api')) {
+            const served = await this.serveStaticFile(req, res, pathname);
+            if (served) return;
+          }
+
           // Fallback 404
           res.writeHead(404, { 'Content-Type': 'application/json' });
           res.end(JSON.stringify({ error: `Not found: ${req.method} ${pathname}` }));
@@ -252,8 +377,9 @@ export class WebApiServer {
         }
       });
 
-      this.server.listen(this.port, '127.0.0.1', () => {
-        logger.success('web-api', `Native Windows Server Web API Bridge listening on http://127.0.0.1:${this.port}/api`);
+      // Bind to 0.0.0.0 so phones on local Wi-Fi / LAN and Tailscale mesh can connect directly
+      this.server.listen(this.port, '0.0.0.0', () => {
+        logger.success('web-api', `Native Windows Server Web API & Mobile Gateway listening on http://0.0.0.0:${this.port}`);
         resolve(true);
       });
 
@@ -280,7 +406,7 @@ export class WebApiServer {
       'Content-Type': 'application/json; charset=utf-8',
       'Access-Control-Allow-Origin': '*',
       'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
     });
     res.end(json);
   }
@@ -299,5 +425,80 @@ export class WebApiServer {
         }
       });
     });
+  }
+
+  private readRawBody(req: http.IncomingMessage): Promise<Buffer> {
+    return new Promise((resolve) => {
+      const chunks: Buffer[] = [];
+      req.on('data', (chunk) => {
+        chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+      });
+      req.on('end', () => {
+        resolve(Buffer.concat(chunks));
+      });
+    });
+  }
+
+  private async serveStaticFile(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<boolean> {
+    const candidateDirs = [
+      path.join(process.cwd(), 'out'),
+      path.join(__dirname, '..', '..', 'out'),
+      path.join(__dirname, '..', '..', '..', 'out'),
+    ];
+
+    try {
+      if (app && typeof app.getAppPath === 'function') {
+        candidateDirs.unshift(path.join(app.getAppPath(), 'out'));
+      }
+    } catch {}
+
+    let outDir: string | null = null;
+    for (const d of candidateDirs) {
+      if (fs.existsSync(d) && fs.existsSync(path.join(d, 'index.html'))) {
+        outDir = d;
+        break;
+      }
+    }
+
+    if (!outDir) return false;
+
+    // Clean pathname
+    let relPath = pathname.replace(/^\/+/, '');
+    if (!relPath || relPath === '/') {
+      relPath = 'index.html';
+    }
+
+    let targetFile = path.join(outDir, relPath);
+
+    // If target is directory, look for index.html
+    if (fs.existsSync(targetFile) && fs.statSync(targetFile).isDirectory()) {
+      targetFile = path.join(targetFile, 'index.html');
+    }
+
+    // Try HTML extension fallback (e.g. /about -> /about.html)
+    if (!fs.existsSync(targetFile) && fs.existsSync(`${targetFile}.html`)) {
+      targetFile = `${targetFile}.html`;
+    }
+
+    // SPA fallback to index.html
+    if (!fs.existsSync(targetFile)) {
+      targetFile = path.join(outDir, 'index.html');
+    }
+
+    if (fs.existsSync(targetFile) && !fs.statSync(targetFile).isDirectory()) {
+      const mime = this.fileManager.getMimeType(targetFile);
+      const stat = fs.statSync(targetFile);
+
+      res.writeHead(200, {
+        'Content-Type': mime,
+        'Content-Length': stat.size,
+        'Cache-Control': relPath.startsWith('_next/static') ? 'public, max-age=31536000, immutable' : 'no-cache',
+      });
+
+      fs.createReadStream(targetFile).pipe(res);
+      return true;
+    }
+
+    return false;
   }
 }

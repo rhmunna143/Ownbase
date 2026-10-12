@@ -338,4 +338,77 @@ export const serverApi = {
     }
     return () => {};
   },
+
+  // File Manager & Media Streaming operations
+  listFiles: async (path = ''): Promise<any> => {
+    const res = await fetch(getApiUrl(`/api/files/list?path=${encodeURIComponent(path)}`)).catch(() => null);
+    return res && res.ok ? await res.json() : { currentPath: path, parentPath: null, items: [], totalCount: 0, totalSize: 0 };
+  },
+
+  createFolder: async (targetPath: string, folderName: string): Promise<{ success: boolean }> => {
+    const res = await fetch(getApiUrl('/api/files/mkdir'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ targetPath, folderName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  renameItem: async (oldPath: string, newName: string): Promise<{ success: boolean }> => {
+    const res = await fetch(getApiUrl('/api/files/rename'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ oldPath, newName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  deleteItem: async (path: string): Promise<{ success: boolean }> => {
+    const res = await fetch(getApiUrl('/api/files/delete'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  getFileContent: async (path: string): Promise<{ content: string }> => {
+    const res = await fetch(getApiUrl(`/api/files/content?path=${encodeURIComponent(path)}`)).catch(() => null);
+    return res && res.ok ? await res.json() : { content: '' };
+  },
+
+  uploadFile: async (targetPath: string, file: File): Promise<{ success: boolean; path?: string }> => {
+    const res = await fetch(getApiUrl(`/api/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/octet-stream' },
+      body: file,
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  // Google Photos & Memories operations
+  getPhotosTimeline: async (favoritesOnly = false, type = 'all'): Promise<any> => {
+    const res = await fetch(getApiUrl(`/api/photos/timeline?favoritesOnly=${favoritesOnly}&type=${type}`)).catch(() => null);
+    return res && res.ok ? await res.json() : { timeline: [], totalCount: 0, photosCount: 0, videosCount: 0 };
+  },
+
+  togglePhotoFavorite: async (path: string): Promise<{ success: boolean; isFavorite: boolean }> => {
+    const res = await fetch(getApiUrl('/api/photos/favorite'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, isFavorite: false };
+  },
+
+  // Interactive API Documentation
+  getApiEndpoints: async (): Promise<any[]> => {
+    const res = await fetch(getApiUrl('/api/docs/endpoints')).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getOpenApiSpec: async (): Promise<any> => {
+    const res = await fetch(getApiUrl('/api/openapi.json')).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
 };

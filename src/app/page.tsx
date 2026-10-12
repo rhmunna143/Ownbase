@@ -11,6 +11,9 @@ import { LogViewer } from '@/components/LogViewer';
 import { DiagnosticsCard } from '@/components/DiagnosticsCard';
 import { AppStore } from '@/components/AppStore';
 import { NetworkAccessCard } from '@/components/NetworkAccessCard';
+import { FileBrowserCard } from '@/components/FileBrowserCard';
+import { PhotosGalleryCard } from '@/components/PhotosGalleryCard';
+import { ApiDocsCard } from '@/components/ApiDocsCard';
 import { serverApi } from '@/shared/apiClient';
 import {
   SystemInfo,
@@ -45,12 +48,18 @@ import {
   Bot,
   Minimize2,
   PowerOff,
+  Camera,
+  Code,
+  X,
+  Menu,
+  Film,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'services' | 'store' | 'routes' | 'database' | 'settings' | 'logs'
+    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'settings' | 'logs'
   >('overview');
+  const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
@@ -104,15 +113,13 @@ export default function DashboardPage() {
       if (pg) setPostgresStatus(pg);
       if (mig) setMigrationStatus(mig);
       if (steps && steps.length > 0) setBootstrapSteps(steps);
-      setServices(srvs || []);
-      setRoutes(rts || []);
-      setLogs(initialLogs || []);
-      setProcessStatuses(procStatuses || {});
+      if (srvs) setServices(srvs);
+      if (rts) setRoutes(rts);
+      if (initialLogs) setLogs(initialLogs);
+      if (procStatuses) setProcessStatuses(procStatuses);
       if (caddy) setCaddyStatus(caddy);
       if (tailscale) setTailscaleStatus(tailscale);
       if (life) setLifecycleStatus(life);
-    } catch (e) {
-      console.error('Data fetch error:', e);
     } finally {
       setIsRefreshing(false);
     }
@@ -121,75 +128,39 @@ export default function DashboardPage() {
   useEffect(() => {
     fetchAllData();
 
-    if (typeof window !== 'undefined') {
-      const cleanupLog = serverApi.onLogAdded((log) => {
-        setLogs((prev) => [...prev, log]);
-      });
+    // Event subscriptions
+    const unsubLog = serverApi.onLogAdded((log) => {
+      setLogs((prev) => [log, ...prev].slice(0, 500));
+    });
 
-      const cleanupSteps = serverApi.onBootstrapUpdate((steps) => {
-        setBootstrapSteps(steps);
-      });
+    const unsubSteps = serverApi.onBootstrapUpdate((steps) => {
+      setBootstrapSteps(steps);
+    });
 
-      const cleanupPg = serverApi.onPostgresStatusChange((status) => {
-        setPostgresStatus(status);
-      });
+    const unsubPg = serverApi.onPostgresStatusChange((status) => {
+      setPostgresStatus(status);
+    });
 
-      const cleanupProcStatus = serverApi.onProcessStatusChanged((proc) => {
-        setProcessStatuses((prev) => ({
-          ...prev,
-          [proc.serviceId]: proc,
-        }));
-        setServices((prev) =>
-          prev.map((s) =>
-            s.id === proc.serviceId ? { ...s, status: proc.status, pid: proc.pid ?? null } : s
-          )
-        );
-      });
+    const unsubProc = serverApi.onProcessStatusChanged((status) => {
+      setProcessStatuses((prev) => ({
+        ...prev,
+        [status.serviceId]: status,
+      }));
+    });
 
-      const cleanupServiceLog = serverApi.onServiceLog(({ log }) => {
-        setLogs((prev) => [...prev, log]);
-      });
+    const interval = setInterval(fetchAllData, 8000);
 
-      // Polling timer for standard web browser session to keep real-time parity with Electron
-      const pollTimer = setInterval(() => {
-        fetchAllData();
-      }, 4000);
-
-      return () => {
-        cleanupLog?.();
-        cleanupSteps?.();
-        cleanupPg?.();
-        cleanupProcStatus?.();
-        cleanupServiceLog?.();
-        clearInterval(pollTimer);
-      };
-    }
+    return () => {
+      unsubLog();
+      unsubSteps();
+      unsubPg();
+      unsubProc();
+      clearInterval(interval);
+    };
   }, [fetchAllData]);
 
   const handlePing = async () => {
     return await serverApi.pingDatabase();
-  };
-
-  const handleStartService = async (serviceId: string) => {
-    const res = await serverApi.startService(serviceId);
-    if (!res.success && res.error) {
-      alert(`Start failed: ${res.error}`);
-    }
-    await fetchAllData();
-  };
-
-  const handleStopService = async (serviceId: string) => {
-    await serverApi.stopService(serviceId);
-    await fetchAllData();
-  };
-
-  const handleRestartService = async (serviceId: string) => {
-    await serverApi.restartService(serviceId);
-    await fetchAllData();
-  };
-
-  const handleGetServiceLogs = async (serviceId: string) => {
-    return await serverApi.getServiceLogs(serviceId);
   };
 
   const handleCreateService = async (data: {
@@ -200,9 +171,8 @@ export default function DashboardPage() {
     description?: string;
     autoStart?: boolean;
   }) => {
-    const newService = await serverApi.createService(data);
-    setServices((prev) => [...prev, newService]);
-    await fetchAllData();
+    await serverApi.createService(data);
+    fetchAllData();
   };
 
   const handleCreateServiceWithRoute = async (data: {
@@ -210,28 +180,48 @@ export default function DashboardPage() {
     type: string;
     executable: string;
     port: number;
-    subdomain: string;
     description: string;
-    autoStart: boolean;
+    subdomain: string;
   }) => {
-    const newService = await serverApi.createService({
+    const svc = await serverApi.createService({
       name: data.name,
       type: data.type,
       executable: data.executable,
       port: data.port,
       description: data.description,
-      autoStart: data.autoStart,
+      autoStart: true,
     });
-    if (newService && newService.id) {
+
+    if (svc && svc.id) {
       await serverApi.createRoute({
-        serviceId: newService.id,
+        serviceId: svc.id,
         subdomain: data.subdomain,
         targetPort: data.port,
         tlsEnabled: true,
       });
-      await serverApi.startService(newService.id);
+      await serverApi.syncCaddyRoutes();
     }
-    await fetchAllData();
+
+    fetchAllData();
+  };
+
+  const handleStartService = async (serviceId: string) => {
+    await serverApi.startService(serviceId);
+    fetchAllData();
+  };
+
+  const handleStopService = async (serviceId: string) => {
+    await serverApi.stopService(serviceId);
+    fetchAllData();
+  };
+
+  const handleRestartService = async (serviceId: string) => {
+    await serverApi.restartService(serviceId);
+    fetchAllData();
+  };
+
+  const handleGetServiceLogs = async (serviceId: string) => {
+    return await serverApi.getServiceLogs(serviceId);
   };
 
   const handleCreateRoute = async (data: {
@@ -241,28 +231,17 @@ export default function DashboardPage() {
     tlsEnabled?: boolean;
     customDomain?: string;
   }) => {
-    const newRoute = await serverApi.createRoute(data);
-    setRoutes((prev) => [...prev, newRoute]);
-    const caddy = await serverApi.getCaddyStatus().catch(() => null);
-    if (caddy) setCaddyStatus(caddy);
+    await serverApi.createRoute(data);
+    fetchAllData();
   };
 
   const handleDeleteRoute = async (routeId: string) => {
-    const success = await serverApi.deleteRoute(routeId);
-    if (success) {
-      setRoutes((prev) => prev.filter((r) => r.id !== routeId));
-      const caddy = await serverApi.getCaddyStatus().catch(() => null);
-      if (caddy) setCaddyStatus(caddy);
-    }
+    await serverApi.deleteRoute(routeId);
+    fetchAllData();
   };
 
   const handleSyncCaddy = async () => {
-    const res = await serverApi.syncCaddyRoutes();
-    const caddy = await serverApi.getCaddyStatus().catch(() => null);
-    if (caddy) setCaddyStatus(caddy);
-    if (!res.success && res.error) {
-      alert(`Caddy sync error: ${res.error}`);
-    }
+    await serverApi.syncCaddyRoutes();
   };
 
   const handleTestRoute = async (host: string) => {
@@ -270,32 +249,23 @@ export default function DashboardPage() {
   };
 
   const handleConnectTailscale = async (authKey: string, hostname?: string) => {
-    const res = await serverApi.connectTailscale(authKey, hostname);
-    const ts = await serverApi.getTailscaleStatus().catch(() => null);
-    if (ts) setTailscaleStatus(ts);
-    if (!res.success && res.error) {
-      alert(`Tailscale connect failed: ${res.error}`);
-    }
+    await serverApi.connectTailscale(authKey, hostname);
+    fetchAllData();
   };
 
   const handleDisconnectTailscale = async () => {
     await serverApi.disconnectTailscale();
-    const ts = await serverApi.getTailscaleStatus().catch(() => null);
-    if (ts) setTailscaleStatus(ts);
+    fetchAllData();
   };
 
   const handleToggleAutoStart = async (enabled: boolean) => {
-    const res = await serverApi.setAutoStart(enabled, true);
-    if (res.success) {
-      setLifecycleStatus((prev) => (prev ? { ...prev, autoStart: res.autoStart } : null));
-    }
+    await serverApi.setAutoStart(enabled);
+    fetchAllData();
   };
 
   const handleTogglePowerBlocker = async (enabled: boolean) => {
-    const res = await serverApi.setPowerSaveBlocker(enabled);
-    if (res.success) {
-      setLifecycleStatus((prev) => (prev ? { ...prev, powerBlocker: res.powerBlocker } : null));
-    }
+    await serverApi.setPowerSaveBlocker(enabled);
+    fetchAllData();
   };
 
   const handleMinimizeToTray = async () => {
@@ -313,11 +283,18 @@ export default function DashboardPage() {
     return p ? p.status === 'running' : s.status === 'running';
   }).length;
 
+  const navigateTab = (tab: typeof activeTab) => {
+    setActiveTab(tab);
+    setIsMobileMenuOpen(false);
+  };
+
   return (
-    <div className="min-h-screen bg-[#070b12] text-slate-100 flex flex-row font-sans">
-      {/* 1Panel Left Fixed Sidebar */}
-      <aside className="w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex flex-col justify-between shrink-0 select-none z-20">
-        <div>
+    <div className="min-h-screen bg-[#070b12] text-slate-100 flex flex-col md:flex-row font-sans overflow-x-hidden">
+      {/* ======================================================== */}
+      {/* 1. DESKTOP 1PANEL SIDEBAR (Hidden on mobile < md) */}
+      {/* ======================================================== */}
+      <aside className="hidden md:flex w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex-col justify-between shrink-0 select-none z-20 min-h-screen sticky top-0 h-screen">
+        <div className="overflow-y-auto flex-1">
           {/* Brand Header */}
           <div className="p-5 border-b border-slate-800/80 flex items-center space-x-3">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-blue-600/20">
@@ -339,10 +316,10 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Navigation Links */}
+          {/* Desktop Navigation Links */}
           <nav className="p-3 space-y-1">
             <button
-              onClick={() => setActiveTab('overview')}
+              onClick={() => navigateTab('overview')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'overview'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -356,8 +333,66 @@ export default function DashboardPage() {
               <ChevronRight className={`w-3.5 h-3.5 opacity-60 ${activeTab === 'overview' ? 'text-white' : ''}`} />
             </button>
 
+            {/* NEW: Mobile-Friendly File Browser */}
             <button
-              onClick={() => setActiveTab('services')}
+              onClick={() => navigateTab('files')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'files'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <FolderTree className="w-4 h-4 text-emerald-400" />
+                <span>File Explorer</span>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-emerald-500/10 text-emerald-400 border border-emerald-500/30">
+                Stream
+              </span>
+            </button>
+
+            {/* NEW: Google Photos & Memories */}
+            <button
+              onClick={() => navigateTab('photos')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'photos'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Camera className="w-4 h-4 text-indigo-400" />
+                <span>Photos &amp; Memories</span>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                Photos
+              </span>
+            </button>
+
+            {/* NEW: Universal REST API Explorer */}
+            <button
+              onClick={() => navigateTab('apidocs')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'apidocs'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Code className="w-4 h-4 text-emerald-400" />
+                <span>API Docs &amp; SDK</span>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
+                OpenAPI
+              </span>
+            </button>
+
+            <div className="pt-2 pb-1 px-2 text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              Management
+            </div>
+
+            <button
+              onClick={() => navigateTab('services')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'services'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -378,7 +413,7 @@ export default function DashboardPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('store')}
+              onClick={() => navigateTab('store')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'store'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -395,7 +430,7 @@ export default function DashboardPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('routes')}
+              onClick={() => navigateTab('routes')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'routes'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -416,7 +451,7 @@ export default function DashboardPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('database')}
+              onClick={() => navigateTab('database')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'database'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -431,7 +466,7 @@ export default function DashboardPage() {
             </button>
 
             <button
-              onClick={() => setActiveTab('settings')}
+              onClick={() => navigateTab('settings')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'settings'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -440,13 +475,13 @@ export default function DashboardPage() {
             >
               <div className="flex items-center space-x-2.5">
                 <Settings className="w-4 h-4" />
-                <span>Settings &amp; 24/7 Power</span>
+                <span>Settings &amp; Power</span>
               </div>
               <ChevronRight className="w-3.5 h-3.5 opacity-60" />
             </button>
 
             <button
-              onClick={() => setActiveTab('logs')}
+              onClick={() => navigateTab('logs')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'logs'
                   ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
@@ -455,15 +490,9 @@ export default function DashboardPage() {
             >
               <div className="flex items-center space-x-2.5">
                 <Terminal className="w-4 h-4" />
-                <span>Console Logs</span>
+                <span>System Console Logs</span>
               </div>
-              <span
-                className={`text-[10px] font-mono px-1.5 py-0.5 rounded-full ${
-                  activeTab === 'logs' ? 'bg-blue-500 text-white' : 'bg-slate-800 text-slate-400'
-                }`}
-              >
-                {logs.length}
-              </span>
+              <ChevronRight className="w-3.5 h-3.5 opacity-60" />
             </button>
           </nav>
         </div>
@@ -501,79 +530,225 @@ export default function DashboardPage() {
         </div>
       </aside>
 
-      {/* Main Content Area */}
-      <div className="flex-1 flex flex-col overflow-y-auto">
+      {/* ======================================================== */}
+      {/* 2. MOBILE SLIDE-OUT DRAWER (< md) */}
+      {/* ======================================================== */}
+      {isMobileMenuOpen && (
+        <div className="md:hidden fixed inset-0 z-50 flex">
+          {/* Backdrop */}
+          <div
+            onClick={() => setIsMobileMenuOpen(false)}
+            className="fixed inset-0 bg-black/80 backdrop-blur-sm animate-in fade-in"
+          />
+
+          {/* Drawer Menu */}
+          <div className="relative w-72 max-w-[80vw] bg-[#0a0f1b] border-r border-slate-800 flex flex-col justify-between z-10 p-4 animate-in slide-in-from-left duration-200">
+            <div className="overflow-y-auto flex-1 space-y-4">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2">
+                  <Server className="w-5 h-5 text-blue-400" />
+                  <span className="font-bold text-white text-sm">Native Windows Hub</span>
+                </div>
+                <button
+                  onClick={() => setIsMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg bg-slate-800 text-slate-400 hover:text-white"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
+
+              <div className="space-y-1">
+                <button
+                  onClick={() => navigateTab('overview')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'overview' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <LayoutDashboard className="w-4 h-4" />
+                  <span>Dashboard Overview</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('files')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'files' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <FolderTree className="w-4 h-4 text-emerald-400" />
+                  <span>File Explorer &amp; Video</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('photos')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'photos' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Camera className="w-4 h-4 text-indigo-400" />
+                  <span>Photos &amp; Memories</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('apidocs')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'apidocs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Code className="w-4 h-4 text-emerald-400" />
+                  <span>API Docs &amp; SDK Explorer</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('services')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'services' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Layers className="w-4 h-4 text-blue-400" />
+                  <span>Installed Apps ({runningServicesCount})</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('store')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'store' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Boxes className="w-4 h-4 text-purple-400" />
+                  <span>1-Click App Store</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('routes')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'routes' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Globe className="w-4 h-4 text-amber-400" />
+                  <span>Domains &amp; SSL Proxy</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('database')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'database' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Database className="w-4 h-4 text-emerald-400" />
+                  <span>PostgreSQL 16 (:5432)</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('settings')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Settings className="w-4 h-4 text-slate-300" />
+                  <span>Settings &amp; Power</span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('logs')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'logs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <Terminal className="w-4 h-4 text-slate-400" />
+                  <span>Console Logs</span>
+                </button>
+              </div>
+            </div>
+
+            <div className="pt-3 border-t border-slate-800 flex items-center gap-2">
+              <button
+                onClick={handleQuitApp}
+                className="w-full flex items-center justify-center gap-2 py-2 rounded-xl bg-rose-950/60 text-rose-400 border border-rose-800/40 text-xs font-semibold"
+              >
+                <PowerOff className="w-4 h-4" />
+                <span>Stop Server</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ======================================================== */}
+      {/* 3. MAIN CONTENT AREA */}
+      {/* ======================================================== */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
         <Header
           systemInfo={systemInfo}
           onRefresh={fetchAllData}
           isRefreshing={isRefreshing}
+          onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
         />
 
         {!isElectronAvailable && (
-          <div className="bg-blue-950/40 border-b border-blue-600/30 px-6 py-2 text-xs text-blue-300 flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-emerald-400 live-indicator-active" />
-              <span>Remote Web Management Session Active • Connected to Native Windows Server Hub</span>
+          <div className="bg-blue-950/40 border-b border-blue-600/30 px-4 sm:px-6 py-2 text-[11px] sm:text-xs text-blue-300 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2 truncate">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 live-indicator-active shrink-0" />
+              <span className="truncate">Remote Mobile Session • Connected to Windows Server Hub</span>
             </div>
-            <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
-              Web REST Bridge Active
+            <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30 shrink-0">
+              Web REST Gateway
             </span>
           </div>
         )}
 
-        <main className="flex-1 p-6 space-y-6 max-w-7xl w-full mx-auto">
-          {/* Overview / Dashboard Tab */}
+        <main className="flex-1 p-3.5 sm:p-6 space-y-6 max-w-7xl w-full mx-auto pb-24 md:pb-8">
+          {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
-              {/* Architecture Collapsible Stepper */}
+              {/* Architecture Stepper */}
               <BootstrapStepper steps={bootstrapSteps} />
 
               {/* 4-KPI Status Strip */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
-                  <div className="flex items-center justify-between text-slate-400 mb-2">
-                    <span className="text-xs font-medium">Relational Database</span>
+              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div className="glass-card rounded-2xl p-3.5 sm:p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] sm:text-xs font-medium">Relational DB</span>
                     <Database className="w-4 h-4 text-emerald-400" />
                   </div>
-                  <div className="text-lg font-bold text-white">PostgreSQL 16</div>
-                  <div className="text-[11px] font-mono text-emerald-400 mt-1 flex items-center gap-1.5">
+                  <div className="text-base sm:text-lg font-bold text-white">PostgreSQL 16</div>
+                  <div className="text-[10px] sm:text-[11px] font-mono text-emerald-400 mt-1 flex items-center gap-1">
                     <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
-                    <span>Port 5432 • Connected</span>
+                    <span>Port 5432 Active</span>
                   </div>
                 </div>
 
-                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
-                  <div className="flex items-center justify-between text-slate-400 mb-2">
-                    <span className="text-xs font-medium">Supervised Services</span>
+                <div className="glass-card rounded-2xl p-3.5 sm:p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] sm:text-xs font-medium">Supervised Apps</span>
                     <Layers className="w-4 h-4 text-blue-400" />
                   </div>
-                  <div className="text-lg font-bold text-white">
+                  <div className="text-base sm:text-lg font-bold text-white">
                     {runningServicesCount} / {services.length} Running
                   </div>
-                  <div className="text-[11px] text-slate-400 mt-1">
-                    Native Windows executables
+                  <div className="text-[10px] sm:text-[11px] text-slate-400 mt-1">
+                    Native Windows processes
                   </div>
                 </div>
 
-                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
-                  <div className="flex items-center justify-between text-slate-400 mb-2">
-                    <span className="text-xs font-medium">Dynamic Mesh Proxy</span>
+                <div className="glass-card rounded-2xl p-3.5 sm:p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] sm:text-xs font-medium">Reverse Proxy</span>
                     <Globe className="w-4 h-4 text-purple-400" />
                   </div>
-                  <div className="text-lg font-bold text-white">Caddy Gateway</div>
-                  <div className="text-[11px] font-mono text-purple-300 mt-1">
-                    Port 80 • {routes.length} active routes
+                  <div className="text-base sm:text-lg font-bold text-white">Caddy Gateway</div>
+                  <div className="text-[10px] sm:text-[11px] font-mono text-purple-300 mt-1">
+                    Port 80 • {routes.length} routes
                   </div>
                 </div>
 
-                <div className="glass-card rounded-xl p-4 border border-slate-800 bg-slate-900/40">
-                  <div className="flex items-center justify-between text-slate-400 mb-2">
-                    <span className="text-xs font-medium">Persistence State</span>
+                <div className="glass-card rounded-2xl p-3.5 sm:p-4 border border-slate-800 bg-slate-900/40">
+                  <div className="flex items-center justify-between text-slate-400 mb-1.5">
+                    <span className="text-[11px] sm:text-xs font-medium">24/7 Server</span>
                     <Power className="w-4 h-4 text-amber-400" />
                   </div>
-                  <div className="text-lg font-bold text-white">24/7 Server Lock</div>
-                  <div className="text-[11px] text-amber-300 mt-1">
-                    App suspension prevented
+                  <div className="text-base sm:text-lg font-bold text-white">Persistence Lock</div>
+                  <div className="text-[10px] sm:text-[11px] text-amber-300 mt-1">
+                    Sleep blocked
                   </div>
                 </div>
               </div>
@@ -595,57 +770,74 @@ export default function DashboardPage() {
               />
 
               {/* Quick Launch Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 flex items-center justify-between">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+                <div
+                  onClick={() => navigateTab('files')}
+                  className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 transition-all flex items-center justify-between cursor-pointer group"
+                >
                   <div className="flex items-center space-x-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
-                      <FolderTree className="w-6 h-6 text-emerald-400" />
+                    <div className="w-11 h-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <FolderTree className="w-5 h-5 text-emerald-400" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-white">FileBrowser Cloud Storage</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Native cloud drive • Login: <span className="text-emerald-400 font-mono">admin</span> / <span className="text-emerald-400 font-mono">admin12345678</span>
+                      <h3 className="text-xs sm:text-sm font-semibold text-white">File &amp; Video Explorer</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        HTTP 206 video streaming &amp; drive
                       </p>
                     </div>
                   </div>
-                  <a
-                    href="http://files.localhost"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold shadow-md shadow-emerald-600/20 transition-all"
-                  >
-                    <span>Open Drive</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                 </div>
 
-                <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 flex items-center justify-between">
+                <div
+                  onClick={() => navigateTab('photos')}
+                  className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/40 hover:border-indigo-500/40 transition-all flex items-center justify-between cursor-pointer group"
+                >
                   <div className="flex items-center space-x-3.5">
-                    <div className="w-12 h-12 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center">
-                      <Bot className="w-6 h-6 text-purple-400" />
+                    <div className="w-11 h-11 rounded-xl bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Camera className="w-5 h-5 text-indigo-400" />
                     </div>
                     <div>
-                      <h3 className="text-sm font-semibold text-white">Ollama Local AI Engine</h3>
-                      <p className="text-xs text-slate-400 mt-0.5">
-                        Inference server • Endpoint: <span className="text-purple-300 font-mono">http://ai.localhost</span>
+                      <h3 className="text-xs sm:text-sm font-semibold text-white">Photos &amp; Memories</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Google Photos timeline &amp; albums
                       </p>
                     </div>
                   </div>
-                  <a
-                    href="http://ai.localhost"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold shadow-md shadow-purple-600/20 transition-all"
-                  >
-                    <span>Open AI Hub</span>
-                    <ExternalLink className="w-3.5 h-3.5" />
-                  </a>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </div>
+
+                <div
+                  onClick={() => navigateTab('apidocs')}
+                  className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/40 hover:border-blue-500/40 transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div className="flex items-center space-x-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Code className="w-5 h-5 text-blue-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-semibold text-white">Universal REST APIs</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        OpenAPI 3.0 docs &amp; runner
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                 </div>
               </div>
             </div>
           )}
 
-          {/* Installed Services Tab */}
+          {/* TAB 2: FILE EXPLORER & VIDEO STREAMING */}
+          {activeTab === 'files' && <FileBrowserCard />}
+
+          {/* TAB 3: GOOGLE PHOTOS & MEMORIES */}
+          {activeTab === 'photos' && <PhotosGalleryCard />}
+
+          {/* TAB 4: API DOCUMENTATION & EXPLORER */}
+          {activeTab === 'apidocs' && <ApiDocsCard />}
+
+          {/* TAB 5: INSTALLED SERVICES */}
           {activeTab === 'services' && (
             <ServicesTable
               services={services}
@@ -659,7 +851,7 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* 1-Click App Store Tab */}
+          {/* TAB 6: 1-CLICK APP STORE */}
           {activeTab === 'store' && (
             <AppStore
               existingServices={services}
@@ -668,7 +860,7 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* Routes / Domains Tab */}
+          {/* TAB 7: WEBSITES & DOMAINS */}
           {activeTab === 'routes' && (
             <RoutesTable
               routes={routes}
@@ -685,7 +877,7 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* Databases Tab */}
+          {/* TAB 8: POSTGRESQL DATABASE */}
           {activeTab === 'database' && (
             <div className="space-y-6">
               <DatabaseCard
@@ -696,7 +888,7 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Settings & 24/7 Power Tab */}
+          {/* TAB 9: SETTINGS & 24/7 POWER */}
           {activeTab === 'settings' && (
             <LifecycleCard
               lifecycleStatus={lifecycleStatus}
@@ -708,11 +900,66 @@ export default function DashboardPage() {
             />
           )}
 
-          {/* Logs Tab */}
+          {/* TAB 10: LOGS */}
           {activeTab === 'logs' && (
             <LogViewer logs={logs} onClear={() => setLogs([])} />
           )}
         </main>
+      </div>
+
+      {/* ======================================================== */}
+      {/* 4. MOBILE BOTTOM NAVIGATION BAR (< md) */}
+      {/* ======================================================== */}
+      <div className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-[#090d18]/95 backdrop-blur-lg border-t border-slate-800/90 px-2 py-1.5 flex items-center justify-around shadow-2xl">
+        <button
+          onClick={() => navigateTab('overview')}
+          className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all min-w-[56px] ${
+            activeTab === 'overview' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <LayoutDashboard className="w-5 h-5 mb-0.5" />
+          <span className="text-[10px]">Home</span>
+        </button>
+
+        <button
+          onClick={() => navigateTab('files')}
+          className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all min-w-[56px] ${
+            activeTab === 'files' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <FolderTree className="w-5 h-5 mb-0.5 text-emerald-400" />
+          <span className="text-[10px]">Files</span>
+        </button>
+
+        <button
+          onClick={() => navigateTab('photos')}
+          className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all min-w-[56px] ${
+            activeTab === 'photos' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Camera className="w-5 h-5 mb-0.5 text-indigo-400" />
+          <span className="text-[10px]">Photos</span>
+        </button>
+
+        <button
+          onClick={() => navigateTab('services')}
+          className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all min-w-[56px] ${
+            activeTab === 'services' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Layers className="w-5 h-5 mb-0.5 text-blue-400" />
+          <span className="text-[10px]">Apps</span>
+        </button>
+
+        <button
+          onClick={() => navigateTab('apidocs')}
+          className={`flex flex-col items-center justify-center p-1.5 rounded-xl transition-all min-w-[56px] ${
+            activeTab === 'apidocs' ? 'text-blue-400 font-bold' : 'text-slate-400 hover:text-white'
+          }`}
+        >
+          <Code className="w-5 h-5 mb-0.5 text-emerald-400" />
+          <span className="text-[10px]">APIs</span>
+        </button>
       </div>
     </div>
   );
