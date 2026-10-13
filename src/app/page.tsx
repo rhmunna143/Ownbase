@@ -126,6 +126,20 @@ export default function DashboardPage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const host = window.location.hostname.toLowerCase();
+      const search = window.location.search.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const path = window.location.pathname.toLowerCase();
+      if (host.startsWith('photos.') || search.includes('tab=photos') || hash === '#photos' || path.startsWith('/photos')) {
+        setActiveTab('photos');
+      } else if (host.startsWith('files.') || search.includes('tab=files') || hash === '#files' || path.startsWith('/files')) {
+        setActiveTab('files');
+      } else if (search.includes('tab=apidocs') || hash === '#api' || search.includes('tab=api')) {
+        setActiveTab('apidocs');
+      }
+    }
+
     fetchAllData();
 
     // Event subscriptions

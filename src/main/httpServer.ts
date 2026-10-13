@@ -464,7 +464,16 @@ export class WebApiServer {
 
     // Clean pathname
     let relPath = pathname.replace(/^\/+/, '');
-    if (!relPath || relPath === '/') {
+    const host = (req.headers.host || '').toLowerCase();
+    if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
+      if (fs.existsSync(path.join(outDir, 'photos', 'index.html'))) {
+        relPath = 'photos/index.html';
+      } else if (fs.existsSync(path.join(outDir, 'photos.html'))) {
+        relPath = 'photos.html';
+      } else {
+        relPath = 'index.html';
+      }
+    } else if (!relPath || relPath === '/') {
       relPath = 'index.html';
     }
 

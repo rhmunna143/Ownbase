@@ -17,6 +17,7 @@ import {
   HardDrive,
   Bot,
   Database,
+  Camera,
 } from 'lucide-react';
 import { TailscaleStatus, SystemInfo } from '@/shared/types';
 
@@ -150,6 +151,38 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
                   title="Open Storage"
+                >
+                  <ExternalLink className="w-3.5 h-3.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* Google Photos & Memories Gallery */}
+            <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-white flex items-center gap-1.5">
+                  <Camera className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Google Photos & Memories Gallery</span>
+                  <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">Web GUI</span>
+                </div>
+                <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
+                  http://photos.{localIp}.nip.io <span className="text-slate-500">or :{localIp}/photos</span>
+                </div>
+              </div>
+              <div className="flex items-center space-x-1.5">
+                <button
+                  onClick={() => copyToClipboard(`http://photos.${localIp}.nip.io`, 'photos-local')}
+                  className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                  title="Copy URL"
+                >
+                  {copiedKey === 'photos-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                </button>
+                <a
+                  href={`http://photos.${localIp}.nip.io`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
+                  title="Open Photos Gallery"
                 >
                   <ExternalLink className="w-3.5 h-3.5" />
                 </a>
@@ -337,6 +370,37 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
                     title="Open URL"
+                  >
+                    <ExternalLink className="w-3.5 h-3.5" />
+                  </a>
+                </div>
+              </div>
+
+              {/* Photos over Tailscale */}
+              <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
+                <div>
+                  <div className="font-semibold text-white flex items-center gap-1.5">
+                    <Camera className="w-3.5 h-3.5 text-amber-400" />
+                    <span>Google Photos & Memories (Remote)</span>
+                  </div>
+                  <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
+                    http://photos.{tailscaleIp}.nip.io
+                  </div>
+                </div>
+                <div className="flex items-center space-x-1.5">
+                  <button
+                    onClick={() => copyToClipboard(`http://photos.${tailscaleIp}.nip.io`, 'photos-ts')}
+                    className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
+                    title="Copy URL"
+                  >
+                    {copiedKey === 'photos-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
+                  </button>
+                  <a
+                    href={`http://photos.${tailscaleIp}.nip.io`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
+                    title="Open Photos Gallery"
                   >
                     <ExternalLink className="w-3.5 h-3.5" />
                   </a>

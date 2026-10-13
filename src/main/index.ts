@@ -1,4 +1,4 @@
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, nativeImage } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { PostgresManager } from './postgres';
@@ -48,7 +48,25 @@ function updateStep(id: string, status: BootstrapStep['status'], detail?: string
   }
 }
 
+function getAppIcon(): string | undefined {
+  const candidatePaths = [
+    path.join(process.cwd(), 'assets', 'icon.ico'),
+    path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
+    path.join(__dirname, '..', '..', '..', 'assets', 'icon.ico'),
+    path.join((process as any).resourcesPath || '', 'assets', 'icon.ico'),
+    path.join(process.cwd(), 'assets', 'icon.png'),
+    path.join(__dirname, '..', '..', 'assets', 'icon.png'),
+    path.join(__dirname, '..', '..', '..', 'assets', 'icon.png'),
+    path.join((process as any).resourcesPath || '', 'assets', 'icon.png'),
+  ];
+  for (const p of candidatePaths) {
+    if (fs.existsSync(p)) return p;
+  }
+  return undefined;
+}
+
 async function createWindow() {
+  const iconPath = getAppIcon();
   mainWindow = new BrowserWindow({
     width: 1280,
     height: 840,
@@ -56,6 +74,7 @@ async function createWindow() {
     minHeight: 700,
     title: 'Native Windows Server Hub',
     backgroundColor: '#090d16',
+    icon: iconPath,
     webPreferences: {
       preload: path.join(__dirname, '../preload/index.js'),
       contextIsolation: true,
@@ -64,6 +83,12 @@ async function createWindow() {
     },
     show: false,
   });
+
+  if (iconPath && mainWindow) {
+    try {
+      mainWindow.setIcon(iconPath);
+    } catch {}
+  }
 
   logger.setWindow(mainWindow);
   if (supervisor) {
@@ -245,6 +270,9 @@ async function loadStaticBundle() {
 }
 
 app.whenReady().then(async () => {
+  if (process.platform === 'win32') {
+    app.setAppUserModelId('com.rhmunna143.nativewindowsserverhub');
+  }
   postgresManager = new PostgresManager(5432);
   prismaManager = new PrismaManager(5432, 'postgres');
   supervisor = new ProcessSupervisor(prismaManager);
