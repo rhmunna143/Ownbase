@@ -26,9 +26,15 @@ export class WebApiServer {
     private caddyManager: CaddyManager,
     private tailscaleManager: TailscaleManager,
     private lifecycleManager: LifecycleManager,
-    private getBootstrapSteps: () => BootstrapStep[]
+    private getBootstrapSteps: () => BootstrapStep[],
+    port: number = 3001
   ) {
+    this.port = port;
     this.fileManager = new FileManager();
+  }
+
+  public getPort(): number {
+    return this.port;
   }
 
   public getFileManager(): FileManager {
