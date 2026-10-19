@@ -476,7 +476,19 @@ export class WebApiServer {
               this.sendJson(res, { error: 'Invalid route payload', details: parsed.error.issues }, 400);
               return;
             }
-            const r = await this.prismaManager.createRoute(parsed.data);
+            let serviceId: string = parsed.data.serviceId || 'default-service-id';
+            if (!parsed.data.serviceId) {
+              const client = this.prismaManager.getClient();
+              const firstSvc = client && (client as any).service ? await (client as any).service.findFirst() : null;
+              if (firstSvc) serviceId = firstSvc.id;
+            }
+            const r = await this.prismaManager.createRoute({
+              serviceId,
+              subdomain: parsed.data.subdomain,
+              targetPort: parsed.data.targetPort,
+              tlsEnabled: parsed.data.tlsEnabled,
+              customDomain: parsed.data.customDomain,
+            });
             await this.caddyManager.registerRoute(r);
             await this.auditService.record({
               actorId: decision.user?.id,

@@ -32,9 +32,11 @@ export const CreateApiKeyRequestSchema = z.object({
 
 // Route & Service Schemas
 export const CreateRouteRequestSchema = z.object({
+  serviceId: z.string().optional(),
   subdomain: z.string().min(1).max(63).regex(/^[a-z0-9-]+$/, 'Subdomain must be lowercase alphanumeric or hyphens'),
   targetPort: z.number().int().min(1).max(65535),
   targetHost: z.string().default('127.0.0.1'),
+  tlsEnabled: z.boolean().default(true),
   customDomain: z.string().optional(),
   description: z.string().optional(),
 });
