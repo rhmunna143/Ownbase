@@ -9,6 +9,8 @@ import { LifecycleManager } from './lifecycle';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
 
+import { TableBrowser } from './db/browser';
+
 export function registerIpcHandlers(
   postgresManager: PostgresManager,
   prismaManager: PrismaManager,
@@ -18,6 +20,7 @@ export function registerIpcHandlers(
   lifecycleManager: LifecycleManager,
   getBootstrapSteps: () => BootstrapStep[]
 ) {
+  const tableBrowser = new TableBrowser(prismaManager);
   ipcMain.handle('get-system-info', async (): Promise<SystemInfo> => {
     const interfaces = os.networkInterfaces();
     let localIp = '127.0.0.1';
@@ -74,13 +77,16 @@ export function registerIpcHandlers(
     return result;
   });
 
-  ipcMain.handle('execute-query', async (_event, sql: string) => {
+  // Item 1.7: Read-only Table Browser IPC Handlers (replaces arbitrary execute-query)
+  ipcMain.handle('table-browser:get-tables', async () => {
+    return tableBrowser.getPermittedTables();
+  });
+
+  ipcMain.handle('table-browser:query-table', async (_event, table: string, options: any) => {
     try {
-      const client = prismaManager.getClient();
-      const result = await client.$queryRawUnsafe(sql);
-      return { success: true, data: result };
+      return await tableBrowser.queryTable(table, options);
     } catch (err: any) {
-      return { success: false, error: err.message };
+      return { error: err.message, rows: [], totalCount: 0, columns: [] };
     }
   });
 

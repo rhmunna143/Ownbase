@@ -21,6 +21,63 @@ function getApiUrl(path: string): string {
   return path;
 }
 
+// In-Memory Token Store (PRD Item 1.13)
+let inMemoryAccessToken: string | null = null;
+let inMemoryUser: { id: string; username: string; role: string } | null = null;
+
+export const authStore = {
+  getToken: () => inMemoryAccessToken,
+  setToken: (token: string | null) => {
+    inMemoryAccessToken = token;
+  },
+  getUser: () => inMemoryUser,
+  setUser: (user: { id: string; username: string; role: string } | null) => {
+    inMemoryUser = user;
+  },
+  clear: () => {
+    inMemoryAccessToken = null;
+    inMemoryUser = null;
+  },
+};
+
+async function fetchWithAuth(url: string, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers || {});
+  if (inMemoryAccessToken && !headers.has('Authorization')) {
+    headers.set('Authorization', `Bearer ${inMemoryAccessToken}`);
+  }
+  options.headers = headers;
+  options.credentials = 'include'; // Send cookies (for refresh token)
+
+  let res = await fetch(getApiUrl(url), options);
+
+  // Auto-refresh token if 401 received
+  if (res.status === 401 && inMemoryAccessToken) {
+    try {
+      const refreshRes = await fetch(getApiUrl('/api/v1/auth/refresh'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'include',
+      });
+      if (refreshRes.ok) {
+        const data = await refreshRes.json();
+        if (data.accessToken) {
+          authStore.setToken(data.accessToken);
+          if (data.user) authStore.setUser(data.user);
+          headers.set('Authorization', `Bearer ${data.accessToken}`);
+          options.headers = headers;
+          res = await fetch(getApiUrl(url), options);
+        }
+      } else {
+        authStore.clear();
+      }
+    } catch {
+      authStore.clear();
+    }
+  }
+
+  return res;
+}
+
 export const serverApi = {
   isElectron: (): boolean => {
     return typeof window !== 'undefined' && !!window.electronAPI;
@@ -66,16 +123,110 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { success: false, latencyMs: 0, error: 'Web API unreachable' };
   },
 
-  executeQuery: async (sql: string): Promise<{ success: boolean; data?: any; error?: string }> => {
-    if (typeof window !== 'undefined' && window.electronAPI?.executeQuery) {
-      return await window.electronAPI.executeQuery(sql);
+  // Read-only Table Browser API (replaces arbitrary executeQuery)
+  getTableBrowserTables: async (): Promise<string[]> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.getTableBrowserTables) {
+      return await window.electronAPI.getTableBrowserTables();
     }
-    const res = await fetch(getApiUrl('/api/execute-query'), {
+    const res = await fetchWithAuth('/api/v1/db/tables').catch(() => null);
+    if (!res || !res.ok) return [];
+    const data = await res.json();
+    return data.tables || [];
+  },
+
+  queryTable: async (
+    table: string,
+    options: { page?: number; pageSize?: number; orderBy?: string; orderDir?: 'asc' | 'desc' } = {}
+  ): Promise<{ rows: any[]; totalCount: number; page: number; pageSize: number; columns: string[]; error?: string }> => {
+    if (typeof window !== 'undefined' && window.electronAPI?.queryTable) {
+      return await window.electronAPI.queryTable(table, options);
+    }
+    const params = new URLSearchParams();
+    if (options.page) params.set('page', String(options.page));
+    if (options.pageSize) params.set('pageSize', String(options.pageSize));
+    if (options.orderBy) params.set('orderBy', options.orderBy);
+    if (options.orderDir) params.set('orderDir', options.orderDir);
+
+    const res = await fetchWithAuth(`/api/v1/db/tables/${encodeURIComponent(table)}/rows?${params.toString()}`).catch(() => null);
+    if (!res || !res.ok) {
+      const errData = res ? await res.json().catch(() => ({})) : {};
+      return { rows: [], totalCount: 0, page: 1, pageSize: 25, columns: [], error: errData.error || 'Failed to query table' };
+    }
+    return await res.json();
+  },
+
+  // Auth & Identity APIs (PRD Item 1.13)
+  getSetupStatus: async (): Promise<{ hasRootUser: boolean }> => {
+    const res = await fetch(getApiUrl('/api/v1/setup/status')).catch(() => null);
+    return res && res.ok ? await res.json() : { hasRootUser: false };
+  },
+
+  executeSetup: async (data: { username: string; password: string; setupToken?: string }): Promise<any> => {
+    const res = await fetch(getApiUrl('/api/v1/setup'), {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ sql }),
+      body: JSON.stringify(data),
     }).catch(() => null);
-    return res && res.ok ? await res.json() : { success: false, error: 'Web API unreachable' };
+    return res ? await res.json() : { success: false, error: 'Connection error' };
+  },
+
+  login: async (username: string, password: string): Promise<any> => {
+    const res = await fetch(getApiUrl('/api/v1/auth/login'), {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      body: JSON.stringify({ username, password }),
+    }).catch(() => null);
+    if (!res) return { success: false, error: 'Network error connecting to login' };
+    const data = await res.json();
+    if (res.ok && data.accessToken) {
+      authStore.setToken(data.accessToken);
+      if (data.user) authStore.setUser(data.user);
+    }
+    return { ok: res.ok, status: res.status, ...data };
+  },
+
+  logout: async (): Promise<void> => {
+    await fetchWithAuth('/api/v1/auth/logout', { method: 'POST' }).catch(() => {});
+    authStore.clear();
+  },
+
+  getAuditLogs: async (limit = 100): Promise<any[]> => {
+    const res = await fetchWithAuth(`/api/v1/audit/logs?limit=${limit}`).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getUsers: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/users').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createUser: async (data: { username: string; password: string; role: string }): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/users', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res ? await res.json() : { error: 'Connection error' };
+  },
+
+  getApiKeys: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/api-keys').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createApiKey: async (data: { name: string; role: string; expiresInDays?: number }): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/api-keys', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res ? await res.json() : { error: 'Connection error' };
+  },
+
+  revokeApiKey: async (id: string): Promise<boolean> => {
+    const res = await fetchWithAuth(`/api/v1/api-keys/${id}`, { method: 'DELETE' }).catch(() => null);
+    return !!(res && res.ok);
   },
 
   getServices: async (): Promise<ServiceRecord[]> => {

@@ -2,6 +2,7 @@ import http from 'http';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
+import cookie from 'cookie';
 import { app } from 'electron';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
@@ -10,14 +11,36 @@ import { CaddyManager } from './caddy';
 import { TailscaleManager } from './tailscale';
 import { LifecycleManager } from './lifecycle';
 import { FileManager } from './fileManager';
-import { API_ENDPOINTS, getOpenApiSpec } from './openApiSpec';
 import { logger } from './logger';
 import { BootstrapStep, SystemInfo } from '../shared/types';
+import {
+  matchRoute,
+  generateOpenApiSpec,
+  getEndpointCatalog,
+  SetupRequestSchema,
+  LoginRequestSchema,
+  CreateUserRequestSchema,
+  CreateApiKeyRequestSchema,
+  CreateRouteRequestSchema,
+  AuthenticatedUser,
+  Role,
+} from '../shared/contract';
+import { AuthService } from './auth/authService';
+import { AuditService } from './auth/audit';
+import { SetupService } from './auth/setup';
+import { AuthGuard } from './auth/guard';
+import { loginThrottle } from './auth/throttle';
+import { TableBrowser } from './db/browser';
 
 export class WebApiServer {
   private server: http.Server | null = null;
   private port: number = 3001;
   private fileManager: FileManager;
+  private authService: AuthService;
+  private auditService: AuditService;
+  private setupService: SetupService;
+  private authGuard: AuthGuard;
+  private tableBrowser: TableBrowser;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -31,6 +54,11 @@ export class WebApiServer {
   ) {
     this.port = port;
     this.fileManager = new FileManager();
+    this.authService = new AuthService(this.prismaManager);
+    this.auditService = new AuditService(this.prismaManager);
+    this.setupService = new SetupService(this.prismaManager, this.authService, this.auditService);
+    this.authGuard = new AuthGuard(this.authService);
+    this.tableBrowser = new TableBrowser(this.prismaManager);
   }
 
   public getPort(): number {
@@ -41,17 +69,42 @@ export class WebApiServer {
     return this.fileManager;
   }
 
+  public getAuthService(): AuthService {
+    return this.authService;
+  }
+
+  public getAuthGuard(): AuthGuard {
+    return this.authGuard;
+  }
+
+  public getTableBrowser(): TableBrowser {
+    return this.tableBrowser;
+  }
+
+  public getAuditService(): AuditService {
+    return this.auditService;
+  }
+
+  public getSetupService(): SetupService {
+    return this.setupService;
+  }
+
   public start(): Promise<boolean> {
     return new Promise((resolve) => {
       this.server = http.createServer(async (req, res) => {
-        // Universal CORS headers for web & mobile clients
+        // HTTP Hardening & Security Headers (PRD Item 1.12)
+        res.setHeader('X-Content-Type-Options', 'nosniff');
+        res.setHeader('X-Frame-Options', 'DENY');
+        res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+        res.setHeader('Content-Security-Policy', "default-src 'self' 'unsafe-inline' 'unsafe-eval' data: blob:;");
         res.setHeader('Access-Control-Allow-Origin', '*');
         res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
-        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, Range');
-        res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length');
+        res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, x-api-key, Range');
+        res.setHeader('Access-Control-Expose-Headers', 'Content-Range, Accept-Ranges, Content-Length, Set-Cookie');
 
+        // Universal CORS preflight
         if (req.method === 'OPTIONS') {
-          res.writeHead(200);
+          res.writeHead(204);
           res.end();
           return;
         }
@@ -61,9 +114,208 @@ export class WebApiServer {
 
         try {
           // ==========================================
-          // 1. SYSTEM & SUPERVISOR APIS
+          // 1. STATIC ASSETS (Next.js out/ web app)
           // ==========================================
-          if (pathname === '/api/system-info' && req.method === 'GET') {
+          if (!pathname.startsWith('/api')) {
+            const served = await this.serveStaticFile(req, res, pathname);
+            if (served) return;
+
+            // Fallback 404 for unhandled static paths
+            this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
+            return;
+          }
+
+          // ==========================================
+          // 2. CONTRACT ROUTE MATCHING (PRD Item 1.1)
+          // "A route not in the table does not exist"
+          // ==========================================
+          const { route, params } = matchRoute(req.method || 'GET', pathname);
+          if (!route) {
+            this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
+            return;
+          }
+
+          // ==========================================
+          // 3. CENTRALIZED RBAC GUARD (PRD Item 1.6)
+          // ==========================================
+          const decision = await this.authGuard.evaluate(req, route);
+          if (!decision.allowed) {
+            this.sendJson(res, { error: decision.error || 'Unauthorized' }, decision.statusCode || 401);
+            return;
+          }
+
+          const clientIp = this.getClientIp(req);
+
+          // ==========================================
+          // 4. ROUTE DISPATCH & HANDLERS
+          // ==========================================
+
+          // --- PUBLIC PROBES & SETUP ---
+          if (route.path === '/api/v1/health') {
+            this.sendJson(res, { status: 'ok', uptime: process.uptime(), timestamp: new Date().toISOString() });
+            return;
+          }
+
+          if (route.path === '/api/v1/setup/status') {
+            this.sendJson(res, await this.setupService.getStatus());
+            return;
+          }
+
+          if (route.path === '/api/v1/setup') {
+            const body = await this.parseJsonBody(req);
+            const parsed = SetupRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid setup payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const isLoopback = this.isLoopbackRequest(req);
+            const result = await this.setupService.executeSetup({
+              username: parsed.data.username,
+              password: parsed.data.password,
+              isLoopback,
+              setupToken: parsed.data.setupToken,
+              ipAddress: clientIp,
+            });
+            if (!result.success) {
+              this.sendJson(res, { error: result.error }, 400);
+              return;
+            }
+            this.sendJson(res, result, 201);
+            return;
+          }
+
+          // --- AUTHENTICATION & TOKENS ---
+          if (route.path === '/api/v1/auth/login') {
+            const body = await this.parseJsonBody(req);
+            const parsed = LoginRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid login payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            // Login throttle check (PRD Item 1.5)
+            const throttleCheck = loginThrottle.check(clientIp, parsed.data.username);
+            if (!throttleCheck.allowed) {
+              res.setHeader('Retry-After', String(throttleCheck.retryAfterSeconds || 30));
+              this.sendJson(
+                res,
+                { error: `Too many failed attempts. Try again in ${throttleCheck.retryAfterSeconds}s.` },
+                429
+              );
+              return;
+            }
+
+            const releaseSlot = await loginThrottle.acquireHashSlot();
+            try {
+              const client = this.prismaManager.getClient();
+              const user = client && (client as any).user
+                ? await (client as any).user.findUnique({ where: { username: parsed.data.username } })
+                : null;
+
+              let valid = false;
+              if (user && user.isActive) {
+                valid = await this.authService.verifyPassword(user.passwordHash, parsed.data.password);
+              }
+
+              if (!valid || !user) {
+                loginThrottle.recordFailure(clientIp, parsed.data.username);
+                await this.auditService.record({
+                  action: 'auth.login',
+                  status: 'failure',
+                  ipAddress: clientIp,
+                  details: { username: parsed.data.username, reason: 'Invalid credentials' },
+                });
+                this.sendJson(res, { error: 'Invalid username or password' }, 401);
+                return;
+              }
+
+              loginThrottle.recordSuccess(clientIp, parsed.data.username);
+              const authUser: AuthenticatedUser = {
+                id: user.id,
+                username: user.username,
+                role: user.role as Role,
+              };
+
+              const accessToken = await this.authService.generateAccessToken(authUser);
+              const refreshToken = await this.authService.generateRefreshToken(user.id);
+
+              res.setHeader(
+                'Set-Cookie',
+                `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`
+              );
+
+              await this.auditService.record({
+                actorId: user.id,
+                actorName: user.username,
+                action: 'auth.login',
+                status: 'success',
+                ipAddress: clientIp,
+              });
+
+              this.sendJson(res, { accessToken, refreshToken, user: authUser });
+            } finally {
+              releaseSlot();
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/auth/refresh') {
+            const body = await this.parseJsonBody(req);
+            let rawToken = body?.refreshToken;
+            if (!rawToken && req.headers.cookie) {
+              const cookies = cookie.parse(req.headers.cookie);
+              rawToken = cookies['ownbase_refresh'];
+            }
+
+            if (!rawToken) {
+              this.sendJson(res, { error: 'Refresh token required' }, 400);
+              return;
+            }
+
+            const rotated = await this.authService.rotateRefreshToken(rawToken);
+            if (!rotated) {
+              this.sendJson(res, { error: 'Invalid or expired refresh token' }, 401);
+              return;
+            }
+
+            res.setHeader(
+              'Set-Cookie',
+              `ownbase_refresh=${rotated.newRefreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`
+            );
+            this.sendJson(res, rotated);
+            return;
+          }
+
+          if (route.path === '/api/v1/auth/logout') {
+            const body = await this.parseJsonBody(req);
+            let rawToken = body?.refreshToken;
+            if (!rawToken && req.headers.cookie) {
+              const cookies = cookie.parse(req.headers.cookie);
+              rawToken = cookies['ownbase_refresh'];
+            }
+
+            if (rawToken) {
+              await this.authService.revokeRefreshToken(rawToken);
+            }
+
+            res.setHeader('Set-Cookie', 'ownbase_refresh=; Path=/api/v1/auth; HttpOnly; Max-Age=0');
+            this.sendJson(res, { success: true });
+            return;
+          }
+
+          if (route.path === '/api/v1/auth/me') {
+            this.sendJson(res, { user: decision.user });
+            return;
+          }
+
+          if (route.path === '/api/v1/auth/ws-ticket') {
+            const ticket = this.authGuard.issueWsTicket(decision.user!);
+            this.sendJson(res, { ticket });
+            return;
+          }
+
+          // --- SYSTEM TELEMETRY & STATUS ---
+          if (route.path === '/api/v1/system-info') {
             const interfaces = os.networkInterfaces();
             let localIp = '127.0.0.1';
             let tailscaleIp: string | undefined = undefined;
@@ -102,40 +354,39 @@ export class WebApiServer {
             return;
           }
 
-          if (pathname === '/api/postgres-status' && req.method === 'GET') {
+          if (route.path === '/api/v1/postgres-status') {
             this.sendJson(res, this.postgresManager.getStatus());
             return;
           }
 
-          if (pathname === '/api/migration-status' && req.method === 'GET') {
+          if (route.path === '/api/v1/migration-status') {
             this.sendJson(res, this.prismaManager.getStatus());
             return;
           }
 
-          if (pathname === '/api/bootstrap-steps' && req.method === 'GET') {
+          if (route.path === '/api/v1/bootstrap-steps') {
             this.sendJson(res, this.getBootstrapSteps());
             return;
           }
 
-          if (pathname === '/api/ping-database' && req.method === 'POST') {
+          if (route.path === '/api/v1/ping-database') {
             const result = await this.prismaManager.ping();
             this.sendJson(res, result);
             return;
           }
 
-          if (pathname === '/api/execute-query' && req.method === 'POST') {
-            const body = await this.parseJsonBody(req);
-            try {
-              const client = this.prismaManager.getClient();
-              const result = await client.$queryRawUnsafe(body.sql);
-              this.sendJson(res, { success: true, data: result });
-            } catch (err: any) {
-              this.sendJson(res, { success: false, error: err.message });
-            }
+          if (route.path === '/api/v1/process-statuses') {
+            this.sendJson(res, this.supervisor.getAllStatuses());
             return;
           }
 
-          if (pathname === '/api/services' && req.method === 'GET') {
+          if (route.path === '/api/v1/logs') {
+            this.sendJson(res, logger.getLogs());
+            return;
+          }
+
+          // --- SERVICES & PROCESS SUPERVISOR ---
+          if (route.path === '/api/v1/services' && req.method === 'GET') {
             const services = await this.prismaManager.getServices();
             for (const s of services) {
               this.supervisor.registerService(s);
@@ -144,178 +395,257 @@ export class WebApiServer {
             return;
           }
 
-          if (pathname === '/api/services' && req.method === 'POST') {
+          if (route.path === '/api/v1/services' && req.method === 'POST') {
             const body = await this.parseJsonBody(req);
             const svc = await this.prismaManager.createService(body);
             this.supervisor.registerService(svc);
-            this.sendJson(res, svc);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'service.create',
+              entity: 'service',
+              entityId: svc.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: svc.name, type: svc.type },
+            });
+            this.sendJson(res, svc, 201);
             return;
           }
 
-          const serviceActionMatch = pathname.match(/^\/api\/services\/([^\/]+)\/(start|stop|restart|logs)$/);
-          if (serviceActionMatch) {
-            const [, serviceId, action] = serviceActionMatch;
-            if (action === 'start' && req.method === 'POST') {
-              const resStart = await this.supervisor.startService(serviceId);
-              this.sendJson(res, resStart);
-              return;
-            }
-            if (action === 'stop' && req.method === 'POST') {
-              const resStop = await this.supervisor.stopService(serviceId);
-              this.sendJson(res, resStop);
-              return;
-            }
-            if (action === 'restart' && req.method === 'POST') {
-              const resRestart = await this.supervisor.restartService(serviceId);
-              this.sendJson(res, resRestart);
-              return;
-            }
-            if (action === 'logs' && req.method === 'GET') {
-              this.sendJson(res, this.supervisor.getServiceLogs(serviceId));
-              return;
-            }
-          }
-
-          if (pathname === '/api/process-statuses' && req.method === 'GET') {
-            this.sendJson(res, this.supervisor.getAllStatuses());
+          if (route.path === '/api/v1/services/:id/start') {
+            const resStart = await this.supervisor.startService(params.id);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'service.start',
+              entity: 'service',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: resStart.success ? 'success' : 'failure',
+            });
+            this.sendJson(res, resStart);
             return;
           }
 
-          if (pathname === '/api/routes' && req.method === 'GET') {
+          if (route.path === '/api/v1/services/:id/stop') {
+            const resStop = await this.supervisor.stopService(params.id);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'service.stop',
+              entity: 'service',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: resStop.success ? 'success' : 'failure',
+            });
+            this.sendJson(res, resStop);
+            return;
+          }
+
+          if (route.path === '/api/v1/services/:id/restart') {
+            const resRestart = await this.supervisor.restartService(params.id);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'service.restart',
+              entity: 'service',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: resRestart.success ? 'success' : 'failure',
+            });
+            this.sendJson(res, resRestart);
+            return;
+          }
+
+          if (route.path === '/api/v1/services/:id/logs') {
+            this.sendJson(res, this.supervisor.getServiceLogs(params.id));
+            return;
+          }
+
+          // --- ROUTING & CADDY EDGE INGRESS ---
+          if (route.path === '/api/v1/routes' && req.method === 'GET') {
             this.sendJson(res, await this.prismaManager.getRoutes());
             return;
           }
 
-          if (pathname === '/api/routes' && req.method === 'POST') {
+          if (route.path === '/api/v1/routes' && req.method === 'POST') {
             const body = await this.parseJsonBody(req);
-            const r = await this.prismaManager.createRoute(body);
+            const parsed = CreateRouteRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid route payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const r = await this.prismaManager.createRoute(parsed.data);
             await this.caddyManager.registerRoute(r);
-            this.sendJson(res, r);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'route.create',
+              entity: 'route',
+              entityId: r.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { subdomain: r.subdomain, port: r.targetPort },
+            });
+            this.sendJson(res, r, 201);
             return;
           }
 
-          const routeDeleteMatch = pathname.match(/^\/api\/routes\/([^\/]+)$/);
-          if (routeDeleteMatch && req.method === 'DELETE') {
-            const routeId = routeDeleteMatch[1];
+          if (route.path === '/api/v1/routes/:id' && req.method === 'DELETE') {
             try {
               const client = this.prismaManager.getClient();
-              await client.route.delete({ where: { id: routeId } });
-              await this.caddyManager.removeRoute(routeId);
+              await client.route.delete({ where: { id: params.id } });
+              await this.caddyManager.removeRoute(params.id);
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'route.delete',
+                entity: 'route',
+                entityId: params.id,
+                ipAddress: clientIp,
+                status: 'success',
+              });
               this.sendJson(res, { success: true });
             } catch {
-              this.sendJson(res, { success: false });
+              this.sendJson(res, { success: false }, 400);
             }
             return;
           }
 
-          if (pathname === '/api/caddy/sync' && req.method === 'POST') {
+          if (route.path === '/api/v1/caddy/sync') {
             const result = await this.caddyManager.syncAllRoutes();
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'caddy.sync',
+              ipAddress: clientIp,
+              status: result.success ? 'success' : 'failure',
+              details: { count: result.count },
+            });
             this.sendJson(res, result);
             return;
           }
 
-          if (pathname === '/api/caddy/status' && req.method === 'GET') {
+          if (route.path === '/api/v1/caddy/status') {
             this.sendJson(res, await this.caddyManager.getStatus());
             return;
           }
 
-          if (pathname === '/api/caddy/test' && req.method === 'POST') {
+          if (route.path === '/api/v1/caddy/test') {
             const body = await this.parseJsonBody(req);
             this.sendJson(res, await this.caddyManager.testRoute(body.host, body.port || 80));
             return;
           }
 
-          if (pathname === '/api/tailscale/status' && req.method === 'GET') {
+          // --- TAILSCALE MESH ---
+          if (route.path === '/api/v1/tailscale/status') {
             this.sendJson(res, await this.tailscaleManager.getStatus());
             return;
           }
 
-          if (pathname === '/api/tailscale/connect' && req.method === 'POST') {
+          if (route.path === '/api/v1/tailscale/connect') {
             const body = await this.parseJsonBody(req);
-            this.sendJson(res, await this.tailscaleManager.connect(body.authKey, body.hostname));
+            const tsRes = await this.tailscaleManager.connect(body.authKey, body.hostname);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'tailscale.connect',
+              ipAddress: clientIp,
+              status: tsRes.success ? 'success' : 'failure',
+            });
+            this.sendJson(res, tsRes);
             return;
           }
 
-          if (pathname === '/api/tailscale/disconnect' && req.method === 'POST') {
-            this.sendJson(res, await this.tailscaleManager.disconnect());
+          if (route.path === '/api/v1/tailscale/disconnect') {
+            const tsRes = await this.tailscaleManager.disconnect();
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'tailscale.disconnect',
+              ipAddress: clientIp,
+              status: tsRes.success ? 'success' : 'failure',
+            });
+            this.sendJson(res, tsRes);
             return;
           }
 
-          if (pathname === '/api/lifecycle/status' && req.method === 'GET') {
+          // --- LIFECYCLE & POWER ---
+          if (route.path === '/api/v1/lifecycle/status') {
             this.sendJson(res, this.lifecycleManager.getStatus());
             return;
           }
 
-          if (pathname === '/api/lifecycle/autostart' && req.method === 'POST') {
+          if (route.path === '/api/v1/lifecycle/autostart') {
             const body = await this.parseJsonBody(req);
             this.sendJson(res, await this.lifecycleManager.setAutoStart(body.enabled, body.openAsHidden));
             return;
           }
 
-          if (pathname === '/api/lifecycle/power-blocker' && req.method === 'POST') {
+          if (route.path === '/api/v1/lifecycle/power-blocker') {
             const body = await this.parseJsonBody(req);
             this.sendJson(res, await this.lifecycleManager.setPowerSaveBlocker(body.enabled));
             return;
           }
 
-          if (pathname === '/api/logs' && req.method === 'GET') {
-            this.sendJson(res, logger.getLogs());
-            return;
-          }
-
-          // ==========================================
-          // 2. FILE EXPLORER & MOBILE MEDIA STREAMING
-          // ==========================================
-          if (pathname === '/api/files/list' && req.method === 'GET') {
+          // --- FILES & MEDIA ---
+          if (route.path === '/api/v1/files/list') {
             const subPath = parsedUrl.searchParams.get('path') || '';
-            const list = this.fileManager.listFiles(subPath);
-            this.sendJson(res, list);
+            this.sendJson(res, this.fileManager.listFiles(subPath));
             return;
           }
 
-          if (pathname === '/api/files/stream' && req.method === 'GET') {
+          if (route.path === '/api/v1/files/stream') {
             const subPath = parsedUrl.searchParams.get('path') || '';
             this.fileManager.streamMedia(subPath, req, res);
             return;
           }
 
-          if (pathname === '/api/files/download' && req.method === 'GET') {
+          if (route.path === '/api/v1/files/download') {
             const subPath = parsedUrl.searchParams.get('path') || '';
             this.fileManager.downloadFile(subPath, res);
             return;
           }
 
-          if (pathname === '/api/files/content' && req.method === 'GET') {
+          if (route.path === '/api/v1/files/content') {
             const subPath = parsedUrl.searchParams.get('path') || '';
-            const text = this.fileManager.readFileContent(subPath);
-            this.sendJson(res, { content: text });
+            this.sendJson(res, { content: this.fileManager.readFileContent(subPath) });
             return;
           }
 
-          if (pathname === '/api/files/mkdir' && req.method === 'POST') {
+          if (route.path === '/api/v1/files/mkdir') {
             const body = await this.parseJsonBody(req);
             const ok = this.fileManager.createDirectory(body.targetPath || '', body.folderName || 'New Folder');
             this.sendJson(res, { success: ok });
             return;
           }
 
-          if (pathname === '/api/files/rename' && req.method === 'POST') {
+          if (route.path === '/api/v1/files/rename') {
             const body = await this.parseJsonBody(req);
             const ok = this.fileManager.renameItem(body.oldPath, body.newName);
             this.sendJson(res, { success: ok });
             return;
           }
 
-          if (pathname === '/api/files/delete' && (req.method === 'DELETE' || req.method === 'POST')) {
+          if (route.path === '/api/v1/files/delete') {
             const body = req.method === 'DELETE'
               ? { path: parsedUrl.searchParams.get('path') || '' }
               : await this.parseJsonBody(req);
             const ok = this.fileManager.deleteItem(body.path);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.delete',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { path: body.path },
+            });
             this.sendJson(res, { success: ok });
             return;
           }
 
-          if (pathname === '/api/files/upload' && req.method === 'POST') {
+          if (route.path === '/api/v1/files/upload') {
             const targetPath = parsedUrl.searchParams.get('targetPath') || '';
             const filename = parsedUrl.searchParams.get('filename') || `upload_${Date.now()}`;
             const buffer = await this.readRawBody(req);
@@ -324,12 +654,10 @@ export class WebApiServer {
             return;
           }
 
-          // ==========================================
-          // 3. GOOGLE PHOTOS & MEMORIES GALLERY
-          // ==========================================
-          if (pathname === '/api/photos/timeline' && req.method === 'GET') {
+          // --- PHOTOS GALLERY ---
+          if (route.path === '/api/v1/photos/timeline') {
             const favoritesOnly = parsedUrl.searchParams.get('favoritesOnly') === 'true';
-            const typeFilter = parsedUrl.searchParams.get('type') as any || 'all';
+            const typeFilter = (parsedUrl.searchParams.get('type') as any) || 'all';
             const photosData = this.fileManager.getPhotosTimeline({
               favoritesOnly,
               type: typeFilter,
@@ -338,54 +666,202 @@ export class WebApiServer {
             return;
           }
 
-          if (pathname === '/api/photos/media' && req.method === 'GET') {
+          if (route.path === '/api/v1/photos/media') {
             const subPath = parsedUrl.searchParams.get('path') || '';
             this.fileManager.streamMedia(subPath, req, res);
             return;
           }
 
-          if (pathname === '/api/photos/favorite' && req.method === 'POST') {
+          if (route.path === '/api/v1/photos/favorites' || route.path === '/api/v1/photos/favorite') {
             const body = await this.parseJsonBody(req);
             const isFav = this.fileManager.toggleFavorite(body.path);
             this.sendJson(res, { success: true, isFavorite: isFav });
             return;
           }
 
-          // ==========================================
-          // 4. OPENAPI 3.0 & INTERACTIVE DOCS
-          // ==========================================
-          if (pathname === '/api/openapi.json' && req.method === 'GET') {
+          // --- TABLE BROWSER (Item 1.7) ---
+          if (route.path === '/api/v1/db/tables') {
+            this.sendJson(res, { tables: this.tableBrowser.getPermittedTables() });
+            return;
+          }
+
+          if (route.path === '/api/v1/db/tables/:table/rows') {
+            const tableName = params.table;
+            const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10);
+            const pageSize = parseInt(parsedUrl.searchParams.get('pageSize') || '25', 10);
+            const orderBy = parsedUrl.searchParams.get('orderBy') || undefined;
+            const orderDir = (parsedUrl.searchParams.get('orderDir') === 'desc' ? 'desc' : 'asc') as 'asc' | 'desc';
+
+            try {
+              const result = await this.tableBrowser.queryTable(tableName, {
+                page,
+                pageSize,
+                orderBy,
+                orderDir,
+              });
+              this.sendJson(res, result);
+            } catch (err: any) {
+              this.sendJson(res, { error: err.message }, 400);
+            }
+            return;
+          }
+
+          // --- AUDIT LOGS ---
+          if (route.path === '/api/v1/audit/logs') {
+            const limit = parseInt(parsedUrl.searchParams.get('limit') || '100', 10);
+            const logs = await this.auditService.getRecentLogs(limit);
+            this.sendJson(res, logs);
+            return;
+          }
+
+          // --- USERS MANAGEMENT (ROOT only) ---
+          if (route.path === '/api/v1/users' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const users = await (client as any).user.findMany({
+              select: {
+                id: true,
+                username: true,
+                role: true,
+                isActive: true,
+                createdAt: true,
+                updatedAt: true,
+              },
+              orderBy: { createdAt: 'asc' },
+            });
+            this.sendJson(res, users);
+            return;
+          }
+
+          if (route.path === '/api/v1/users' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateUserRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid user payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            const client = this.prismaManager.getClient();
+            const existing = await (client as any).user.findUnique({
+              where: { username: parsed.data.username },
+            });
+            if (existing) {
+              this.sendJson(res, { error: `User '${parsed.data.username}' already exists` }, 409);
+              return;
+            }
+
+            const passwordHash = await this.authService.hashPassword(parsed.data.password);
+            const created = await (client as any).user.create({
+              data: {
+                username: parsed.data.username,
+                passwordHash,
+                role: parsed.data.role,
+                isActive: true,
+              },
+              select: { id: true, username: true, role: true, isActive: true, createdAt: true },
+            });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'user.create',
+              entity: 'user',
+              entityId: created.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { username: created.username, role: created.role },
+            });
+
+            this.sendJson(res, created, 201);
+            return;
+          }
+
+          // --- API KEYS MANAGEMENT (ROOT only) ---
+          if (route.path === '/api/v1/api-keys' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const keys = await (client as any).apiKey.findMany({
+              select: {
+                id: true,
+                name: true,
+                prefix: true,
+                role: true,
+                expiresAt: true,
+                lastUsedAt: true,
+                createdAt: true,
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+            this.sendJson(res, keys);
+            return;
+          }
+
+          if (route.path === '/api/v1/api-keys' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateApiKeyRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid api key payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            const keyData = await this.authService.createApiKey(
+              decision.user!.id,
+              parsed.data.name,
+              parsed.data.role,
+              parsed.data.expiresInDays
+            );
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'api_key.create',
+              entity: 'api_key',
+              entityId: keyData.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: keyData.name, prefix: keyData.prefix, role: keyData.role },
+            });
+
+            this.sendJson(res, keyData, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/api-keys/:id' && req.method === 'DELETE') {
+            const client = this.prismaManager.getClient();
+            await (client as any).apiKey.delete({ where: { id: params.id } });
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'api_key.revoke',
+              entity: 'api_key',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: 'success',
+            });
+            this.sendJson(res, { success: true });
+            return;
+          }
+
+          // --- OPENAPI & DOCS ---
+          if (route.path === '/api/v1/openapi.json') {
             const host = req.headers.host || `127.0.0.1:${this.port}`;
-            this.sendJson(res, getOpenApiSpec(host));
+            this.sendJson(res, generateOpenApiSpec(host));
             return;
           }
 
-          if (pathname === '/api/docs/endpoints' && req.method === 'GET') {
-            this.sendJson(res, API_ENDPOINTS);
+          if (route.path === '/api/v1/docs/endpoints') {
+            this.sendJson(res, getEndpointCatalog());
             return;
-          }
-
-          // ==========================================
-          // 5. STATIC WEB APP SERVING (Next.js out/ for mobile & remote clients)
-          // ==========================================
-          if (!pathname.startsWith('/api')) {
-            const served = await this.serveStaticFile(req, res, pathname);
-            if (served) return;
           }
 
           // Fallback 404
-          res.writeHead(404, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: `Not found: ${req.method} ${pathname}` }));
+          this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
         } catch (err: any) {
           logger.error('web-api', `Error handling ${req.method} ${pathname}: ${err.message}`);
-          res.writeHead(500, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ error: err.message }));
+          this.sendJson(res, { error: err.message || 'Internal Server Error' }, 500);
         }
       });
 
-      // Bind to 0.0.0.0 so phones on local Wi-Fi / LAN and Tailscale mesh can connect directly
       this.server.listen(this.port, '0.0.0.0', () => {
-        logger.success('web-api', `Native Windows Server Web API & Mobile Gateway listening on http://0.0.0.0:${this.port}`);
+        logger.success('web-api', `Native Windows Server Web API listening on http://0.0.0.0:${this.port}`);
         resolve(true);
       });
 
@@ -406,23 +882,44 @@ export class WebApiServer {
     });
   }
 
+  private isLoopbackRequest(req: http.IncomingMessage): boolean {
+    const ip = req.socket.remoteAddress;
+    return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1' || !ip;
+  }
+
+  private getClientIp(req: http.IncomingMessage): string {
+    const forwarded = req.headers['x-forwarded-for'];
+    if (typeof forwarded === 'string') {
+      return forwarded.split(',')[0].trim();
+    }
+    return req.socket.remoteAddress || '127.0.0.1';
+  }
+
   private sendJson(res: http.ServerResponse, data: any, statusCode = 200) {
     const json = JSON.stringify(data);
     res.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
-      'Access-Control-Allow-Origin': '*',
-      'Access-Control-Allow-Methods': 'GET, POST, PUT, DELETE, OPTIONS',
-      'Access-Control-Allow-Headers': 'Content-Type, Authorization, Range',
+      'X-Content-Type-Options': 'nosniff',
     });
     res.end(json);
   }
 
   private parseJsonBody(req: http.IncomingMessage): Promise<any> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       let data = '';
+      let bytes = 0;
+      const MAX_JSON_BYTES = 1048576; // 1 MB limit (PRD Item 1.12)
+
       req.on('data', (chunk) => {
+        bytes += chunk.length;
+        if (bytes > MAX_JSON_BYTES) {
+          req.destroy();
+          reject(new Error('Payload Too Large: JSON request body exceeds 1 MB limit'));
+          return;
+        }
         data += chunk;
       });
+
       req.on('end', () => {
         try {
           resolve(data ? JSON.parse(data) : {});
@@ -430,11 +927,13 @@ export class WebApiServer {
           resolve({});
         }
       });
+
+      req.on('error', (err) => reject(err));
     });
   }
 
   private readRawBody(req: http.IncomingMessage): Promise<Buffer> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk) => {
         chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
@@ -442,6 +941,7 @@ export class WebApiServer {
       req.on('end', () => {
         resolve(Buffer.concat(chunks));
       });
+      req.on('error', (err) => reject(err));
     });
   }
 
@@ -468,7 +968,6 @@ export class WebApiServer {
 
     if (!outDir) return false;
 
-    // Clean pathname
     let relPath = pathname.replace(/^\/+/, '');
     const host = (req.headers.host || '').toLowerCase();
     if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
@@ -485,17 +984,14 @@ export class WebApiServer {
 
     let targetFile = path.join(outDir, relPath);
 
-    // If target is directory, look for index.html
     if (fs.existsSync(targetFile) && fs.statSync(targetFile).isDirectory()) {
       targetFile = path.join(targetFile, 'index.html');
     }
 
-    // Try HTML extension fallback (e.g. /about -> /about.html)
     if (!fs.existsSync(targetFile) && fs.existsSync(`${targetFile}.html`)) {
       targetFile = `${targetFile}.html`;
     }
 
-    // SPA fallback to index.html
     if (!fs.existsSync(targetFile)) {
       targetFile = path.join(outDir, 'index.html');
     }

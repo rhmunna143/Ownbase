@@ -1,0 +1,73 @@
+enum Role {
+  ROOT
+  ADMIN
+  OPERATOR
+  READ_ONLY
+}
+
+model User {
+  id           String         @id @default(uuid())
+  username     String         @unique
+  passwordHash String
+  role         Role           @default(OPERATOR)
+  isActive     Boolean        @default(true)
+  createdAt    DateTime       @default(now())
+  updatedAt    DateTime       @updatedAt
+  refreshTokens RefreshToken[]
+  apiKeys      ApiKey[]
+
+  @@map("users")
+}
+
+model ApiKey {
+  id          String    @id @default(uuid())
+  name        String
+  keyHash     String    @unique // SHA-256 hash of the 32-byte secret
+  prefix      String    // First 8 characters shown in UI
+  role        Role      @default(OPERATOR)
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  lastUsedAt  DateTime?
+  expiresAt   DateTime?
+  createdAt   DateTime  @default(now())
+
+  @@map("api_keys")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  tokenHash String    @unique // SHA-256 hash of rotating refresh token
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  createdAt DateTime  @default(now())
+  revokedAt DateTime?
+
+  @@map("refresh_tokens")
+}
+
+model AuditLogV2 {
+  id        String   @id @default(uuid())
+  actorId   String?  // User ID or 'system' or 'anonymous'
+  actorName String?  // Username or key prefix
+  action    String   // e.g. auth.login, auth.setup, service.start, file.delete
+  entity    String?  // e.g. service, route, user, file
+  entityId  String?
+  ipAddress String?
+  status    String   // 'success' | 'failure'
+  details   Json?
+  timestamp DateTime @default(now())
+
+  @@map("audit_logs_v2")
+}
+
+model SystemSetting {
+  key         String   @id
+  value       String
+  isSecret    Boolean  @default(false)
+  category    String   @default("general")
+  description String?
+  updatedAt   DateTime @updatedAt
+
+  @@map("system_settings")
+}
