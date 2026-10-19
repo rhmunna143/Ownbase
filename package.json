@@ -22,7 +22,7 @@
     "test:watch": "vitest",
     "test:security": "vitest run tests/security",
     "test:integration": "vitest run tests/integration",
-    "compile:mocks": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:tools\\mocks\\minio.exe /target:exe tools\\mocks\\minio_server.cs && C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:tools\\mocks\\filebrowser.exe /target:exe tools\\mocks\\filebrowser_server.cs",
+    "compile:mocks": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\caddy.exe /target:exe tools\\mocks\\caddy_server.cs && C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\minio.exe /target:exe tools\\mocks\\minio_server.cs && C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\ollama.exe /target:exe tools\\mocks\\ollama_server.cs && C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\filebrowser.exe /target:exe tools\\mocks\\filebrowser_server.cs",
     "dist:dir": "npm run build && electron-builder --dir",
     "build:installer": "npm run build && electron-builder --win nsis:x64",
     "build:portable": "npm run build && electron-builder --win portable:x64",
