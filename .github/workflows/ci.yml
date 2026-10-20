@@ -1,0 +1,57 @@
+name: CI
+
+on:
+  push:
+    branches: [ main, baseline ]
+  pull_request:
+    branches: [ main, baseline ]
+
+jobs:
+  build-and-test:
+    runs-on: windows-latest
+    name: Build, Typecheck, and Test Baseline
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js 20.x LTS
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Generate Prisma client
+        run: npm run prisma:generate
+
+      - name: TypeScript typecheck (Web / App / Core)
+        run: npx tsc --noEmit
+
+      - name: TypeScript typecheck (Electron / Main)
+        run: npx tsc -p tsconfig.electron.json --noEmit
+
+      - name: Build Next.js static bundle
+        run: npm run build:next
+
+      - name: Verify Red-First Security Baseline (Defects P2, P3, P4, P5)
+        shell: pwsh
+        run: |
+          Write-Host "Running security tests - in Phase 0, all defect tests MUST fail (red-first baseline)..."
+          $testOutput = npx vitest run tests/security 2>&1
+          if ($LASTEXITCODE -eq 0) {
+            Write-Error "Security tests unexpectedly passed! In Phase 0, tests reproducing defects P2, P3, P4, P5 must establish a red-first baseline."
+            exit 1
+          } else {
+            Write-Host "✓ Confirmed: Security defect tests failed as expected. Red-first baseline established for Phase 1."
+            exit 0
+          }
+
+      - name: Packaging and Asset Integration Tests
+        run: npx vitest run tests/integration/phase5-packaging-assets.test.ts
+
+      - name: Audit dependencies
+        run: npm audit --audit-level=critical
+        continue-on-error: true
