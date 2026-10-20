@@ -6,9 +6,6 @@ on:
   pull_request:
     branches: [ main, baseline ]
 
-permissions:
-  contents: read
-
 jobs:
   build-and-test:
     runs-on: windows-latest
@@ -49,7 +46,6 @@ jobs:
             exit 1
           } else {
             Write-Host "✓ Confirmed: Security defect tests failed as expected. Red-first baseline established for Phase 1."
-            exit 0
           }
 
       - name: Packaging and Asset Integration Tests

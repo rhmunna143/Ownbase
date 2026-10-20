@@ -67,7 +67,7 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
       category: 'Storage',
       target: 'http://files.localhost',
       status: 'idle',
-      message: 'Native web drive (admin / admin12345678)',
+      message: 'Native web drive (authenticated storage)',
     },
     {
       id: 'ai',
@@ -146,7 +146,7 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
           ...filesResult,
           status: 'success',
           latencyMs: res.latencyMs,
-          message: `HTTP ${res.status || 200} OK (${res.latencyMs}ms) • Login: admin / admin12345678`,
+          message: `HTTP ${res.status || 200} OK (${res.latencyMs}ms) • Storage Online`,
         };
       } else {
         filesResult = { ...filesResult, status: 'failed', message: res.error || 'Route unreachable' };
@@ -319,36 +319,14 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
         })}
       </div>
 
-      {/* Quick Verified Credentials Helper */}
+      {/* Storage Service Access */}
       <div className="mt-5 p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
         <div className="flex items-center space-x-2 text-slate-300">
-          <span className="font-semibold text-white">Default Storage Login:</span>
-          <span className="font-mono bg-slate-900 px-2 py-1 rounded border border-slate-800 text-slate-200">
-            admin
-          </span>
-          <span className="text-slate-600">/</span>
-          <span className="font-mono bg-slate-900 px-2 py-1 rounded border border-slate-800 text-slate-200">
-            admin12345678
-          </span>
+          <span className="font-semibold text-white">Storage Security:</span>
+          <span className="text-emerald-400 font-medium">Secured with Role-Based Access Control</span>
         </div>
 
         <div className="flex items-center space-x-2">
-          <button
-            onClick={() => copyToClipboard('admin / admin12345678')}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-          >
-            {copiedText === 'admin / admin12345678' ? (
-              <>
-                <Check className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-400">Copied</span>
-              </>
-            ) : (
-              <>
-                <Copy className="w-3.5 h-3.5" />
-                <span>Copy Credentials</span>
-              </>
-            )}
-          </button>
 
           <a
             href="http://files.localhost"

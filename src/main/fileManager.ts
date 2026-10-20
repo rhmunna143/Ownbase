@@ -4,6 +4,7 @@ import http from 'http';
 import os from 'os';
 import { app } from 'electron';
 import { logger } from './logger';
+import { safeResolvePath } from './core/pathGuard';
 import { FileItem, FileListResponse, PhotoItem, PhotoTimelineSection, PhotosResponse } from '../shared/types';
 
 export class FileManager {
@@ -62,10 +63,15 @@ export class FileManager {
   }
 
   public safeResolve(subPath: string = ''): string {
-    const cleanSubPath = subPath
-      .replace(/^[\/\\]+/, '')
-      .replace(/\.\.[\/\\]/g, ''); // protect against path traversal
-    return path.resolve(this.storageDir, cleanSubPath);
+    if (!subPath || subPath.trim() === '') {
+      return this.storageDir;
+    }
+    try {
+      return safeResolvePath(this.storageDir, subPath, { allowNonExistent: true });
+    } catch {
+      // Secure fallback: clamp to storage root on traversal or invalid path format
+      return this.storageDir;
+    }
   }
 
   public getRelativePath(absolutePath: string): string {

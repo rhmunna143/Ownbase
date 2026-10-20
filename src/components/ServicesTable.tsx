@@ -303,26 +303,13 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                     </p>
                   )}
 
-                  {/* Credentials helper for FileBrowser */}
+                  {/* Authentication note for FileBrowser */}
                   {service.type === 'filebrowser' && (
                     <div className="mt-3.5 p-2.5 rounded-lg bg-slate-950/70 border border-slate-800/80 flex items-center justify-between text-[11px]">
                       <div className="text-slate-300">
-                        <span className="text-slate-500 mr-1.5">Login:</span>
-                        <code className="text-emerald-400 font-mono">admin</code>
-                        <span className="text-slate-600 mx-1">/</span>
-                        <code className="text-emerald-400 font-mono">admin12345678</code>
+                        <span className="text-slate-500 mr-1.5">Access:</span>
+                        <span className="text-emerald-400 font-medium">Configured in First-Run Setup</span>
                       </div>
-                      <button
-                        onClick={() => copyToClipboard('admin12345678', `fb-${service.id}`)}
-                        className="text-slate-400 hover:text-white p-1 rounded transition-colors"
-                        title="Copy Password"
-                      >
-                        {copiedKey === `fb-${service.id}` ? (
-                          <Check className="w-3.5 h-3.5 text-emerald-400" />
-                        ) : (
-                          <Copy className="w-3.5 h-3.5" />
-                        )}
-                      </button>
                     </div>
                   )}
 
@@ -453,8 +440,8 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                     <td className="py-3 px-3">
                       <div className="font-semibold text-slate-200">{service.name}</div>
                       {service.type === 'filebrowser' && (
-                        <div className="text-[10px] text-emerald-400 font-mono mt-0.5">
-                          admin / admin12345678
+                        <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                          Configured in Setup
                         </div>
                       )}
                     </td>

@@ -14,7 +14,10 @@ import { NetworkAccessCard } from '@/components/NetworkAccessCard';
 import { FileBrowserCard } from '@/components/FileBrowserCard';
 import { PhotosGalleryCard } from '@/components/PhotosGalleryCard';
 import { ApiDocsCard } from '@/components/ApiDocsCard';
-import { serverApi } from '@/shared/apiClient';
+import { SetupWizardModal } from '@/components/SetupWizardModal';
+import { LoginModal } from '@/components/LoginModal';
+import { SecurityAdminCard } from '@/components/SecurityAdminCard';
+import { serverApi, authStore } from '@/shared/apiClient';
 import {
   SystemInfo,
   PostgresStatus,
@@ -57,9 +60,12 @@ import {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'settings' | 'logs'
+    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'settings' | 'logs'
   >('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
+  const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
+  const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [currentUser, setCurrentUser] = useState<{ id: string; username: string; role: string } | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
   const [migrationStatus, setMigrationStatus] = useState<MigrationStatus | null>(null);
@@ -135,10 +141,18 @@ export default function DashboardPage() {
         setActiveTab('photos');
       } else if (host.startsWith('files.') || search.includes('tab=files') || hash === '#files' || path.startsWith('/files')) {
         setActiveTab('files');
-      } else if (search.includes('tab=apidocs') || hash === '#api' || search.includes('tab=api')) {
-        setActiveTab('apidocs');
+      } else if (search.includes('tab=security') || hash === '#security') {
+        setActiveTab('security');
       }
     }
+
+    serverApi.getSetupStatus().then((status) => {
+      if (!status.hasRootUser) {
+        setIsSetupWizardOpen(true);
+      }
+    }).catch(() => {});
+
+    setCurrentUser(authStore.getUser());
 
     fetchAllData();
 
@@ -290,6 +304,12 @@ export default function DashboardPage() {
     if (confirm('Are you sure you want to stop all server processes and exit Native Windows Server Hub?')) {
       await serverApi.quitApp();
     }
+  };
+
+  const handleLogout = async () => {
+    await serverApi.logout();
+    setCurrentUser(null);
+    fetchAllData();
   };
 
   const runningServicesCount = services.filter((s) => {
@@ -480,6 +500,23 @@ export default function DashboardPage() {
             </button>
 
             <button
+              onClick={() => navigateTab('security')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'security'
+                  ? 'bg-purple-600 text-white shadow-lg shadow-purple-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <ShieldCheck className="w-4 h-4 text-purple-400" />
+                <span>Security &amp; Users</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                RBAC
+              </span>
+            </button>
+
+            <button
               onClick={() => navigateTab('settings')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'settings'
@@ -653,6 +690,16 @@ export default function DashboardPage() {
                 </button>
 
                 <button
+                  onClick={() => navigateTab('security')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'security' ? 'bg-purple-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <ShieldCheck className="w-4 h-4 text-purple-400" />
+                  <span>Security &amp; Users</span>
+                </button>
+
+                <button
                   onClick={() => navigateTab('settings')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
                     activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
@@ -696,6 +743,9 @@ export default function DashboardPage() {
           onRefresh={fetchAllData}
           isRefreshing={isRefreshing}
           onToggleMobileMenu={() => setIsMobileMenuOpen(!isMobileMenuOpen)}
+          currentUser={currentUser}
+          onLoginClick={() => setIsLoginModalOpen(true)}
+          onLogoutClick={handleLogout}
         />
 
         {!isElectronAvailable && (
@@ -902,6 +952,9 @@ export default function DashboardPage() {
             </div>
           )}
 
+          {/* TAB: SECURITY CORE & RBAC (PRD Phase 1) */}
+          {activeTab === 'security' && <SecurityAdminCard />}
+
           {/* TAB 9: SETTINGS & 24/7 POWER */}
           {activeTab === 'settings' && (
             <LifecycleCard
@@ -975,6 +1028,26 @@ export default function DashboardPage() {
           <span className="text-[10px]">APIs</span>
         </button>
       </div>
+
+      {/* Security Modals (PRD Phase 1) */}
+      <SetupWizardModal
+        isOpen={isSetupWizardOpen}
+        onSetupComplete={() => {
+          setIsSetupWizardOpen(false);
+          setCurrentUser(authStore.getUser());
+          fetchAllData();
+        }}
+      />
+
+      <LoginModal
+        isOpen={isLoginModalOpen}
+        onLoginSuccess={(user) => {
+          setCurrentUser(user);
+          setIsLoginModalOpen(false);
+          fetchAllData();
+        }}
+        onClose={() => setIsLoginModalOpen(false)}
+      />
     </div>
   );
 }

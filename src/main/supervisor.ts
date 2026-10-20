@@ -92,15 +92,14 @@ export class ProcessSupervisor {
         const dbPath = path.join(appData, 'filebrowser.db');
         if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
 
-        // Ensure default credentials (admin / admin12345678) on fresh database initialization
+        // Initialize FileBrowser database configuration
         if (!fs.existsSync(dbPath)) {
           try {
             const execPath = this.resolveExecutablePath(service.executable);
             if (execPath) {
               const cp = require('child_process');
               cp.execSync(`"${execPath}" config init -d "${dbPath}"`, { windowsHide: true });
-              cp.execSync(`"${execPath}" users add admin admin12345678 --perm.admin -d "${dbPath}"`, { windowsHide: true });
-              logger.success('supervisor', 'Initialized FileBrowser database with default credentials: admin / admin12345678');
+              logger.info('supervisor', 'Initialized FileBrowser database configuration.');
             }
           } catch (e: any) {
             logger.warn('supervisor', `FileBrowser auto-initialization notice: ${e.message}`);

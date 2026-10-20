@@ -1,7 +1,6 @@
 'use client';
 
-import React from 'react';
-import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu } from 'lucide-react';
+import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu, User, LogOut, LogIn } from 'lucide-react';
 import { SystemInfo } from '@/shared/types';
 
 interface HeaderProps {
@@ -9,6 +8,9 @@ interface HeaderProps {
   onRefresh: () => void;
   isRefreshing: boolean;
   onToggleMobileMenu?: () => void;
+  currentUser?: { username: string; role: string } | null;
+  onLoginClick?: () => void;
+  onLogoutClick?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -16,6 +18,9 @@ export const Header: React.FC<HeaderProps> = ({
   onRefresh,
   isRefreshing,
   onToggleMobileMenu,
+  currentUser,
+  onLoginClick,
+  onLogoutClick,
 }) => {
   return (
     <header className="border-b border-slate-800/80 bg-[#0b0f19]/90 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-3">
@@ -89,6 +94,37 @@ export const Header: React.FC<HeaderProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${isRefreshing ? 'animate-spin text-blue-400' : ''}`} />
             <span className="hidden sm:inline">Sync</span>
           </button>
+
+          {currentUser ? (
+            <div className="flex items-center gap-2 pl-2 border-l border-slate-800">
+              <div className="flex items-center gap-1.5 bg-slate-900/80 border border-slate-700/80 rounded-xl px-2.5 py-1.5 text-xs">
+                <User className="w-3.5 h-3.5 text-purple-400" />
+                <span className="font-semibold text-white">{currentUser.username}</span>
+                <span className="text-[10px] font-mono px-1.5 py-0.2 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">
+                  {currentUser.role}
+                </span>
+              </div>
+              {onLogoutClick && (
+                <button
+                  onClick={onLogoutClick}
+                  className="p-2 rounded-xl bg-slate-800 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 border border-slate-700/80 transition-colors"
+                  title="Sign Out"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
+          ) : (
+            onLoginClick && (
+              <button
+                onClick={onLoginClick}
+                className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl bg-purple-600 hover:bg-purple-500 text-white shadow-sm shadow-purple-600/30 transition-all min-h-[38px]"
+              >
+                <LogIn className="w-3.5 h-3.5" />
+                <span>Sign In</span>
+              </button>
+            )
+          )}
         </div>
       </div>
     </header>
