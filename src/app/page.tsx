@@ -152,9 +152,25 @@ export default function DashboardPage() {
       }
     }).catch(() => {});
 
-    setCurrentUser(authStore.getUser());
+    const initialUser = authStore.getUser();
+    const initialToken = authStore.getToken();
 
-    fetchAllData();
+    if (initialUser && initialToken) {
+      setCurrentUser(initialUser);
+      fetchAllData();
+    } else {
+      serverApi.restoreSession().then((restoredUser) => {
+        if (restoredUser) {
+          setCurrentUser(restoredUser);
+        } else {
+          setCurrentUser(null);
+        }
+        fetchAllData();
+      }).catch(() => {
+        setCurrentUser(null);
+        fetchAllData();
+      });
+    }
 
     // Event subscriptions
     const unsubLog = serverApi.onLogAdded((log) => {

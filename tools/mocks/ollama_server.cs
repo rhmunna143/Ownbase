@@ -71,6 +71,7 @@ namespace NativeAiHub
                 return;
             }
 
+            bool isHead = (req.HttpMethod == "HEAD");
             string path = req.Url.AbsolutePath.ToLowerInvariant();
             string accept = req.Headers["Accept"] ?? "";
 
@@ -81,21 +82,21 @@ namespace NativeAiHub
                     // If client expects JSON or specifies query param format=json
                     if (accept.Contains("application/json") || req.QueryString["format"] == "json")
                     {
-                        SendJson(res, "{\"status\":\"ok\",\"model\":\"" + ModelName + "\",\"version\":\"" + Version + "\",\"message\":\"Native Windows Server AI Hub Active\"}");
+                        SendJson(res, "{\"status\":\"ok\",\"model\":\"" + ModelName + "\",\"version\":\"" + Version + "\",\"message\":\"Native Windows Server AI Hub Active\"}", isHead);
                     }
                     else
                     {
-                        SendHtml(res, GetChatWebUi());
+                        SendHtml(res, GetChatWebUi(), isHead);
                     }
                 }
                 else if (path == "/api/tags" || path == "/v1/models")
                 {
                     string modelsJson = "{\"models\":[{\"name\":\"" + ModelName + ":latest\",\"model\":\"" + ModelName + "\",\"size\":4661224960,\"digest\":\"a78e1b...\",\"details\":{\"format\":\"gguf\",\"family\":\"llama\",\"parameter_size\":\"8B\",\"quantization_level\":\"Q4_K_M\"}}]}";
-                    SendJson(res, modelsJson);
+                    SendJson(res, modelsJson, isHead);
                 }
                 else if (path == "/api/version")
                 {
-                    SendJson(res, "{\"version\":\"" + Version + "\"}");
+                    SendJson(res, "{\"version\":\"" + Version + "\"}", isHead);
                 }
                 else if (path == "/v1/chat/completions" || path == "/api/chat" || path == "/api/generate")
                 {
@@ -104,7 +105,7 @@ namespace NativeAiHub
                 else
                 {
                     // Fallback to JSON status for unknown paths
-                    SendJson(res, "{\"status\":\"ok\",\"model\":\"" + ModelName + "\",\"endpoint\":\"" + path + "\"}");
+                    SendJson(res, "{\"status\":\"ok\",\"model\":\"" + ModelName + "\",\"endpoint\":\"" + path + "\"}", isHead);
                 }
             }
             catch (Exception ex)
@@ -181,23 +182,29 @@ namespace NativeAiHub
             return "Greetings! I am **Hermes 3 8B**, running natively on your Windows Server Hub without Docker. Your query was received and processed successfully by the local inference engine.";
         }
 
-        private static void SendJson(HttpListenerResponse res, string json)
+        private static void SendJson(HttpListenerResponse res, string json, bool isHead = false)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(json);
             res.ContentType = "application/json; charset=utf-8";
             res.ContentLength64 = bytes.Length;
             res.StatusCode = 200;
-            res.OutputStream.Write(bytes, 0, bytes.Length);
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
             res.Close();
         }
 
-        private static void SendHtml(HttpListenerResponse res, string html)
+        private static void SendHtml(HttpListenerResponse res, string html, bool isHead = false)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(html);
             res.ContentType = "text/html; charset=utf-8";
             res.ContentLength64 = bytes.Length;
             res.StatusCode = 200;
-            res.OutputStream.Write(bytes, 0, bytes.Length);
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
             res.Close();
         }
 

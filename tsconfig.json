@@ -36,6 +36,8 @@
     "dist",
     "extraResources",
     "src/main",
-    "src/preload"
+    "src/preload",
+    "src/daemon",
+    "src/electron"
   ]
 }

@@ -29,6 +29,7 @@ postmaster.pid
 *.pid
 postgres-data/
 data/
+.data/
 
 # Environment Variables & Local Secrets
 .env
