@@ -92,13 +92,13 @@ flowchart TD
 
 | Service | Executable | Port | Local Subdomain | Wi-Fi / Remote URL | Description | Default Credentials |
 | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Server Gateway Hub** | `Next.js / Electron` | `3000` / `3001` | `http://localhost/` | `http://<IP>/` | Central 1Panel-inspired management dashboard & mobile shell | N/A (Desktop / Local) |
-| **Caddy Reverse Proxy** | `caddy.exe` | `80`, `2019` | `proxy.localhost` | `http://<IP>/` | Dynamic reverse proxy & Admin REST API | N/A |
-| **FileBrowser Storage** | `filebrowser.exe` | `8080` | `files.localhost` | `http://files.<IP>.nip.io` | Native cloud drive with HTTP 206 byte-range streaming engine | `admin` / `admin12345678` |
-| **Google Photos Hub** | `Web API Engine` | `3001` | `photos.localhost` | `http://photos.<IP>.nip.io` | Timeline photo/video gallery, favorites & camera backup | Web Session |
-| **PostgreSQL 16** | `postgres.exe` | `5432` | `localhost:5432` | `postgres://localhost:5432` | Portable relational database cluster | `postgres` (No password) |
-| **Ollama AI Hub** | `ollama.exe` | `11434` | `ai.localhost` | `http://ai.<IP>.nip.io` | Local LLM inference server (Hermes 3, Llama 3) | Open API |
-| **MinIO S3 Storage** | `minio.exe` | `9000` | `s3.localhost` | `http://s3.<IP>.nip.io` | S3-compatible cloud object storage & web console | `admin` / `admin12345678` |
+| **Server Gateway Hub** | `Daemon / Gateway` | `3001` (Loopback) | `http://localhost/` | `http://<IP>/` | Central management dashboard & mobile shell (proxied via Caddy :80/:443) | User Login / RBAC |
+| **Caddy Reverse Proxy** | `caddy.exe` | `80`, `443` | `proxy.localhost` | `http://<IP>/` | Sole external ingress listener & TLS reverse proxy | N/A |
+| **FileBrowser Storage** | `filebrowser.exe` | `8080` (Loopback) | `files.localhost` | `http://files.<IP>.nip.io` | Native cloud drive with HTTP 206 byte-range streaming engine | Authenticated Session |
+| **Google Photos Hub** | `Web API Engine` | `3001` (Loopback) | `photos.localhost` | `http://photos.<IP>.nip.io` | Timeline photo/video gallery, favorites & camera backup | Authenticated Session |
+| **PostgreSQL 16** | `postgres.exe` | `5432` (Loopback) | `127.0.0.1:5432` | N/A (Internal) | Hardened relational database cluster (`scram-sha-256`, loopback-only) | Generated scram-sha-256 |
+| **Ollama AI Hub** | `ollama.exe` | `11434` (Loopback) | `ai.localhost` | `http://ai.<IP>.nip.io` | Local LLM inference server (Hermes 3, Llama 3) | Internal Proxy |
+| **MinIO S3 Storage** | `minio.exe` | `9000` (Loopback) | `s3.localhost` | `http://s3.<IP>.nip.io` | S3-compatible cloud object storage & web console | Generated Credentials |
 | **Tailscale VPN** | `tailscale.exe` | N/A | Mesh Overlay | `http://<Tailscale-IP>/` | Encrypted WireGuard overlay tunnel | Auth Key via UI |
 
 ---
@@ -156,15 +156,17 @@ Every capability of Native Windows Server Hub is exposed via REST endpoints so y
 
 ---
 
-## 🛡️ Windows Defender Firewall Setup
+## 🛡️ Windows Defender Firewall Setup (Decision D3)
 
-To allow incoming traffic from mobile devices or other computers on your Wi-Fi, run the following **one-time command** in **PowerShell as Administrator**:
+In accordance with architectural Decision **D3**, the Ownbase backend daemon binds strictly to loopback (`127.0.0.1:3001`). Caddy on ports **80** and **443** is the **sole external listener**.
+
+To allow incoming LAN or Wi-Fi traffic, create an inbound firewall rule allowing only ports 80 and 443 in **PowerShell as Administrator**:
 
 ```powershell
-New-NetFirewallRule -DisplayName "Windows Server Hub" -Direction Inbound -LocalPort 80,443,2019,3000,3001,8080,9000,11434,5432 -Protocol TCP -Action Allow
+New-NetFirewallRule -DisplayName "Ownbase Ingress (HTTP/HTTPS)" -Direction Inbound -Profile Private -LocalPort 80,443 -Protocol TCP -Action Allow
 ```
 
-*(You can also copy this command with a single click inside the dashboard's Network Access card).*
+> ⚠️ **Security Notice:** Do not open internal ports (3001, 5432, 8080, 9000, 11434) to the LAN. All external traffic is safely routed and authenticated through Caddy.
 
 ---
 

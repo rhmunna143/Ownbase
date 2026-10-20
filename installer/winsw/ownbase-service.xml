@@ -1,0 +1,37 @@
+<service>
+  <id>ownbase</id>
+  <name>Ownbase Server Daemon</name>
+  <description>Ownbase self-hosted server orchestrator, reverse proxy, and storage daemon</description>
+  
+  <!-- Executable configuration: uses bundled Node.js or system Node -->
+  <executable>node.exe</executable>
+  <arguments>"%BASE%\..\dist\daemon\main.js" --service</arguments>
+  <workingdirectory>%BASE%\..</workingdirectory>
+  
+  <!-- Start Mode: Automatic with delayed auto-start -->
+  <startmode>Automatic</startmode>
+  <delayedAutoStart>true</delayedAutoStart>
+  
+  <!-- Service Account: Virtual Account NT SERVICE\Ownbase -->
+  <serviceaccount>
+    <username>NT SERVICE\Ownbase</username>
+    <allowservicelogon>true</allowservicelogon>
+  </serviceaccount>
+
+  <!-- Recovery Policy (Item 2.7): Restart on failure 3 times, then every 60s -->
+  <onfailure action="restart" delay="5 sec" />
+  <onfailure action="restart" delay="10 sec" />
+  <onfailure action="restart" delay="20 sec" />
+  <resetfailure>60 sec</resetfailure>
+
+  <!-- Logging Configuration -->
+  <logpath>%ProgramData%\Ownbase\logs</logpath>
+  <log mode="roll-by-size">
+    <sizeThreshold>10240</sizeThreshold>
+    <keepFiles>5</keepFiles>
+  </log>
+
+  <!-- Service Environment -->
+  <env name="NODE_ENV" value="production" />
+  <env name="OWNBASE_MODE" value="service" />
+</service>
