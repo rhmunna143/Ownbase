@@ -191,9 +191,31 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
   - 5 test suites, 26 tests covering catalog real recipes, atomic download/install with SHA-256 verification, forward-auth, ConPTY terminal session lifecycle, and simulator purge.
   - **Full test suite passes: 205 tests across 49 test files (100% green).**
 
+### 8. Phase 7 Architecture: Integration & Hardening ✅ (Completed)
+- **Automated Backup & Restore Engine (`src/daemon/backup/`)**:
+  - `BackupJob` Prisma model tracking status, archive path, file size, SHA-256 checksum, encryption, components list, and metadata.
+  - Native `pg_dump` and `pg_restore` execution via resolved PostgreSQL binaries in `extraResources/pgsql/bin/` with structured table fallback.
+  - Comprehensive backup archive bundling database dump, `config.json`, AES-256 encrypted master secrets key, and app release manifests.
+  - One-click restore restoring database tables, schemas, routes, and configs with atomic integrity checks.
+  - Security warning: "Lose this master key, lose secrets".
+- **Observability, Metrics & Alerting Engine (`src/daemon/observability/`)**:
+  - Deep per-component health endpoint `GET /api/v1/system/health` (Postgres, Caddy, Supervisor, Volumes, Tailscale, Overall).
+  - System metrics polling (`GET /api/v1/system/metrics`): CPU usage %, RAM footprint (RSS + Job Objects peak commit), and volume capacities with rolling 60-point history.
+  - `AlertRule` and `SystemAlert` engine with configurable thresholds (service failed, disk >90%, backup failed) and optional webhook dispatching.
+- **Universal Error Handling & Log Redaction Hardening**:
+  - Sanitized error envelope `{ error, code, message }` preventing stack trace leaks to clients.
+  - Strict secret redaction audit stripping JWTs, passwords, DB connection strings, and encryption keys from all log sinks and event streams.
+- **OWASP ASVS L1 Security Re-Test & E2E Validation**:
+  - Re-tested all P2–P5 findings (unauthenticated SQL injection, path traversal, hardcoded credentials, open LAN access).
+  - Full RBAC matrix enforcement across all endpoints.
+  - High concurrency API load tests (p95 latency < 100ms) with in-flight request debouncing and single-flight power scheme queries.
+- **Verification Suite (`tests/phase7/`)**:
+  - 5 test suites, 22 tests covering E2E product lifecycle, ASVS security & RBAC matrix audit, automated backup & one-click restore, observability & alerts, and high-concurrency load resilience.
+  - **Full test suite passes: 227 tests across 54 test files (100% green).**
+
 ---
 
-## 8. Verification Commands
+## 9. Verification Commands
 
 Always run these before completing any phase or major task:
 ```powershell
@@ -215,9 +237,12 @@ npm run test:phase5
 # 6. Phase 6 specific tests
 npm run test:phase6
 
-# 7. TypeScript compilation for Electron & Daemon
+# 7. Phase 7 specific tests
+npm run test:phase7
+
+# 8. TypeScript compilation for Electron & Daemon
 npm run build:electron
 
-# 8. Compile jobhost launcher
+# 9. Compile jobhost launcher
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\ownbase-jobhost.exe /target:exe tools\jobhost\Program.cs
 ```

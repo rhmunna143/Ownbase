@@ -704,6 +704,84 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     summary: 'Terminate an active terminal session',
     audit: true,
   },
+
+  // ==========================================
+  // Phase 7: Backups, Observability & Alerts
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/backups',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List automated and on-demand database backup archives',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/backups',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger encrypted database and configuration backup',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/backups/:id/restore',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Restore database and configuration from backup archive',
+    audit: true,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/backups/:id',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Delete backup job and remove archive file',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/system/health',
+    auth: 'public',
+    summary: 'Deep per-component system health report',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/system/metrics',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Real-time and historical CPU, memory, and disk metrics',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/alerts',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List alert rules and system alerts',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/rules',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Create or update alert rule configuration',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/:id/resolve',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Mark an active alert as resolved',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/test-webhook',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Dispatch a test notification to configured webhook URL',
+  },
 ];
 
 /**

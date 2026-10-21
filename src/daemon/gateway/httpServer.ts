@@ -56,6 +56,10 @@ import { streamEngine } from '../files/stream';
 import { mediaIndexer } from '../files/media';
 import { terminalManager, TerminalManager } from '../terminal/manager';
 import { TerminalWsBridge } from '../terminal/ws';
+import { BackupManager } from '../backup/manager';
+import { HealthService } from '../observability/health';
+import { metricsCollector } from '../observability/metrics';
+import { AlertManager } from '../observability/alerts';
 
 export function parseCookieHeader(header?: string): Record<string, string> {
   if (!header) return {};
@@ -86,6 +90,9 @@ export class WebApiServer {
   private tableBrowser: TableBrowser;
   private eventStreamGateway: EventStreamGateway;
   private terminalWsBridge: TerminalWsBridge;
+  private backupManager: BackupManager;
+  private healthService: HealthService;
+  private alertManager: AlertManager;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -110,6 +117,27 @@ export class WebApiServer {
     });
     this.terminalWsBridge = new TerminalWsBridge(this.authService);
     terminalManager.setAuditService(this.auditService);
+    this.backupManager = new BackupManager(this.prismaManager);
+    this.healthService = new HealthService(
+      this.postgresManager,
+      this.prismaManager,
+      this.supervisor as any,
+      this.caddyManager,
+      this.tailscaleManager
+    );
+    this.alertManager = new AlertManager(this.prismaManager, this.supervisor as any);
+  }
+
+  public getBackupManager(): BackupManager {
+    return this.backupManager;
+  }
+
+  public getHealthService(): HealthService {
+    return this.healthService;
+  }
+
+  public getAlertManager(): AlertManager {
+    return this.alertManager;
   }
 
   public getTerminalWsBridge(): TerminalWsBridge {
@@ -409,7 +437,12 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/auth/me') {
-            this.sendJson(res, { user: decision.user });
+            this.sendJson(res, {
+              user: decision.user,
+              id: decision.user?.id,
+              username: decision.user?.username,
+              role: decision.user?.role,
+            });
             return;
           }
 
@@ -1572,6 +1605,118 @@ export class WebApiServer {
             return;
           }
 
+          // --- PHASE 7: BACKUPS & DISASTER RECOVERY (PRD §7.4 & A2) ---
+          if (route.path === '/api/v1/backups' && req.method === 'GET') {
+            const backups = await this.backupManager.listBackups();
+            this.sendJson(res, backups);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups' && req.method === 'POST') {
+            const user = decision.user;
+            const body = await this.parseJsonBody(req);
+            const backup = await this.backupManager.createBackup({
+              name: body?.name,
+              trigger: 'manual',
+              targetVolumePath: body?.targetVolumePath,
+            });
+            await this.auditService.record({
+              action: 'backup.create',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: backup.id, size: backup.fileSizeBytes },
+            });
+            this.sendJson(res, backup, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups/:id/restore' && req.method === 'POST') {
+            const user = decision.user;
+            const result = await this.backupManager.restoreBackup(params.id);
+            await this.auditService.record({
+              action: 'backup.restore',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: params.id, recordsRestored: result.recordsRestored },
+            });
+            this.sendJson(res, result);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups/:id' && req.method === 'DELETE') {
+            const user = decision.user;
+            const deleted = await this.backupManager.deleteBackup(params.id);
+            await this.auditService.record({
+              action: 'backup.delete',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: params.id },
+            });
+            this.sendJson(res, { success: deleted, id: params.id });
+            return;
+          }
+
+          // --- PHASE 7: OBSERVABILITY & SYSTEM HEALTH (PRD §7.5) ---
+          if (route.path === '/api/v1/system/health' && req.method === 'GET') {
+            const report = await this.healthService.getDeepHealth();
+            const status = report.overall === 'unhealthy' ? 503 : 200;
+            this.sendJson(res, report, status);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/metrics' && req.method === 'GET') {
+            this.sendJson(res, {
+              latest: metricsCollector.getLatest(),
+              history: metricsCollector.getHistory(),
+            });
+            return;
+          }
+
+          // --- PHASE 7: ALERTS & RULES (PRD §7.5) ---
+          if (route.path === '/api/v1/alerts' && req.method === 'GET') {
+            const alerts = await this.alertManager.getAlerts();
+            this.sendJson(res, alerts);
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/rules' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const rule = await this.alertManager.createOrUpdateRule(body || {});
+            this.sendJson(res, rule, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/:id/resolve' && req.method === 'POST') {
+            const success = await this.alertManager.resolveAlert(params.id);
+            this.sendJson(res, { success, id: params.id });
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/test-webhook' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const webhookUrl = body?.webhookUrl;
+            if (!webhookUrl) {
+              this.sendJson(res, { error: 'webhookUrl is required', code: 'INVALID_PARAM', message: 'webhookUrl is required' }, 400);
+              return;
+            }
+            const testAlert = {
+              id: 'test-alert-' + Date.now(),
+              title: 'Test Webhook Notification',
+              message: 'This is a test notification from Ownbase Observability System.',
+              severity: 'info',
+              createdAt: new Date().toISOString(),
+            };
+            const dispatched = await this.alertManager.dispatchWebhook(webhookUrl, testAlert);
+            this.sendJson(res, { success: dispatched, webhookUrl });
+            return;
+          }
+
           // --- OPENAPI & DOCS ---
           if (route.path === '/api/v1/openapi.json') {
             const host = req.headers.host || `127.0.0.1:${this.port}`;
@@ -1585,10 +1730,18 @@ export class WebApiServer {
           }
 
           // Fallback 404
-          this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
+          this.sendJson(res, { error: `Not found: ${req.method} ${pathname}`, code: 'NOT_FOUND', message: `Not found: ${req.method} ${pathname}` }, 404);
         } catch (err: any) {
           logger.error('web-api', `Error handling ${req.method} ${pathname}: ${err.message}`);
-          this.sendJson(res, { error: err.message || 'Internal Server Error' }, 500);
+          const isProd = process.env.NODE_ENV === 'production' || process.env.OWNBASE_MODE === 'service';
+          const safeMessage = isProd && err.statusCode !== 400 && err.statusCode !== 401 && err.statusCode !== 403 && err.statusCode !== 404
+            ? 'An internal error occurred'
+            : (err.message || 'Internal Server Error');
+          this.sendJson(res, {
+            error: safeMessage,
+            code: err.code || 'INTERNAL_ERROR',
+            message: safeMessage,
+          }, err.statusCode || 500);
         }
       });
 

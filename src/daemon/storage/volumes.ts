@@ -22,6 +22,7 @@ export class VolumeManager {
   private cachedVolumes: VolumeInfo[] = [];
   private lastScannedAt = 0;
   private cacheTtlMs = 60000;
+  private activeScanPromise?: Promise<VolumeInfo[]>;
 
   constructor(prismaManager: PrismaManager) {
     this.prismaManager = prismaManager;
@@ -36,6 +37,18 @@ export class VolumeManager {
       return this.cachedVolumes;
     }
 
+    if (this.activeScanPromise) {
+      return this.activeScanPromise;
+    }
+
+    this.activeScanPromise = this.executeScan().finally(() => {
+      this.activeScanPromise = undefined;
+    });
+
+    return this.activeScanPromise;
+  }
+
+  private async executeScan(): Promise<VolumeInfo[]> {
     const systemDriveLetter = (process.env.SystemDrive || 'C:').toUpperCase().replace(':', '');
     const volumes: VolumeInfo[] = [];
 
@@ -98,7 +111,7 @@ export class VolumeManager {
     }
 
     this.cachedVolumes = volumes;
-    this.lastScannedAt = now;
+    this.lastScannedAt = Date.now();
 
     // Sync to database
     try {

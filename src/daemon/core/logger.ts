@@ -37,9 +37,12 @@ export class Logger {
     // 3. Redact PostgreSQL connection string passwords
     redacted = redacted.replace(/(postgresql:\/\/[^:]+:)(.*)(@[^/@]+(?::\d+)?(?:[/?]|$))/gi, '$1[REDACTED_DB_PASS]$3');
 
-    // 4. Redact password/token/key JSON fields and key-values
+    // 4. Redact Basic auth headers
+    redacted = redacted.replace(/Basic\s+[A-Za-z0-9+/=]+/gi, 'Basic [REDACTED_BASIC_AUTH]');
+
+    // 5. Redact password/token/key JSON fields and key-values
     redacted = redacted.replace(
-      /(["']?(?:password|token|secret|apiKey|setupToken|authKey)["']?\s*[:=]\s*["']?)(?!\[REDACTED)([^"',\s\}]+)(["']?)/gi,
+      /(["']?(?:password|token|secret|apiKey|setupToken|authKey|secretKey|accessKey|privateKey|refreshToken|clientSecret|dataKey)["']?\s*[:=]\s*["']?)(?!\[REDACTED)([^"',\s\}]+)(["']?)/gi,
       '$1[REDACTED]$3'
     );
 
