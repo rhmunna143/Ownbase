@@ -4,15 +4,15 @@
 
 ---
 
-## 🚀 Current Status: Phase 2 Completed & Verified &bull; Ready for Phase 3
+## 🚀 Current Status: Phase 3 Completed &bull; Ready for Phase 4
 
 | Phase | Title | Status | Primary Outcome |
 | :---: | :--- | :---: | :--- |
 | **Phase 0** | Baseline, Spikes, Hygiene | ✅ Completed | Failing red-tests, ADR decisions, hygiene cleanup |
 | **Phase 1** | Security Core | ✅ Completed | Authenticated API, RBAC guard, Argon2id, path containment |
 | **Phase 2** | Headless Daemon | ✅ Completed | Zero Electron in daemon, WinSW service packaging, Caddy port 80 proxy |
-| **Phase 3** | Supervisor & Sandboxing | 🟡 Next Up | Windows Job Objects, process tree limits, health checks, event stream |
-| **Phase 4** | Deployment Engine & Catalog | ⚪ Backlog | Git/zip to running app, recipes, app catalog |
+| **Phase 3** | Supervisor & Sandboxing | ✅ Completed | Windows Job Objects, process tree limits, health checks, event stream |
+| **Phase 4** | Deployment Engine & Catalog | 🟡 Next Up | Git/zip to running app, recipes, app catalog |
 | **Phase 5** | Ingress, Storage, Media | ⚪ Backlog | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
 | **Phase 6** | Web Terminal & Real Services | ⚪ Backlog | ConPTY terminal, official binaries replacing simulators |
 | **Phase 7** | Integration & Hardening | ⚪ Backlog | Full Playwright regression, load tests, backup & restore |
@@ -63,16 +63,21 @@
 
 ---
 
-## Phase 3: Supervisor & Sandboxing (Next Up) 🟡
-- [ ] **3.1**: Build `ownbase-jobhost.exe` (Go launcher) implementing Windows Job Objects:
-  - `JOB_OBJECT_LIMIT_JOB_MEMORY` (whole tree memory limit)
-  - `JOB_OBJECT_CPU_RATE_CONTROL` (hard CPU quota)
-  - `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE` (zero orphaned grandchild processes)
-- [ ] **3.2**: Refactor `src/daemon/supervisor/supervisor.ts` to execute child processes through `ownbase-jobhost.exe`
-- [ ] **3.3**: Configurable restart policies (`always`, `on-failure`, `never`) with exponential backoff & crash loops detection
-- [ ] **3.4**: Health check probers (HTTP status code, TCP ping, process alive check) with status reporting
-- [ ] **3.5**: Event-driven WebSocket stream (`/api/v1/events`) replacing 8-second frontend polling
-- [ ] **3.6**: Supervisor state persistence and crash recovery in PostgreSQL
+## Phase 3: Supervisor & Sandboxing ✅
+- [x] **3.1**: `ServiceSpec` interface & builtin service recipes (`src/daemon/supervisor/spec.ts`)
+- [x] **3.2**: Formal service state machine with strict transitions & events (`src/daemon/supervisor/machine.ts`)
+- [x] **3.3**: Windows Job Object launcher `ownbase-jobhost.exe` (`tools/jobhost/Program.cs`) & Node bridge (`src/daemon/supervisor/jobhost.ts`)
+- [x] **3.4**: Configurable restart policies (`always`, `on-failure`, `never`) with exponential backoff & crash-loop circuit breaker (`src/daemon/supervisor/restart.ts`)
+- [x] **3.5**: Health check probers (HTTP / TCP) with status reporting (`src/daemon/supervisor/health.ts`)
+- [x] **3.6**: Graceful console shutdown (Ctrl-Break / console close) replacing blind `taskkill /T /F` (`src/daemon/supervisor/stop.ts`)
+- [x] **3.7**: Environment variable isolation & allowlisting (`src/daemon/supervisor/env.ts`)
+- [x] **3.8**: Process reconciliation & stale PID cleanup on daemon boot (`src/daemon/supervisor/reconcile.ts`)
+- [x] **3.9**: Per-service rotating log buffers & streaming (`src/daemon/supervisor/logs.ts`)
+- [x] **3.10**: Per-job CPU & memory metrics collection (`src/daemon/supervisor/metrics.ts`)
+- [x] **3.11**: Event-driven push stream `/api/v1/events` (WebSocket / SSE) (`src/daemon/gateway/events.ts`)
+- [x] **3.12**: Frontend real-time push event consumer replacing 8s polling (`src/app/page.tsx`, components)
+- [x] **3.13**: Prisma schema update with limits, restart policy, health probe & encrypted env vars (`prisma/schema/service.prisma`)
+- [x] **3.14**: Phase 3 comprehensive unit & integration test suite (`tests/phase3/`)
 
 ---
 

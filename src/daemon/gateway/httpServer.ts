@@ -33,6 +33,7 @@ import { SetupService } from '../auth/setup';
 import { AuthGuard } from '../auth/guard';
 import { loginThrottle } from '../auth/throttle';
 import { TableBrowser } from '../db/browser';
+import { EventStreamGateway } from './events';
 
 export class WebApiServer {
   private server: http.Server | null = null;
@@ -43,6 +44,7 @@ export class WebApiServer {
   private setupService: SetupService;
   private authGuard: AuthGuard;
   private tableBrowser: TableBrowser;
+  private eventStreamGateway: EventStreamGateway;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -60,6 +62,11 @@ export class WebApiServer {
     this.setupService = new SetupService(this.prismaManager, this.authService, this.auditService);
     this.authGuard = new AuthGuard(this.authService);
     this.tableBrowser = new TableBrowser(this.prismaManager);
+    this.eventStreamGateway = new EventStreamGateway({
+      authService: this.authService,
+      supervisor: this.supervisor,
+      postgres: this.postgresManager,
+    });
   }
 
   public getPort(): number {
@@ -115,26 +122,15 @@ export class WebApiServer {
 
         try {
           // ==========================================
-          // 1. REAL-TIME EVENT STREAM (SSE)
+          // 1. REAL-TIME EVENT STREAM (SSE) (PRD Item 3.11)
           // ==========================================
           if (pathname === '/api/v1/events') {
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            });
-            res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+            await this.eventStreamGateway.handleEventStream(req, res);
+            return;
+          }
 
-            const onEvent = (event: any) => {
-              try {
-                res.write(`data: ${JSON.stringify(event)}\n\n`);
-              } catch {}
-            };
-
-            eventBus.on('*', onEvent);
-            req.on('close', () => {
-              eventBus.off('*', onEvent);
-            });
+          if (pathname === '/api/v1/events/snapshot') {
+            this.sendJson(res, this.eventStreamGateway.getSnapshot());
             return;
           }
 

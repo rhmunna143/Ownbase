@@ -172,33 +172,34 @@ export default function DashboardPage() {
       });
     }
 
-    // Event subscriptions
-    const unsubLog = serverApi.onLogAdded((log) => {
-      setLogs((prev) => [log, ...prev].slice(0, 500));
+    // Event subscriptions via single real-time SSE stream (PRD Item 3.11 & 3.12)
+    const unsubStream = serverApi.subscribeToEventStream({
+      onSnapshot: (snapshot) => {
+        if (snapshot.services) setProcessStatuses(snapshot.services);
+        if (snapshot.postgres) setPostgresStatus(snapshot.postgres);
+      },
+      onServiceStatus: (status) => {
+        setProcessStatuses((prev) => ({
+          ...prev,
+          [status.serviceId]: status,
+        }));
+      },
+      onPostgresStatus: (status) => {
+        setPostgresStatus(status);
+      },
+      onBootstrapUpdate: (steps) => {
+        setBootstrapSteps(steps);
+      },
+      onLog: (log) => {
+        setLogs((prev) => [log, ...prev].slice(0, 500));
+      },
     });
 
-    const unsubSteps = serverApi.onBootstrapUpdate((steps) => {
-      setBootstrapSteps(steps);
-    });
-
-    const unsubPg = serverApi.onPostgresStatusChange((status) => {
-      setPostgresStatus(status);
-    });
-
-    const unsubProc = serverApi.onProcessStatusChanged((status) => {
-      setProcessStatuses((prev) => ({
-        ...prev,
-        [status.serviceId]: status,
-      }));
-    });
-
-    const interval = setInterval(fetchAllData, 8000);
+    // Gentle fallback background sync (60s instead of 8s continuous polling)
+    const interval = setInterval(fetchAllData, 60000);
 
     return () => {
-      unsubLog();
-      unsubSteps();
-      unsubPg();
-      unsubProc();
+      unsubStream();
       clearInterval(interval);
     };
   }, [fetchAllData]);

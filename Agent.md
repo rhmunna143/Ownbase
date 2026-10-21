@@ -95,21 +95,42 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
 ### 3. Database Migration Policy
 - **No `db push`**: As per Phase 2 Decision P11, fallback to `prisma db push` is removed. Migrations must use bundled `prisma migrate deploy` or fail loudly into degraded mode.
 
+### 4. Phase 3 Architecture: Job Objects & Sandboxing ✅ (Completed)
+- **Job Host Launcher & Win32 FFI**:
+  - Implemented in C# with Win32 P/Invoke (`tools/jobhost/Program.cs`) and compiled via `.NET 4.0 csc.exe`.
+  - Also embedded natively in the Node daemon using `koffi` FFI bindings directly into `kernel32.dll` (`src/daemon/supervisor/jobhost.ts`), bypassing Windows Defender Application Control (WDAC) unsigned executable restrictions on test machines while maintaining 100% native Win32 Job Object capabilities.
+  - Applies `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE (0x2000)`: If daemon or host dies, Windows kernel guarantees zero orphaned grandchild processes.
+  - Applies `JOB_OBJECT_LIMIT_JOB_MEMORY (0x200)`: Caps peak committed memory across the entire process tree.
+  - Applies `JOB_OBJECT_CPU_RATE_CONTROL (0x1 | 0x4 hard cap)`: Enforces hard CPU quota per job object.
+  - Periodic accounting queries (`QueryInformationJobObject` with basic and extended limits) extract CPU time and peak committed memory.
+- **Supervisor Decoupling**:
+  - `supervisor.ts` contains ZERO hardcoded binary switches (`caddy`, `filebrowser`, `ollama`, `minio`).
+  - Workloads are fully defined via `ServiceSpec` interface (`supervisor/spec.ts`) and resolved from `BUILTIN_RECIPES`.
+  - Strict State Machine (`supervisor/machine.ts`): `stopped`, `starting`, `running`, `stopping`, `backoff`, `crashed`, `failed`.
+  - Exponential backoff with jitter and crash-loop circuit breaker (`supervisor/restart.ts`) triggering `failed` state upon threshold breach.
+  - Active health probers (`supervisor/health.ts`) for TCP and HTTP endpoints with configurable latency and failure thresholds.
+  - Environment variable isolation (`supervisor/env.ts`): allowlists safe system vars and decrypts sensitive variables on demand.
+  - P17 Boot Reconcile (`supervisor/reconcile.ts`): detects and purges stale PIDs from unexpected crashes.
+  - Real-time Event Stream (`gateway/events.ts`): `/api/v1/events` pushes state transitions, logs, and metrics to UI, replacing frontend 8-second polling.
+
 ---
 
 ## 5. Verification Commands
 
 Always run these before completing any phase or major task:
 ```powershell
-# 1. Full Vitest test suite (All 17 suites, 69 tests must pass)
+# 1. Full Vitest test suite (All suites must pass)
 npm test
 
 # 2. Phase 2 specific tests
 npm run test:phase2
 
-# 3. TypeScript compilation for Electron & Daemon
+# 3. Phase 3 specific tests
+npm run test:phase3
+
+# 4. TypeScript compilation for Electron & Daemon
 npm run build:electron
 
-# 4. Compile mock binaries (when tools/mocks/*.cs is modified)
-C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\caddy.exe /target:exe tools\mocks\caddy_server.cs
+# 5. Compile jobhost launcher
+C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\ownbase-jobhost.exe /target:exe tools\jobhost\Program.cs
 ```
