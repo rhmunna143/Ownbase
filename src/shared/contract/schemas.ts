@@ -79,3 +79,27 @@ export const InstallCatalogRequestSchema = z.object({
   subdomain: z.string().optional(),
   port: z.number().optional(),
 });
+
+// Phase 5 Ingress, Storage & Media Schemas
+export const TlsPreflightRequestSchema = z.object({
+  domain: z.string().min(1).max(253),
+});
+
+export const CreateTcpProxyRequestSchema = z.object({
+  serviceId: z.string().optional(),
+  listenPort: z.number().int().min(1).max(65535),
+  targetPort: z.number().int().min(1).max(65535),
+  targetHost: z.string().default('127.0.0.1'),
+  protocol: z.enum(['tcp', 'udp']).default('tcp'),
+  scope: z.enum(['LocalSubnet', 'Tailscale', 'Any']).default('LocalSubnet'),
+});
+
+export const CreateServiceMountRequestSchema = z.object({
+  serviceId: z.string().optional(),
+  volumeId: z.string().min(1),
+  tier: z.enum(['DATA', 'MEDIA', 'BACKUP', 'CACHE']).default('DATA'),
+  sourceSubpath: z.string().min(1),
+  mountName: z.string().min(1),
+  quotaBytes: z.coerce.number().optional(),
+});
+

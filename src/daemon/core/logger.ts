@@ -149,6 +149,10 @@ export class Logger {
     this.log('success', source, message, metadata);
   }
 
+  public debug(source: LogEntry['source'], message: string, metadata?: Record<string, any>) {
+    this.log('info', source, `[DEBUG] ${message}`, metadata);
+  }
+
   public getLogs(): LogEntry[] {
     return [...this.ringBuffer];
   }

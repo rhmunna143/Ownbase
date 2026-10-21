@@ -11,6 +11,9 @@ import {
   DeployAppRequestSchema,
   RollbackAppRequestSchema,
   InstallCatalogRequestSchema,
+  TlsPreflightRequestSchema,
+  CreateTcpProxyRequestSchema,
+  CreateServiceMountRequestSchema,
 } from './schemas';
 
 export const ROUTE_TABLE: RouteDefinition[] = [
@@ -564,6 +567,117 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     summary: 'One-click install from catalog recipe',
     requestSchema: InstallCatalogRequestSchema,
     audit: true,
+  },
+
+  // ==========================================
+  // Phase 5: Ingress, TLS & Direct TCP Exposure
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/network/urls',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get derived accessible URLs for all routes with exposure warnings',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/network/tls/preflight',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Pre-flight check for custom domain ACME TLS and CGNAT detection',
+    requestSchema: TlsPreflightRequestSchema,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/network/tcp',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List active direct TCP proxy listeners',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/network/tcp',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Start direct TCP port forwarder with firewall rule',
+    requestSchema: CreateTcpProxyRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/network/tcp/:port',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Stop direct TCP forwarder and remove firewall rule',
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 5: Storage Volumes & Mounts
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/storage/volumes',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List discovered Windows storage volumes and free space',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/storage/volumes/refresh',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger scan and refresh of Windows storage volumes',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/storage/mounts',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List service storage mounts and directory junctions',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/storage/mounts',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Create tiered service mount with NTFS junction',
+    requestSchema: CreateServiceMountRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/storage/usage',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get cached storage usage breakdown and alerts',
+  },
+
+  // ==========================================
+  // Phase 5: Media Service & Timeline
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/media/timeline',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get paginated photo and video timeline from database',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/media/scan',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger background media library indexing scan',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/media/thumbnail/:id',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Retrieve cached WebP thumbnail for media item',
   },
 ];
 

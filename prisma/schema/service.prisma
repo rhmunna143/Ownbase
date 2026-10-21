@@ -1,23 +1,25 @@
 model Service {
-  id            String   @id @default(uuid())
-  name          String   @unique
-  type          String   // caddy, filebrowser, ollama, postgres, custom
+  id            String         @id @default(uuid())
+  name          String         @unique
+  type          String         // caddy, filebrowser, ollama, postgres, custom
   templateId    String?
   executable    String
   port          Int?
-  status        String   @default("stopped") // stopped, starting, running, stopping, backoff, crashed, failed
-  autoStart     Boolean  @default(true)
+  status        String         @default("stopped") // stopped, starting, running, stopping, backoff, crashed, failed
+  autoStart     Boolean        @default(true)
   pid           Int?
   maxMemoryMb   Int?
   cpuLimitPct   Int?
-  restartPolicy String   @default("always") // always, on-failure, never
+  restartPolicy String         @default("always") // always, on-failure, never
   healthProbe   Json?
-  envVars       String?  // encrypted JSON payload
+  envVars       String?        // encrypted JSON payload
   description   String?
   config        Json?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
   routes        Route[]
+  routePorts    RoutePort[]
+  mounts        ServiceMount[]
 
   @@map("services")
 }

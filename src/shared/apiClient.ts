@@ -692,4 +692,89 @@ export const serverApi = {
     }).catch(() => null);
     return res && res.ok ? await res.json() : null;
   },
+
+  // Phase 5 Ingress, Storage & Media
+  getNetworkUrls: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/network/urls').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  checkTlsPreflight: async (domain: string): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/network/tls/preflight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  listTcpProxies: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/network/tcp').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  startTcpProxy: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/network/tcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  stopTcpProxy: async (port: number): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth(`/api/v1/network/tcp/${port}`, {
+      method: 'DELETE',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  getVolumes: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/volumes').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  refreshVolumes: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/volumes/refresh', {
+      method: 'POST',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getStorageMounts: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/mounts').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createStorageMount: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/storage/mounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getStorageUsage: async (): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/storage/usage').catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getMediaTimeline: async (params: { page?: number; pageSize?: number } = {}): Promise<any> => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+    const res = await fetchWithAuth(`/api/v1/media/timeline?${qs.toString()}`).catch(() => null);
+    return res && res.ok ? await res.json() : { items: [], total: 0 };
+  },
+
+  triggerMediaScan: async (library = 'photos'): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/media/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ library }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
 };
+

@@ -142,9 +142,40 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
   - Zod-validated template recipes providing one-click installation for popular native services and runtimes (8 recipes: Static Site, Express, FastAPI, Go Web, Redis, FileBrowser, MinIO, Ollama).
   - Dynamic API endpoint `/api/v1/catalog` feeding frontend `src/components/AppStore.tsx`.
 
+### 6. Phase 5 Architecture: Ingress, Storage & Media ✅ (Completed)
+- **Dynamic HostBuilder (`src/daemon/core/hostBuilder.ts` & D5)**:
+  - Generates scoped host matchers and user-facing derived URLs (`*.localhost`, `*.<lan-ip>.nip.io`, `*.ts.net`, custom domains).
+  - Listens for network interface change events (`networkInterfaces`) to dynamically recalculate matchers and notify Caddy. Never stores stale `.nip.io` hostnames in the database.
+- **Caddy Config Engine (`src/daemon/network/caddy.ts`)**:
+  - Centralized full JSON config generator replacing ad-hoc route assembly and completely removing obsolete `scripts/sync_caddy.js`.
+  - Config hash caching (SHA-256): Only executes HTTP `POST /load` when the configuration hash actually changes.
+  - Autosave persistence (`caddy.autosave.json`) ensuring Caddy re-hydrates valid routes upon restart.
+- **Route Models & Additive Migrations (`prisma/schema/route.prisma`, `storage.prisma`, `media.prisma`)**:
+  - Extended route models with `exposeLocal`, `exposeLan`, `exposeMesh`, and dedicated `RouteHost` for custom domains.
+  - Added `StorageVolume`, `ServiceMount`, and `MediaItem` models with additive migration `20261021200000_phase5_ingress_storage_media`.
+- **TLS Manager (`src/daemon/network/tls.ts`)**:
+  - ACME HTTP-01 / TLS-ALPN pre-flight validation (DNS resolution to host IP, port 80/443 accessibility, CGNAT detection on RFC 6598 100.64.0.0/10).
+  - Tailscale HTTPS `ts.net` certificate integration and helpful guidance when behind CGNAT.
+- **Direct TCP Exposure (`src/daemon/network/tcpProxy.ts`, `firewall.ts` & D10)**:
+  - Daemon-native raw TCP stream forwarder (`net.createServer`) for databases / game servers / raw protocols.
+  - Restricted to ROOT/ADMIN role, audit-logged, and automatically manages Windows Firewall inbound rules (`netsh advfirewall`).
+- **Tailscale Manager (`src/daemon/network/tailscale.ts`)**:
+  - Queries `tailscale status --json`, discovers peers, and configures device MagicDNS domains without exposing auth keys on the command line.
+- **Volume Discovery & Storage Placement (`src/daemon/storage/`)**:
+  - Discovers Windows volumes via PowerShell `Get-Volume` (`volumes.ts`) with disk health, drive letters, capacity, and system drive flag.
+  - `placement.ts`: Maps service mounts (`ServiceMount` tier: `DATA`, `MEDIA`, `BACKUP`, `CACHE`) to target volumes with `PathGuard` containment and creates NTFS junctions using native `fs.promises.symlink(target, path, 'junction')` (zero unsafe shell `mklink` calls).
+  - `usage.ts`: Incremental directory usage calculator with soft quotas and 90% disk capacity warning alerts.
+- **Streaming Upload & RFC 7233 Media Server (`src/daemon/files/`)**:
+  - `upload.ts` (P12): Streams multipart/raw payloads directly to disk temp file on the target volume with atomic rename, bounding daemon memory (< 100 MB RSS growth).
+  - `stream.ts` (P13): Strict RFC 7233 range parsing including suffix ranges (`bytes=-500`), end clamping, RFC 5987 `filename*` unicode handling, `ETag`, `Last-Modified`, and `If-Range` validation.
+  - `media.ts` (P14): Background indexer populating `MediaItem` database table, consent-first library roots (no unprompted personal directory scanning), and WebP thumbnail caching.
+- **Verification Suite (`tests/phase5/`)**:
+  - 10 test files, 40 tests covering RFC 7233 byte-range parsing, streaming uploads, volume discovery, directory junctions, soft quotas, TLS CGNAT pre-flight, and gateway routes. Total suite passes: **179 tests across 44 test files**.
+
+
 ---
 
-## 6. Verification Commands
+## 7. Verification Commands
 
 Always run these before completing any phase or major task:
 ```powershell
@@ -160,9 +191,12 @@ npm run test:phase3
 # 4. Phase 4 specific tests
 npm run test:phase4
 
-# 5. TypeScript compilation for Electron & Daemon
+# 5. Phase 5 specific tests
+npm run test:phase5
+
+# 6. TypeScript compilation for Electron & Daemon
 npm run build:electron
 
-# 6. Compile jobhost launcher
+# 7. Compile jobhost launcher
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\ownbase-jobhost.exe /target:exe tools\jobhost\Program.cs
 ```

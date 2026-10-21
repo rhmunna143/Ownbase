@@ -28,6 +28,9 @@ import {
   DeployAppRequestSchema,
   RollbackAppRequestSchema,
   InstallCatalogRequestSchema,
+  TlsPreflightRequestSchema,
+  CreateTcpProxyRequestSchema,
+  CreateServiceMountRequestSchema,
   AuthenticatedUser,
   Role,
 } from '../../shared/contract';
@@ -42,6 +45,16 @@ import { deploymentPipeline } from '../deploy/pipeline';
 import { releaseManager } from '../deploy/release';
 import { catalogManager } from '../deploy/catalog';
 import { portAllocator } from '../deploy/ports';
+import { hostBuilder } from '../core/hostBuilder';
+import { tlsManager } from '../network/tls';
+import { tcpProxyManager } from '../network/tcpProxy';
+import { volumeManager } from '../storage/volumes';
+import { storagePlacementManager } from '../storage/placement';
+import { storageUsageManager } from '../storage/usage';
+import { uploadEngine } from '../files/upload';
+import { streamEngine } from '../files/stream';
+import { mediaIndexer } from '../files/media';
+
 
 export class WebApiServer {
   private server: http.Server | null = null;
@@ -1181,6 +1194,286 @@ export class WebApiServer {
             });
 
             this.sendJson(res, { success: true, app }, 201);
+            return;
+          }
+
+          // --- PHASE 5: INGRESS, TLS & DIRECT TCP EXPOSURE ---
+          if (route.path === '/api/v1/network/urls' && req.method === 'GET') {
+            const routes = await this.prismaManager.getRoutes();
+            const derivedList: any[] = [];
+            for (const r of routes) {
+              const intent = {
+                subdomain: r.subdomain,
+                targetPort: r.targetPort,
+                targetHost: r.targetHost,
+                customDomains: r.customDomain ? [r.customDomain] : [],
+                exposeLocal: (r as any).exposeLocal ?? true,
+                exposeLan: (r as any).exposeLan ?? true,
+                exposeMesh: (r as any).exposeMesh ?? false,
+                tlsEnabled: r.tlsEnabled ?? true,
+                requiresAuth: true,
+              };
+              const built = hostBuilder.build(intent);
+              derivedList.push({
+                serviceId: r.serviceId,
+                subdomain: r.subdomain,
+                targetPort: r.targetPort,
+                matchers: built.caddyMatchers,
+                urls: built.urls,
+              });
+            }
+            this.sendJson(res, derivedList);
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tls/preflight' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = TlsPreflightRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid domain payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const preflight = await tlsManager.checkPreflight(parsed.data.domain);
+            this.sendJson(res, preflight);
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp' && req.method === 'GET') {
+            this.sendJson(res, tcpProxyManager.getActiveListeners());
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateTcpProxyRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid TCP proxy payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            try {
+              const listener = await tcpProxyManager.startProxy({
+                listenPort: parsed.data.listenPort,
+                targetPort: parsed.data.targetPort,
+                targetHost: parsed.data.targetHost,
+                scope: parsed.data.scope,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'tcp_proxy.start',
+                entity: 'tcp_proxy',
+                entityId: String(parsed.data.listenPort),
+                ipAddress: clientIp,
+                status: 'success',
+                details: { listenPort: parsed.data.listenPort, targetPort: parsed.data.targetPort },
+              });
+
+              this.sendJson(
+                res,
+                {
+                  success: true,
+                  listenPort: listener.listenPort,
+                  targetPort: listener.targetPort,
+                  ruleName: listener.ruleName,
+                },
+                201
+              );
+            } catch (tcpErr: any) {
+              this.sendJson(res, { error: tcpErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp/:port' && req.method === 'DELETE') {
+            const portNum = parseInt(params.port, 10);
+            if (isNaN(portNum)) {
+              this.sendJson(res, { error: 'Invalid port parameter' }, 400);
+              return;
+            }
+            const stopped = await tcpProxyManager.stopProxy(portNum);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'tcp_proxy.stop',
+              entity: 'tcp_proxy',
+              entityId: String(portNum),
+              ipAddress: clientIp,
+              status: stopped ? 'success' : 'failure',
+            });
+            this.sendJson(res, { success: stopped });
+            return;
+          }
+
+          // --- PHASE 5: STORAGE VOLUMES & MOUNTS ---
+          if (route.path === '/api/v1/storage/volumes' && req.method === 'GET') {
+            const volumes = await volumeManager.discoverVolumes(false);
+            const serialized = volumes.map((v) => ({
+              ...v,
+              totalBytes: v.totalBytes.toString(),
+              freeBytes: v.freeBytes.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/volumes/refresh' && req.method === 'POST') {
+            const volumes = await volumeManager.discoverVolumes(true);
+            const serialized = volumes.map((v) => ({
+              ...v,
+              totalBytes: v.totalBytes.toString(),
+              freeBytes: v.freeBytes.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/mounts' && req.method === 'GET') {
+            const mounts = await storagePlacementManager.listMounts();
+            const serialized = mounts.map((m: any) => ({
+              ...m,
+              quotaBytes: m.quotaBytes?.toString(),
+              usedBytes: m.usedBytes?.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/mounts' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateServiceMountRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid storage mount payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const client = this.prismaManager.getClient();
+            const vol = await (client as any).storageVolume.findUnique({ where: { id: parsed.data.volumeId } });
+            if (!vol) {
+              this.sendJson(res, { error: `Storage volume '${parsed.data.volumeId}' not found` }, 404);
+              return;
+            }
+
+            try {
+              const mount = await storagePlacementManager.createMount({
+                serviceId: parsed.data.serviceId,
+                volumeId: vol.id,
+                driveLetter: vol.driveLetter,
+                tier: parsed.data.tier as any,
+                sourceSubpath: parsed.data.sourceSubpath,
+                mountName: parsed.data.mountName,
+                quotaBytes: parsed.data.quotaBytes ? BigInt(parsed.data.quotaBytes) : undefined,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'storage_mount.create',
+                entity: 'service_mount',
+                entityId: mount.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { tier: mount.tier, mountPath: mount.mountPath },
+              });
+
+              this.sendJson(
+                res,
+                {
+                  ...mount,
+                  quotaBytes: mount.quotaBytes?.toString(),
+                  usedBytes: mount.usedBytes.toString(),
+                },
+                201
+              );
+            } catch (mountErr: any) {
+              this.sendJson(res, { error: mountErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/usage' && req.method === 'GET') {
+            const usage = await storageUsageManager.getUsageBreakdown();
+            this.sendJson(res, usage);
+            return;
+          }
+
+          // --- PHASE 5: FILE STREAMING & UPLOADS ---
+          if (route.path === '/api/v1/files/upload' && req.method === 'POST') {
+            const filenameHeader = (req.headers['x-filename'] as string) || `upload_${Date.now()}`;
+            const targetDir =
+              (req.headers['x-target-dir'] as string) || path.join(paths.dataDir, 'files');
+
+            try {
+              const uploadRes = await uploadEngine.handleUpload(req, {
+                targetDirectory: targetDir,
+                filename: filenameHeader,
+              });
+              this.sendJson(res, uploadRes, 201);
+            } catch (uploadErr: any) {
+              this.sendJson(res, { error: uploadErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/files/stream' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const filePathParam = parsedUrl.searchParams.get('path');
+            if (!filePathParam) {
+              this.sendJson(res, { error: 'Missing path query parameter' }, 400);
+              return;
+            }
+
+            try {
+              const canonical = safeResolvePath(paths.dataDir, filePathParam);
+              await streamEngine.streamFile(req, res, canonical);
+            } catch (streamErr: any) {
+              this.sendJson(res, { error: streamErr.message }, 403);
+            }
+            return;
+          }
+
+          // --- PHASE 5: MEDIA SERVICE & TIMELINE ---
+          if (route.path === '/api/v1/media/timeline' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10);
+            const pageSize = parseInt(parsedUrl.searchParams.get('pageSize') || '50', 10);
+            const library = parsedUrl.searchParams.get('library') || undefined;
+
+            const timeline = await mediaIndexer.getTimeline({ page, pageSize, library });
+            this.sendJson(res, timeline);
+            return;
+          }
+
+          if (route.path === '/api/v1/media/scan' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req).catch(() => ({}));
+            const library = body?.library || 'photos';
+            const scanRes = await mediaIndexer.scanLibrary(library);
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'media.scan',
+              entity: 'media_library',
+              entityId: library,
+              ipAddress: clientIp,
+              status: 'success',
+              details: scanRes,
+            });
+
+            this.sendJson(res, scanRes);
+            return;
+          }
+
+          if (route.path === '/api/v1/media/thumbnail/:id' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const size = parseInt(parsedUrl.searchParams.get('size') || '400', 10);
+            const thumbPath = await mediaIndexer.getThumbnailPath(params.id, size);
+
+            if (!thumbPath || !fs.existsSync(thumbPath)) {
+              this.sendJson(res, { error: 'Thumbnail not available' }, 404);
+              return;
+            }
+
+            await streamEngine.streamFile(req, res, thumbPath);
             return;
           }
 

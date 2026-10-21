@@ -13,8 +13,8 @@
 | **Phase 2** | Headless Daemon | ✅ Completed | Zero Electron in daemon, WinSW service packaging, Caddy port 80 proxy |
 | **Phase 3** | Supervisor & Sandboxing | ✅ Completed | Windows Job Objects, process tree limits, health checks, event stream |
 | **Phase 4** | Deployment Engine & Catalog | ✅ Completed | Git/zip to running app, recipes, app catalog |
-| **Phase 5** | Ingress, Storage, Media | 🟡 Ready / Next | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
-| **Phase 6** | Web Terminal & Real Services | ⚪ Backlog | ConPTY terminal, official binaries replacing simulators |
+| **Phase 5** | Ingress, Storage, Media | ✅ Completed | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
+| **Phase 6** | Web Terminal & Real Services | 🟡 Ready / Next | ConPTY terminal, official binaries replacing simulators |
 | **Phase 7** | Integration & Hardening | ⚪ Backlog | Full Playwright regression, load tests, backup & restore |
 | **Phase 8** | Packaging, Docs & Evaluation | ⚪ Backlog | NSIS installer, portable bundle, measured performance |
 
@@ -96,13 +96,21 @@
 
 ---
 
-## Phase 5: Ingress, Storage & Media ⚪
-- [ ] **5.1**: Dynamic HostBuilder generating scoped hostnames (`*.localhost`, `*.<lan-ip>.nip.io`, `*.ts.net`)
-- [ ] **5.2**: Automatic Let's Encrypt / ZeroSSL TLS certificates for custom domains
-- [ ] **5.3**: Tailscale HTTPS certificates (`ts.net`) via Caddy integration
-- [ ] **5.4**: Multi-volume storage manager supporting secondary drives (D:\, E:\)
-- [ ] **5.5**: RFC 7233 byte-range streaming engine with streaming uploads (no RAM exhaustion)
-- [ ] **5.6**: Photos background indexer with thumbnail caching (`sharp`, WebP)
+## Phase 5: Ingress, Storage & Media ✅
+- [x] **5.1**: Dynamic HostBuilder (`src/daemon/core/hostBuilder.ts` & D5) generating scoped matchers and derived URLs (`*.localhost`, `*.<lan-ip>.nip.io`, `*.ts.net`) with network change reactivity
+- [x] **5.2**: Caddy full config generator with content hashing (`/load` on hash change only) and persistent autosave (`src/daemon/network/caddy.ts`)
+- [x] **5.3**: Route schema models (`Route` with `exposeLocal`, `exposeLan`, `exposeMesh`, `RouteHost`, `RoutePort`) and additive migrations
+- [x] **5.4**: TLS Manager (`src/daemon/network/tls.ts`) for custom domains with ACME pre-flight checks (DNS, port reachability, CGNAT detection) and Tailscale `ts.net` certificates
+- [x] **5.5**: Direct TCP Exposure (`src/daemon/network/tcpProxy.ts`, `firewall.ts` & D10) with audited daemon-native forwarder and automated Windows Firewall management
+- [x] **5.6**: Tailscale Manager (`src/daemon/network/tailscale.ts`) status inspection, secret safety (no auth key on argv), and Funnel support
+- [x] **5.7**: Frontend unified URLs contract (`GET /api/v1/network/urls`), removing duplicate URL construction and adding exposure warnings
+- [x] **5.8**: Windows Volume Discovery (`src/daemon/storage/volumes.ts`) via PowerShell `Get-Volume` with JSON parsing, caching, and system-drive identification
+- [x] **5.9**: Storage Placement & Directory Junctions (`src/daemon/storage/placement.ts`) with `ServiceMount` tiers (DATA, MEDIA, BACKUP, CACHE) and native `fs.promises.symlink(target, path, 'junction')`
+- [x] **5.10**: Usage & Soft Quotas (`src/daemon/storage/usage.ts`) with background incremental usage scanning and 90% disk threshold alerts
+- [x] **5.11**: Streaming Upload Engine (`src/daemon/files/upload.ts` & P12) streaming direct-to-disk temp files with atomic rename (< 100 MB RSS footprint)
+- [x] **5.12**: RFC 7233 Byte-Range Streaming (`src/daemon/files/stream.ts` & P13) with suffix range (`bytes=-500`), end clamping, RFC 5987 `filename*`, and caching headers
+- [x] **5.13**: Photo Indexer & Thumbnail Cache (`src/daemon/files/media.ts` & P14) with `MediaItem` DB table, consent-first library roots, and WebP thumbnail generation
+- [x] **5.14**: Phase 5 comprehensive test suite (`tests/phase5/`) covering host builder, RFC 7233 ranges, streaming uploads, volume discovery, and storage placement
 
 ---
 
