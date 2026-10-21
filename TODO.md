@@ -14,7 +14,7 @@
 | **Phase 3** | Supervisor & Sandboxing | ✅ Completed | Windows Job Objects, process tree limits, health checks, event stream |
 | **Phase 4** | Deployment Engine & Catalog | ✅ Completed | Git/zip to running app, recipes, app catalog |
 | **Phase 5** | Ingress, Storage, Media | ✅ Completed | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
-| **Phase 6** | Web Terminal & Real Services | 🟡 Ready / Next | ConPTY terminal, official binaries replacing simulators |
+| **Phase 6** | Web Terminal & Real Services | 🟡 In Progress | ConPTY terminal, official binaries replacing simulators |
 | **Phase 7** | Integration & Hardening | ⚪ Backlog | Full Playwright regression, load tests, backup & restore |
 | **Phase 8** | Packaging, Docs & Evaluation | ⚪ Backlog | NSIS installer, portable bundle, measured performance |
 
@@ -114,12 +114,14 @@
 
 ---
 
-## Phase 6: Web Terminal & Real Services ⚪
-- [ ] **6.1**: Replace `filebrowser.exe` mock simulator with official pinned FileBrowser release
-- [ ] **6.2**: Replace `ollama.exe` mock simulator with official Ollama Windows binary
-- [ ] **6.3**: Replace `minio.exe` mock simulator with official MinIO / S3 binary
-- [ ] **6.4**: Enforce gateway authentication (forward-auth) on Ollama and FileBrowser LAN routes
-- [ ] **6.5**: Audited ConPTY web terminal (`node-pty` + `xterm.js`) restricted to ROOT users
+## Phase 6: Web Terminal & Real Services (Completed) ✅
+- [x] **6.1**: Real FileBrowser upstream recipe (`catalog/filebrowser.json`) with pinned SHA-256 integrity, random admin credentials, and storage volume root
+- [x] **6.2**: Real Ollama upstream recipe (`catalog/ollama.json`) with models directory on bulk volume, loopback binding, and gateway forward-auth protection (A3)
+- [x] **6.3**: Real S3-compatible object storage recipe (`catalog/s3.json` / `minio.json`) with auto-generated root credentials stored in encrypted secrets
+- [x] **6.4**: Simulator removal from product scripts & release packages (purge `compile:mocks` from release flow, preserve `tools/mocks/` for test fixtures only)
+- [x] **6.5**: Audited ConPTY Web Terminal (`src/daemon/terminal/`), WebSocket upgrade (`/api/v1/terminal/ws`), ROOT authorization (A4), transcript logging, idle timeout, and resize
+- [x] **6.6**: Upstream open-source license attribution notice (`docs/licenses.md`) covering AGPL, Apache 2.0, MIT, and BSD components
+- [x] **6.7**: Phase 6 comprehensive test suite (`tests/phase6/`) verifying real service recipes, forward-auth protection, and ConPTY terminal session lifecycle
 
 ---
 

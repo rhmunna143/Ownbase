@@ -6,6 +6,11 @@
   "description": "Run local open-source LLMs (Llama 3, Mistral, Hermes) directly on CPU and GPU with zero cloud telemetry.",
   "icon": "Bot",
   "runtime": "native",
+  "source": {
+    "type": "binary",
+    "url": "https://github.com/ollama/ollama/releases/download/v0.1.32/ollama-windows-amd64.zip",
+    "sha256": "4b7b75f822a0df8b2c4e12e1f20e408544c4b5746f3801f91b790d9f4857b29a"
+  },
   "spec": {
     "command": "ollama.exe",
     "args": ["serve"],
@@ -14,8 +19,10 @@
   },
   "defaultPort": 11434,
   "defaultSubdomain": "ai",
-  "env": {},
+  "env": {
+    "OLLAMA_HOST": "127.0.0.1:11434"
+  },
   "badge": "Local LLM",
   "isPackaged": true,
-  "docs": "High-performance inference engine for local LLMs with OpenAI-compatible API endpoints."
+  "docs": "High-performance inference engine for local LLMs with OpenAI-compatible API endpoints. Bound to loopback behind Caddy forward-auth."
 }

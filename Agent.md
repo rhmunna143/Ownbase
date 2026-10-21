@@ -172,10 +172,28 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
 - **Verification Suite (`tests/phase5/`)**:
   - 10 test files, 40 tests covering RFC 7233 byte-range parsing, streaming uploads, volume discovery, directory junctions, soft quotas, TLS CGNAT pre-flight, and gateway routes. Total suite passes: **179 tests across 44 test files**.
 
+### 7. Phase 6 Architecture: Web Terminal & Real Services ✅ (Completed)
+- **Upstream Real Service Recipes (`catalog/`)**:
+  - `catalog/filebrowser.json`: Pinned SHA-256 official FileBrowser release, volume-scoped root, random admin password provisioning (no `admin12345678`), loopback binding behind Caddy.
+  - `catalog/ollama.json`: Official Ollama binary, `OLLAMA_MODELS` stored on bulk volume, `OLLAMA_HOST=127.0.0.1`, protected by Gateway forward-auth (A3: LAN routes require valid Ownbase session).
+  - `catalog/minio.json` / `catalog/s3.json`: S3-compatible object storage with auto-generated root access key and secret key stored as encrypted secrets.
+- **Simulator Removal (Item 6.4 & P8)**:
+  - Removed `compile:mocks` and `compile:binaries` from release scripts. `tools/mocks/` retained strictly as test/CI fixtures.
+- **Audited ConPTY Web Terminal (`src/daemon/terminal/`)**:
+  - Windows ConPTY terminal launcher using PowerShell / cmd.exe with bidirectional WebSocket bridge (`/api/v1/terminal/ws`).
+  - Authorization: Restricted to ROOT role only by default (ADMIN opt-in setting). Unauthorized roles get 403 on upgrade (A4).
+  - Audit logging: Records terminal session start, stop, actor, duration, and IP address in `AuditLog`.
+  - Transcript recording: Logs terminal session input and output stream to protected log (`paths.logsDir/terminal-<sessionId>.log`).
+  - Session protection: Inactivity idle timeout (15 min), maximum concurrent sessions (5), window resize support.
+- **License Attribution Notices (`docs/licenses.md` and `DOCS/licenses.md`)**:
+  - Comprehensive open-source notices covering AGPL, Apache 2.0, MIT, and BSD third-party upstream components.
+- **Verification Suite (`tests/phase6/`)**:
+  - 5 test suites, 26 tests covering catalog real recipes, atomic download/install with SHA-256 verification, forward-auth, ConPTY terminal session lifecycle, and simulator purge.
+  - **Full test suite passes: 205 tests across 49 test files (100% green).**
 
 ---
 
-## 7. Verification Commands
+## 8. Verification Commands
 
 Always run these before completing any phase or major task:
 ```powershell
@@ -194,9 +212,12 @@ npm run test:phase4
 # 5. Phase 5 specific tests
 npm run test:phase5
 
-# 6. TypeScript compilation for Electron & Daemon
+# 6. Phase 6 specific tests
+npm run test:phase6
+
+# 7. TypeScript compilation for Electron & Daemon
 npm run build:electron
 
-# 7. Compile jobhost launcher
+# 8. Compile jobhost launcher
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\ownbase-jobhost.exe /target:exe tools\jobhost\Program.cs
 ```

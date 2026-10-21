@@ -54,7 +54,26 @@ import { storageUsageManager } from '../storage/usage';
 import { uploadEngine } from '../files/upload';
 import { streamEngine } from '../files/stream';
 import { mediaIndexer } from '../files/media';
+import { terminalManager, TerminalManager } from '../terminal/manager';
+import { TerminalWsBridge } from '../terminal/ws';
 
+export function parseCookieHeader(header?: string): Record<string, string> {
+  if (!header) return {};
+  const result: Record<string, string> = {};
+  for (const pair of header.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx > 0) {
+      const key = pair.slice(0, idx).trim();
+      const val = pair.slice(idx + 1).trim();
+      try {
+        result[key] = decodeURIComponent(val);
+      } catch {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}
 
 export class WebApiServer {
   private server: http.Server | null = null;
@@ -66,6 +85,7 @@ export class WebApiServer {
   private authGuard: AuthGuard;
   private tableBrowser: TableBrowser;
   private eventStreamGateway: EventStreamGateway;
+  private terminalWsBridge: TerminalWsBridge;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -88,6 +108,16 @@ export class WebApiServer {
       supervisor: this.supervisor,
       postgres: this.postgresManager,
     });
+    this.terminalWsBridge = new TerminalWsBridge(this.authService);
+    terminalManager.setAuditService(this.auditService);
+  }
+
+  public getTerminalWsBridge(): TerminalWsBridge {
+    return this.terminalWsBridge;
+  }
+
+  public getTerminalManager(): TerminalManager {
+    return terminalManager;
   }
 
   public getPort(): number {
@@ -338,7 +368,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookieHeader(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -1477,6 +1507,71 @@ export class WebApiServer {
             return;
           }
 
+          // --- PHASE 6: FORWARD-AUTH & WEB TERMINAL ---
+          if (route.path === '/api/v1/auth/verify' && req.method === 'GET') {
+            const authHeader = req.headers.authorization;
+            const apiKeyHeader = req.headers['x-api-key'];
+            const forwardedHost = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
+            const clientIp = this.getClientIp(req);
+
+            let user: AuthenticatedUser | null = null;
+            if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+              user = await this.authService.verifyAccessToken(authHeader.slice(7).trim());
+            } else if (typeof apiKeyHeader === 'string') {
+              user = await this.authService.verifyApiKey(apiKeyHeader);
+            } else if (req.headers.cookie) {
+              try {
+                const parsedCookies = parseCookieHeader(req.headers.cookie);
+                const token = parsedCookies.ownbase_access_token || parsedCookies.ownbase_session;
+                if (token) {
+                  user = await this.authService.verifyAccessToken(token);
+                }
+              } catch {}
+            }
+
+            // Determine if target host is a LAN host requiring authentication (PRD Criterion A3)
+            const isLanHost =
+              forwardedHost.includes('.nip.io') ||
+              (!forwardedHost.startsWith('localhost') &&
+                !forwardedHost.startsWith('127.0.0.1') &&
+                !forwardedHost.includes('.localhost'));
+
+            if (!user && isLanHost) {
+              res.setHeader('WWW-Authenticate', 'Bearer realm="Ownbase LAN"');
+              this.sendJson(
+                res,
+                { error: 'Authentication required to access service on LAN', verified: false, requiresAuth: true },
+                401
+              );
+              return;
+            }
+
+            if (user) {
+              res.setHeader('X-Forwarded-User', user.username);
+              res.setHeader('X-Forwarded-Role', user.role);
+              this.sendJson(res, { verified: true, user });
+            } else {
+              this.sendJson(res, { verified: true, access: 'loopback' });
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/terminal/sessions' && req.method === 'GET') {
+            this.sendJson(res, terminalManager.getActiveSessions());
+            return;
+          }
+
+          if (route.path === '/api/v1/terminal/sessions/:sessionId' && req.method === 'DELETE') {
+            const sessionId = params.sessionId;
+            const closed = terminalManager.closeSession(sessionId, 'admin_terminated');
+            if (!closed) {
+              this.sendJson(res, { error: `Terminal session '${sessionId}' not found` }, 404);
+              return;
+            }
+            this.sendJson(res, { success: true, sessionId });
+            return;
+          }
+
           // --- OPENAPI & DOCS ---
           if (route.path === '/api/v1/openapi.json') {
             const host = req.headers.host || `127.0.0.1:${this.port}`;
@@ -1494,6 +1589,16 @@ export class WebApiServer {
         } catch (err: any) {
           logger.error('web-api', `Error handling ${req.method} ${pathname}: ${err.message}`);
           this.sendJson(res, { error: err.message || 'Internal Server Error' }, 500);
+        }
+      });
+
+      // WebSocket HTTP Upgrade handler for Audited ConPTY Web Terminal (PRD §6.5 & A4)
+      this.server.on('upgrade', (req, socket, head) => {
+        const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+        if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
+          this.terminalWsBridge.handleUpgrade(req, socket, head);
+        } else {
+          socket.destroy();
         }
       });
 

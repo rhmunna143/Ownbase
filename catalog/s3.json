@@ -1,0 +1,26 @@
+{
+  "id": "s3",
+  "name": "S3-Compatible Object Storage",
+  "version": "RELEASE.2024",
+  "category": "Storage",
+  "description": "High-performance S3-compatible object storage server for backups, media assets, and application buckets.",
+  "icon": "Database",
+  "runtime": "native",
+  "source": {
+    "type": "binary",
+    "url": "https://dl.min.io/server/minio/release/windows-amd64/archive/minio.RELEASE.2024-05-10T01-41-38Z",
+    "sha256": "91ca5c549641d4023ee45c4860b4ef674a275ba2bc3ef7682e04f039a0fa0ec3"
+  },
+  "spec": {
+    "command": "minio.exe",
+    "args": ["server", "--address", "127.0.0.1:9000", "--console-address", "127.0.0.1:9001"],
+    "healthPath": "/minio/health/live",
+    "maxMemoryMb": 1024
+  },
+  "defaultPort": 9000,
+  "defaultSubdomain": "s3",
+  "env": {},
+  "badge": "S3 Compatible",
+  "isPackaged": true,
+  "docs": "Enterprise-grade S3 API with root credentials stored in AES-256-GCM encrypted secrets."
+}

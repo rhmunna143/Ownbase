@@ -679,6 +679,31 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     minRole: 'READ_ONLY',
     summary: 'Retrieve cached WebP thumbnail for media item',
   },
+
+  // ==========================================
+  // Phase 6: Web Terminal & Forward-Auth Guard
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/auth/verify',
+    auth: 'public',
+    summary: 'Forward-auth verification endpoint for edge reverse proxies and LAN route guarding',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/terminal/sessions',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List active terminal sessions and connected actors',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/terminal/sessions/:sessionId',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Terminate an active terminal session',
+    audit: true,
+  },
 ];
 
 /**

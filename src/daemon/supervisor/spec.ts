@@ -1,6 +1,7 @@
 import path from 'path';
 import fs from 'fs';
 import { paths } from '../core/paths';
+import { secretsManager } from '../core/secrets';
 import { ServiceRecord } from '../../shared/types';
 
 export type RestartPolicy = 'always' | 'on-failure' | 'never';
@@ -76,12 +77,13 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
       try { fs.mkdirSync(storageDir, { recursive: true }); } catch {}
     }
 
+    const creds = secretsManager.getOrCreateFileBrowserCredentials();
     const port = service.port || 8080;
     return {
       templateId: 'filebrowser',
       appType: 'native',
       executable: 'filebrowser.exe',
-      args: ['-p', port.toString(), '-a', '0.0.0.0', '-r', storageDir, '-d', dbPath],
+      args: ['-p', port.toString(), '-a', '127.0.0.1', '-r', storageDir, '-d', dbPath],
       cwd: paths.rootDir,
       port,
       restartPolicy: 'always',
@@ -94,6 +96,9 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
         startPeriodMs: 5000,
         failureThreshold: 3,
       },
+      env: {
+        FILEBROWSER_USERNAME: creds.username,
+      },
       limits: {
         maxMemoryMb: 512,
         cpuLimitPct: 50,
@@ -103,6 +108,11 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
 
   ollama: (service) => {
     const port = service.port || 11434;
+    const modelsDir = path.join(paths.storageDir, 'models');
+    if (!fs.existsSync(modelsDir)) {
+      try { fs.mkdirSync(modelsDir, { recursive: true }); } catch {}
+    }
+
     return {
       templateId: 'ollama',
       appType: 'native',
@@ -121,7 +131,8 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
         failureThreshold: 3,
       },
       env: {
-        OLLAMA_HOST: '0.0.0.0:11434',
+        OLLAMA_HOST: '127.0.0.1:11434',
+        OLLAMA_MODELS: modelsDir,
       },
       limits: {
         maxMemoryMb: 4096,
@@ -137,11 +148,13 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
     }
 
     const port = service.port || 9000;
+    const creds = secretsManager.getOrCreateS3Credentials();
+
     return {
       templateId: 'minio',
       appType: 'native',
       executable: 'minio.exe',
-      args: ['server', storageDir, '--address', `:${port}`],
+      args: ['server', storageDir, '--address', `127.0.0.1:${port}`, '--console-address', `127.0.0.1:${port + 1}`],
       cwd: paths.rootDir,
       port,
       restartPolicy: 'always',
@@ -154,11 +167,19 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
         startPeriodMs: 5000,
         failureThreshold: 3,
       },
+      env: {
+        MINIO_ROOT_USER: creds.accessKey,
+        MINIO_ROOT_PASSWORD: creds.secretKey,
+      },
       limits: {
         maxMemoryMb: 1024,
         cpuLimitPct: 50,
       },
     };
+  },
+
+  s3: (service) => {
+    return BUILTIN_RECIPES.minio(service);
   },
 
   postgres: (service) => {

@@ -53,7 +53,7 @@ describe('Phase 3 - Item 3.1: ServiceSpec & Builtin Recipes', () => {
     expect(spec.args).toContain('-p');
     expect(spec.args).toContain('8080');
     expect(spec.args).toContain('-a');
-    expect(spec.args).toContain('0.0.0.0');
+    expect(spec.args).toContain('127.0.0.1');
     expect(spec.healthProbe?.type).toBe('http');
     expect(spec.healthProbe?.path).toBe('/login');
   });
@@ -77,7 +77,7 @@ describe('Phase 3 - Item 3.1: ServiceSpec & Builtin Recipes', () => {
     const spec = resolveServiceSpec(record);
     expect(spec.templateId).toBe('ollama');
     expect(spec.limits?.maxMemoryMb).toBe(4096);
-    expect(spec.env?.OLLAMA_HOST).toBe('0.0.0.0:11434');
+    expect(spec.env?.OLLAMA_HOST).toBe('127.0.0.1:11434');
     expect(spec.healthProbe?.type).toBe('http');
   });
 

@@ -160,36 +160,113 @@ export class CaddyManager {
         tlsEnabled: r.tlsEnabled ?? true,
       };
 
+      const isProtected = ['ai', 'files'].includes(r.subdomain) || r.requiresAuth;
       const built = hostBuilder.build(intent);
+
       if (built.caddyMatchers.length > 0) {
-        caddyRoutes.push({
-          '@id': `route-${r.subdomain}`,
-          match: [
-            {
-              host: built.caddyMatchers,
-            },
-          ],
-          handle: [
-            {
-              handler: 'reverse_proxy',
-              headers: {
-                request: {
-                  set: {
-                    Host: ['{http.reverse_proxy.upstream.hostport}'],
-                    'X-Forwarded-Host': ['{http.request.host}'],
-                    'X-Forwarded-Proto': ['{http.request.scheme}'],
-                  },
-                },
-              },
-              upstreams: [
+        if (isProtected) {
+          // Separate local loopback (no auth needed) vs LAN / remote matchers (forward-auth required)
+          const localMatchers = built.caddyMatchers.filter((m) => m.endsWith('.localhost') || m === 'localhost');
+          const lanMatchers = built.caddyMatchers.filter((m) => !m.endsWith('.localhost') && m !== 'localhost');
+
+          // 1. Local loopback route
+          if (localMatchers.length > 0) {
+            caddyRoutes.push({
+              '@id': `route-${r.subdomain}`,
+              match: [{ host: localMatchers }],
+              handle: [
                 {
-                  dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}`,
+                  handler: 'reverse_proxy',
+                  headers: {
+                    request: {
+                      set: {
+                        Host: ['{http.reverse_proxy.upstream.hostport}'],
+                        'X-Forwarded-Host': ['{http.request.host}'],
+                        'X-Forwarded-Proto': ['{http.request.scheme}'],
+                      },
+                    },
+                  },
+                  upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
                 },
               ],
-            },
-          ],
-          terminal: true,
-        });
+              terminal: true,
+            });
+          }
+
+          // 2. LAN / remote route with forward_auth protection (PRD Criterion A3)
+          if (lanMatchers.length > 0) {
+            caddyRoutes.push({
+              '@id': `route-${r.subdomain}-lan-protected`,
+              match: [{ host: lanMatchers }],
+              handle: [
+                {
+                  handler: 'reverse_proxy',
+                  upstreams: [{ dial: '127.0.0.1:3001' }],
+                  rewrite: {
+                    method: 'GET',
+                    uri: '/api/v1/auth/verify',
+                  },
+                  headers: {
+                    request: {
+                      set: {
+                        'X-Forwarded-Host': ['{http.request.host}'],
+                        'X-Forwarded-Uri': ['{http.request.uri}'],
+                        'X-Forwarded-Method': ['{http.request.method}'],
+                      },
+                    },
+                  },
+                  handle_response: [
+                    {
+                      match: {
+                        status_code: [200, 201, 204],
+                      },
+                    },
+                  ],
+                },
+                {
+                  handler: 'reverse_proxy',
+                  headers: {
+                    request: {
+                      set: {
+                        Host: ['{http.reverse_proxy.upstream.hostport}'],
+                        'X-Forwarded-Host': ['{http.request.host}'],
+                        'X-Forwarded-Proto': ['{http.request.scheme}'],
+                      },
+                    },
+                  },
+                  upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
+                },
+              ],
+              terminal: true,
+            });
+          }
+        } else {
+          // Standard unprotected route
+          caddyRoutes.push({
+            '@id': `route-${r.subdomain}`,
+            match: [{ host: built.caddyMatchers }],
+            handle: [
+              {
+                handler: 'reverse_proxy',
+                headers: {
+                  request: {
+                    set: {
+                      Host: ['{http.reverse_proxy.upstream.hostport}'],
+                      'X-Forwarded-Host': ['{http.request.host}'],
+                      'X-Forwarded-Proto': ['{http.request.scheme}'],
+                    },
+                  },
+                },
+                upstreams: [
+                  {
+                    dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}`,
+                  },
+                ],
+              },
+            ],
+            terminal: true,
+          });
+        }
       }
     }
 

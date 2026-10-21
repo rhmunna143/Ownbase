@@ -7,6 +7,8 @@ import { logger } from './logger';
 export class SecretsManager {
   private keyFilePath: string;
   private postgresSecretPath: string;
+  private s3SecretPath: string;
+  private filebrowserSecretPath: string;
   private dataKey: Buffer | null = null;
 
   constructor(customSecretsDir?: string) {
@@ -20,6 +22,8 @@ export class SecretsManager {
     }
     this.keyFilePath = path.join(secretsDir, 'master.key');
     this.postgresSecretPath = path.join(secretsDir, 'postgres.secret');
+    this.s3SecretPath = path.join(secretsDir, 's3.secret');
+    this.filebrowserSecretPath = path.join(secretsDir, 'filebrowser.secret');
   }
 
   public getOrCreateDataKey(): Buffer {
@@ -106,6 +110,69 @@ export class SecretsManager {
     }
 
     return rawPassword;
+  }
+
+  public getOrCreateS3Credentials(): { accessKey: string; secretKey: string } {
+    if (fs.existsSync(this.s3SecretPath)) {
+      try {
+        const encrypted = fs.readFileSync(this.s3SecretPath, 'utf-8').trim();
+        if (encrypted) {
+          const decrypted = this.decrypt(encrypted);
+          const parsed = JSON.parse(decrypted);
+          if (parsed.accessKey && parsed.secretKey) {
+            return parsed;
+          }
+        }
+      } catch (err: any) {
+        logger.warn('secrets', `Failed to read S3 secret: ${err.message}`);
+      }
+    }
+
+    const accessKey = `ownbase_${crypto.randomBytes(8).toString('hex')}`;
+    const secretKey = crypto.randomBytes(24).toString('base64url');
+    const creds = { accessKey, secretKey };
+
+    try {
+      const encrypted = this.encrypt(JSON.stringify(creds));
+      fs.writeFileSync(this.s3SecretPath, encrypted, { encoding: 'utf-8', mode: 0o600 });
+      logger.success('secrets', 'Generated and stored encrypted S3 root credentials.');
+    } catch (err: any) {
+      logger.error('secrets', `Failed to persist S3 credentials: ${err.message}`);
+    }
+
+    return creds;
+  }
+
+  public getOrCreateFileBrowserCredentials(): { username: string; password: string } {
+    if (fs.existsSync(this.filebrowserSecretPath)) {
+      try {
+        const encrypted = fs.readFileSync(this.filebrowserSecretPath, 'utf-8').trim();
+        if (encrypted) {
+          const decrypted = this.decrypt(encrypted);
+          const parsed = JSON.parse(decrypted);
+          if (parsed.username && parsed.password) {
+            return parsed;
+          }
+        }
+      } catch (err: any) {
+        logger.warn('secrets', `Failed to read FileBrowser secret: ${err.message}`);
+      }
+    }
+
+    // Generate random initial password (secure cryptographically random string)
+    const username = 'admin';
+    const password = crypto.randomBytes(16).toString('base64url');
+    const creds = { username, password };
+
+    try {
+      const encrypted = this.encrypt(JSON.stringify(creds));
+      fs.writeFileSync(this.filebrowserSecretPath, encrypted, { encoding: 'utf-8', mode: 0o600 });
+      logger.success('secrets', 'Generated and stored encrypted FileBrowser initial credentials.');
+    } catch (err: any) {
+      logger.error('secrets', `Failed to persist FileBrowser credentials: ${err.message}`);
+    }
+
+    return creds;
   }
 
   public hashToken(rawToken: string): string {

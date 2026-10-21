@@ -196,16 +196,11 @@ New-NetFirewallRule -DisplayName "Ownbase Ingress (HTTP/HTTPS)" -Direction Inbou
    npm run setup:postgres
    ```
 
-4. **Compile native service binaries (SAC trusted):**
-   ```powershell
-   npm run compile:binaries
-   ```
-
-5. **Launch development environment:**
+4. **Launch development environment:**
    ```powershell
    npm run dev
    ```
-   *This starts Next.js on port 3000 and launches the Electron desktop shell with active IPC channels.*
+   *This starts the daemon Web API and launches the Electron desktop shell with active IPC channels.*
 
 ---
 
@@ -218,9 +213,7 @@ New-NetFirewallRule -DisplayName "Ownbase Ingress (HTTP/HTTPS)" -Direction Inbou
 | `npm run build:next` | Generates optimized Next.js static bundle (`out/`) |
 | `npm run build:electron` | Compiles TypeScript files in `src/main` into `dist/electron/main/` |
 | `npm run start` | Compiles TypeScript and runs standalone Electron in production mode |
-| `npm run compile:filebrowser` | Compiles native `scripts/filebrowser_server.cs` into `extraResources/bin/filebrowser.exe` via `csc.exe` |
-| `npm run compile:minio` | Compiles native `scripts/minio_server.cs` into `extraResources/bin/minio.exe` via `csc.exe` |
-| `npm run compile:binaries` | Compiles both FileBrowser and MinIO native binaries in one command |
+| `npm run compile:jobhost` | Compiles native Win32 Job Object launcher (`ownbase-jobhost.exe`) via `csc.exe` |
 | `npm run setup:postgres` | Downloads and unpacks portable PostgreSQL 16 into `extraResources/pgsql` |
 | `npm run prisma:generate` | Regenerates Prisma Client models |
 | `npm run prisma:deploy` | Deploys pending Prisma database migrations to PostgreSQL |
@@ -366,12 +359,8 @@ native-windows-server-prototype/
 
 ## 💡 Troubleshooting & FAQ
 
-### 1. "MinIO, FileBrowser, or Ollama gives an Application Control or spawn UNKNOWN error"
-On Windows 11 with **Smart App Control (SAC)** enabled, external unsigned binaries are blocked by Windows security policies. Native Windows Server Hub solves this by compiling native C# implementations using Windows' built-in Microsoft compiler (`csc.exe`).
-To recompile all binaries with 1 command:
-```powershell
-npm run compile:binaries
-```
+### 1. "MinIO, FileBrowser, or Ollama upstream service management"
+Ownbase manages genuine upstream releases verified via SHA-256 checksums (`catalog/*.json`). Services run inside isolated Win32 Job Objects with loopback binding and forward-auth protection. Terminal access is available directly via the audited ConPTY Web Terminal in the dashboard.
 
 ### 2. "Videos won't seek or play smoothly on mobile browsers"
 Native Windows Server Hub features a built-in **RFC 7233 byte-range streaming engine**. Ensure you stream videos using:

@@ -17,6 +17,7 @@ import { ApiDocsCard } from '@/components/ApiDocsCard';
 import { SetupWizardModal } from '@/components/SetupWizardModal';
 import { LoginModal } from '@/components/LoginModal';
 import { SecurityAdminCard } from '@/components/SecurityAdminCard';
+import { Terminal as WebTerminal } from '@/components/Terminal';
 import { serverApi, authStore } from '@/shared/apiClient';
 import {
   SystemInfo,
@@ -60,7 +61,7 @@ import {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'settings' | 'logs'
+    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'terminal' | 'settings' | 'logs'
   >('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
@@ -534,6 +535,23 @@ export default function DashboardPage() {
             </button>
 
             <button
+              onClick={() => navigateTab('terminal')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'terminal'
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Terminal className="w-4 h-4 text-cyan-400" />
+                <span>Web Terminal</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                ROOT
+              </span>
+            </button>
+
+            <button
               onClick={() => navigateTab('settings')}
               className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
                 activeTab === 'settings'
@@ -971,6 +989,9 @@ export default function DashboardPage() {
 
           {/* TAB: SECURITY CORE & RBAC (PRD Phase 1) */}
           {activeTab === 'security' && <SecurityAdminCard />}
+
+          {/* TAB: CONPTY WEB TERMINAL (PRD Phase 6) */}
+          {activeTab === 'terminal' && <WebTerminal currentUser={currentUser} />}
 
           {/* TAB 9: SETTINGS & 24/7 POWER */}
           {activeTab === 'settings' && (
