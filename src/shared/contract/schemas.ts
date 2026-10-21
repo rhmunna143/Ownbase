@@ -47,3 +47,35 @@ export const TableBrowserQuerySchema = z.object({
   orderBy: z.string().optional(),
   orderDir: z.enum(['asc', 'desc']).default('asc'),
 });
+
+// Phase 4 Deployment Engine & Catalog Schemas
+export const CreateAppRequestSchema = z.object({
+  name: z.string().min(1).max(64),
+  slug: z.string().min(1).max(63).regex(/^[a-z0-9-]+$/, 'Slug must be lowercase alphanumeric or hyphens'),
+  sourceType: z.enum(['git', 'archive', 'catalog']).default('git'),
+  repoUrl: z.string().optional(),
+  branch: z.string().default('main'),
+  runtime: z.enum(['node', 'python', 'go', 'static', 'custom']).default('node'),
+  buildCommand: z.string().optional(),
+  startCommand: z.string().optional(),
+  port: z.number().int().min(1000).max(65535).optional(),
+  healthPath: z.string().default('/health'),
+  envVars: z.record(z.string(), z.string()).optional(),
+});
+
+export const DeployAppRequestSchema = z.object({
+  triggeredBy: z.string().default('user'),
+  sourceType: z.enum(['git', 'archive', 'catalog']).default('git'),
+  archivePath: z.string().optional(),
+});
+
+export const RollbackAppRequestSchema = z.object({
+  releaseId: z.string().min(1),
+});
+
+export const InstallCatalogRequestSchema = z.object({
+  recipeId: z.string().min(1),
+  name: z.string().optional(),
+  subdomain: z.string().optional(),
+  port: z.number().optional(),
+});

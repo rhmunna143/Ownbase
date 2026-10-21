@@ -1,0 +1,21 @@
+{
+  "id": "go-web",
+  "name": "Go Microservice",
+  "version": "1.0.0",
+  "category": "Application",
+  "description": "Compiled native Go web server with single-digit millisecond latency and minimal memory overhead.",
+  "icon": "Terminal",
+  "runtime": "go",
+  "spec": {
+    "buildCommand": "go build -o app.exe .",
+    "startCommand": "app.exe",
+    "healthPath": "/health",
+    "maxMemoryMb": 256
+  },
+  "defaultPort": 4004,
+  "defaultSubdomain": "go",
+  "env": {},
+  "badge": "Native Go",
+  "isPackaged": true,
+  "docs": "Single-binary Go web service compiled natively on Windows x64."
+}

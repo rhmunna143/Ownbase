@@ -24,6 +24,10 @@ import {
   CreateUserRequestSchema,
   CreateApiKeyRequestSchema,
   CreateRouteRequestSchema,
+  CreateAppRequestSchema,
+  DeployAppRequestSchema,
+  RollbackAppRequestSchema,
+  InstallCatalogRequestSchema,
   AuthenticatedUser,
   Role,
 } from '../../shared/contract';
@@ -34,6 +38,10 @@ import { AuthGuard } from '../auth/guard';
 import { loginThrottle } from '../auth/throttle';
 import { TableBrowser } from '../db/browser';
 import { EventStreamGateway } from './events';
+import { deploymentPipeline } from '../deploy/pipeline';
+import { releaseManager } from '../deploy/release';
+import { catalogManager } from '../deploy/catalog';
+import { portAllocator } from '../deploy/ports';
 
 export class WebApiServer {
   private server: http.Server | null = null;
@@ -908,6 +916,271 @@ export class WebApiServer {
               status: 'success',
             });
             this.sendJson(res, { success: true });
+            return;
+          }
+
+          // --- PHASE 4: APPS & DEPLOYMENTS ---
+          if (route.path === '/api/v1/apps' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const apps = await (client as any).app.findMany({
+              include: {
+                activeRelease: true,
+                deployments: {
+                  take: 1,
+                  orderBy: { startedAt: 'desc' },
+                },
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+            this.sendJson(res, apps);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid app payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const client = this.prismaManager.getClient();
+            const existing = await (client as any).app.findUnique({ where: { slug: parsed.data.slug } });
+            if (existing) {
+              this.sendJson(res, { error: `App with slug '${parsed.data.slug}' already exists` }, 409);
+              return;
+            }
+
+            let targetPort = parsed.data.port;
+            if (!targetPort) {
+              targetPort = await portAllocator.allocatePort();
+            }
+
+            const created = await (client as any).app.create({
+              data: {
+                name: parsed.data.name,
+                slug: parsed.data.slug,
+                sourceType: parsed.data.sourceType,
+                repoUrl: parsed.data.repoUrl,
+                branch: parsed.data.branch,
+                runtime: parsed.data.runtime,
+                buildCommand: parsed.data.buildCommand,
+                startCommand: parsed.data.startCommand,
+                port: targetPort,
+                healthPath: parsed.data.healthPath,
+                status: 'idle',
+              },
+            });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'app.create',
+              entity: 'app',
+              entityId: created.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: created.name, slug: created.slug, port: created.port },
+            });
+
+            this.sendJson(res, created, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const app = await (client as any).app.findUnique({
+              where: { id: params.id },
+              include: {
+                activeRelease: true,
+                releases: { orderBy: { releaseNumber: 'desc' }, take: 10 },
+                deployments: { orderBy: { startedAt: 'desc' }, take: 10 },
+              },
+            });
+            if (!app) {
+              this.sendJson(res, { error: `App '${params.id}' not found` }, 404);
+              return;
+            }
+            this.sendJson(res, app);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id' && req.method === 'DELETE') {
+            const client = this.prismaManager.getClient();
+            const app = await (client as any).app.findUnique({ where: { id: params.id } });
+            if (!app) {
+              this.sendJson(res, { error: `App '${params.id}' not found` }, 404);
+              return;
+            }
+
+            if (app.activeReleaseId) {
+              await releaseManager.stopReleaseProcess(app.activeReleaseId);
+            }
+            if (app.port) {
+              portAllocator.releasePort(app.port);
+            }
+
+            await (client as any).route.deleteMany({ where: { subdomain: app.slug } });
+            await this.caddyManager.syncAllRoutes();
+
+            const appDir = path.join(paths.appsDir, app.id);
+            if (fs.existsSync(appDir)) {
+              try {
+                fs.rmSync(appDir, { recursive: true, force: true });
+              } catch {}
+            }
+
+            await (client as any).app.delete({ where: { id: params.id } });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'app.delete',
+              entity: 'app',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: app.name, slug: app.slug },
+            });
+
+            this.sendJson(res, { success: true });
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/deploy' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = DeployAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid deploy payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            try {
+              const depRecord = await deploymentPipeline.triggerDeploy({
+                appId: params.id,
+                triggeredBy: decision.user?.username || 'user',
+                sourceType: parsed.data.sourceType,
+                archivePath: parsed.data.archivePath,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'app.deploy',
+                entity: 'deployment',
+                entityId: depRecord.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { appId: params.id, sourceType: parsed.data.sourceType },
+              });
+
+              this.sendJson(res, depRecord, 202);
+            } catch (deployErr: any) {
+              this.sendJson(res, { error: deployErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/deployments' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const deployments = await (client as any).deployment.findMany({
+              where: { appId: params.id },
+              orderBy: { startedAt: 'desc' },
+              take: 50,
+            });
+            this.sendJson(res, deployments);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/releases' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const releases = await (client as any).release.findMany({
+              where: { appId: params.id },
+              orderBy: { releaseNumber: 'desc' },
+            });
+            this.sendJson(res, releases);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/rollback' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = RollbackAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid rollback payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            try {
+              const rolledBack = await releaseManager.rollback(params.id, parsed.data.releaseId);
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'app.rollback',
+                entity: 'app',
+                entityId: params.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { releaseId: parsed.data.releaseId, newPort: rolledBack.port },
+              });
+              this.sendJson(res, rolledBack);
+            } catch (rollbackErr: any) {
+              this.sendJson(res, { error: rollbackErr.message }, 400);
+            }
+            return;
+          }
+
+          // --- PHASE 4: APP CATALOG & RECIPES ---
+          if (route.path === '/api/v1/catalog' && req.method === 'GET') {
+            this.sendJson(res, catalogManager.getRecipes());
+            return;
+          }
+
+          if (route.path === '/api/v1/catalog/install' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = InstallCatalogRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid catalog install payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            const recipe = catalogManager.getRecipe(parsed.data.recipeId);
+            if (!recipe) {
+              this.sendJson(res, { error: `Catalog recipe '${parsed.data.recipeId}' not found` }, 404);
+              return;
+            }
+
+            const appName = parsed.data.name || recipe.name;
+            const subdomain = parsed.data.subdomain || recipe.defaultSubdomain;
+            const targetPort = parsed.data.port || (await portAllocator.allocatePort(recipe.defaultPort));
+            const client = this.prismaManager.getClient();
+
+            const app = await (client as any).app.create({
+              data: {
+                name: appName,
+                slug: subdomain,
+                sourceType: 'catalog',
+                runtime: recipe.runtime === 'native' ? 'custom' : recipe.runtime,
+                buildCommand: recipe.spec.buildCommand,
+                startCommand:
+                  recipe.spec.startCommand ||
+                  (recipe.spec.command ? `${recipe.spec.command} ${recipe.spec.args.join(' ')}` : undefined),
+                port: targetPort,
+                healthPath: recipe.spec.healthPath,
+                status: 'idle',
+              },
+            });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'catalog.install',
+              entity: 'app',
+              entityId: app.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { recipeId: recipe.id, name: app.name, port: targetPort },
+            });
+
+            this.sendJson(res, { success: true, app }, 201);
             return;
           }
 

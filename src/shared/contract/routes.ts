@@ -7,6 +7,10 @@ import {
   CreateApiKeyRequestSchema,
   CreateRouteRequestSchema,
   TableBrowserQuerySchema,
+  CreateAppRequestSchema,
+  DeployAppRequestSchema,
+  RollbackAppRequestSchema,
+  InstallCatalogRequestSchema,
 } from './schemas';
 
 export const ROUTE_TABLE: RouteDefinition[] = [
@@ -472,6 +476,93 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     auth: 'user',
     minRole: 'ROOT',
     summary: 'Revoke an API key',
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 4: Apps & Deployment Engine
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/apps',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List deployed applications',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Register a new application',
+    requestSchema: CreateAppRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get application details and active release status',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/apps/:id',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Delete application, release files, and associated routes',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps/:id/deploy',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Trigger supervised application deployment from Git or archive',
+    requestSchema: DeployAppRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id/deployments',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List deployment history for an application',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id/releases',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List versioned atomic releases for an application',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps/:id/rollback',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Instant rollback (<15s) to a previously healthy release',
+    requestSchema: RollbackAppRequestSchema,
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 4: App Catalog & Recipes
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/catalog',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List declarative app catalog recipes',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/catalog/install',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'One-click install from catalog recipe',
+    requestSchema: InstallCatalogRequestSchema,
     audit: true,
   },
 ];

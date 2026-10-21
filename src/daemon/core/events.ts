@@ -3,10 +3,13 @@ import { EventEmitter } from 'events';
 export type DaemonEvent =
   | { type: 'log'; data: any }
   | { type: 'service-status'; data: any }
+  | { type: 'service.status'; data: any }
   | { type: 'service-log'; data: any }
   | { type: 'postgres-status'; data: any }
   | { type: 'bootstrap-update'; data: any }
-  | { type: 'route-change'; data: any };
+  | { type: 'route-change'; data: any }
+  | { type: 'deploy.status'; data: any }
+  | { type: 'deploy.log'; data: any };
 
 export class EventBus extends EventEmitter {
   public emitEvent(event: DaemonEvent) {

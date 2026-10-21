@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Boxes,
   Download,
@@ -20,6 +20,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { ServiceRecord } from '@/shared/types';
+import { serverApi } from '@/shared/apiClient';
 
 interface Template {
   id: string;
@@ -62,6 +63,42 @@ export const AppStore: React.FC<AppStoreProps> = ({
   const [autoStart, setAutoStart] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('all');
+  const [catalogItems, setCatalogItems] = useState<Template[]>([]);
+
+  useEffect(() => {
+    let mounted = true;
+    serverApi.getCatalog().then((recipes) => {
+      if (!mounted || !Array.isArray(recipes) || recipes.length === 0) return;
+      const mapped: Template[] = recipes.map((r: any) => {
+        let iconElem = <Boxes className="w-6 h-6 text-cyan-400" />;
+        if (r.icon === 'FolderTree') iconElem = <FolderTree className="w-6 h-6 text-emerald-400" />;
+        else if (r.icon === 'Bot') iconElem = <Bot className="w-6 h-6 text-purple-400" />;
+        else if (r.icon === 'Zap') iconElem = <Zap className="w-6 h-6 text-green-400" />;
+        else if (r.icon === 'Globe') iconElem = <Globe className="w-6 h-6 text-blue-400" />;
+        else if (r.icon === 'Server') iconElem = <Server className="w-6 h-6 text-indigo-400" />;
+        else if (r.icon === 'Database') iconElem = <Database className="w-6 h-6 text-red-400" />;
+        else if (r.icon === 'Terminal') iconElem = <Terminal className="w-6 h-6 text-amber-400" />;
+
+        return {
+          id: r.id,
+          name: r.name,
+          category: r.category,
+          description: r.description,
+          icon: iconElem,
+          defaultExecutable: r.spec?.command || r.spec?.startCommand || `${r.id}.exe`,
+          defaultPort: r.defaultPort,
+          defaultSubdomain: r.defaultSubdomain,
+          badge: r.badge || 'Catalog Recipe',
+          isPackaged: r.isPackaged ?? true,
+        };
+      });
+      setCatalogItems(mapped);
+    }).catch(() => {});
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const templates: Template[] = [
     {
@@ -183,11 +220,13 @@ export const AppStore: React.FC<AppStoreProps> = ({
     }
   };
 
-  const categories = ['all', 'Storage', 'AI / LLM', 'Web Applications', 'Databases', 'Custom'];
+  const categories = ['all', 'Storage', 'AI & ML', 'Application', 'Database', 'Web', 'Tools', 'Custom'];
+
+  const effectiveTemplates = catalogItems.length > 0 ? catalogItems : templates;
 
   const filteredTemplates = activeCategory === 'all'
-    ? templates
-    : templates.filter((t) => t.category === activeCategory);
+    ? effectiveTemplates
+    : effectiveTemplates.filter((t) => t.category.toLowerCase() === activeCategory.toLowerCase() || t.category.includes(activeCategory));
 
   return (
     <div className="space-y-6">

@@ -621,4 +621,75 @@ export const serverApi = {
     const res = await fetchWithAuth('/api/v1/openapi.json').catch(() => null);
     return res && res.ok ? await res.json() : null;
   },
+
+  // ==========================================
+  // Phase 4: Apps, Deployments & Catalog
+  // ==========================================
+  getApps: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/apps').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createApp: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/apps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getApp: async (id: string): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}`).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  deleteApp: async (id: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}`, {
+      method: 'DELETE',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  deployApp: async (id: string, data: any = {}): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/deploy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getDeployments: async (id: string): Promise<any[]> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/deployments`).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getReleases: async (id: string): Promise<any[]> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/releases`).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  rollbackApp: async (id: string, releaseId: string): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ releaseId }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getCatalog: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/catalog').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  installCatalog: async (recipeId: string, options: any = {}): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/catalog/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipeId, ...options }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
 };

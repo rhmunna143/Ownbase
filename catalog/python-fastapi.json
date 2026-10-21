@@ -1,0 +1,23 @@
+{
+  "id": "python-fastapi",
+  "name": "Python FastAPI Hub",
+  "version": "1.0.0",
+  "category": "Application",
+  "description": "High-performance async Python API powered by Uvicorn and FastAPI with auto OpenAPI documentation.",
+  "icon": "Server",
+  "runtime": "python",
+  "spec": {
+    "buildCommand": "pip install -r requirements.txt",
+    "startCommand": "uvicorn main:app --host 127.0.0.1 --port $PORT",
+    "healthPath": "/health",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 4003,
+  "defaultSubdomain": "fastapi",
+  "env": {
+    "PYTHONUNBUFFERED": "1"
+  },
+  "badge": "Managed Python",
+  "isPackaged": true,
+  "docs": "FastAPI project using standalone Python 3.12 without Docker or WSL2."
+}

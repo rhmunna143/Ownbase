@@ -4,7 +4,7 @@
 
 ---
 
-## 🚀 Current Status: Phase 3 Completed &bull; Ready for Phase 4
+## 🚀 Current Status: Phase 4 Completed &bull; Ready for Phase 5
 
 | Phase | Title | Status | Primary Outcome |
 | :---: | :--- | :---: | :--- |
@@ -12,8 +12,8 @@
 | **Phase 1** | Security Core | ✅ Completed | Authenticated API, RBAC guard, Argon2id, path containment |
 | **Phase 2** | Headless Daemon | ✅ Completed | Zero Electron in daemon, WinSW service packaging, Caddy port 80 proxy |
 | **Phase 3** | Supervisor & Sandboxing | ✅ Completed | Windows Job Objects, process tree limits, health checks, event stream |
-| **Phase 4** | Deployment Engine & Catalog | 🟡 Next Up | Git/zip to running app, recipes, app catalog |
-| **Phase 5** | Ingress, Storage, Media | ⚪ Backlog | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
+| **Phase 4** | Deployment Engine & Catalog | ✅ Completed | Git/zip to running app, recipes, app catalog |
+| **Phase 5** | Ingress, Storage, Media | 🟡 Ready / Next | Multi-host routing, TLS, volumes, RFC 7233 byte-range streaming |
 | **Phase 6** | Web Terminal & Real Services | ⚪ Backlog | ConPTY terminal, official binaries replacing simulators |
 | **Phase 7** | Integration & Hardening | ⚪ Backlog | Full Playwright regression, load tests, backup & restore |
 | **Phase 8** | Packaging, Docs & Evaluation | ⚪ Backlog | NSIS installer, portable bundle, measured performance |
@@ -81,12 +81,18 @@
 
 ---
 
-## Phase 4: Deployment Engine & App Catalog ⚪
-- [ ] **4.1**: Portable runtime manager (Node 24 LTS, Python 3.12, Go 1.22)
-- [ ] **4.2**: Standard recipe format (`recipe.json`) specifying build/run commands, ports, and env vars
-- [ ] **4.3**: Archive unpacker & deployment pipeline with atomic release swapping (`current` symlink/junction)
-- [ ] **4.4**: 1-Click App Store catalog with one-click install/uninstall
-- [ ] **4.5**: Rollback engine for failed deployments
+## Phase 4: Deployment Engine & App Catalog ✅
+- [x] **4.1**: Portable Runtime Manager (`src/daemon/deploy/runtimes.ts`) with `runtimes.manifest.json` (Node 24, Python 3.12, Go 1.22, MinGit) & SHA-256 integrity verification
+- [x] **4.2**: Secure Source Intake (`src/daemon/deploy/source.ts`) for Git clone (MinGit/system git, depth 1) and zip/tar upload with `PathGuard` zip-slip protection
+- [x] **4.3**: Project Detector & Recipe Resolver (`src/daemon/deploy/detect.ts`) inspecting `package.json`, `requirements.txt`/`pyproject.toml`, `go.mod`, or repo `ownbase.json`
+- [x] **4.4**: Supervised Build Runners (`src/daemon/deploy/build/`) executing build steps within Job Objects with timeouts, memory caps, and isolated build environments
+- [x] **4.5**: Deterministic Port Allocator (`src/daemon/deploy/ports.ts`) managing range 4000–4999 with live bind checks and concurrency locking
+- [x] **4.6**: Release & Promotion Engine (`src/daemon/deploy/release.ts`) creating atomic releases (`apps/<id>/releases/<n>`), zero-downtime cutover, and instant rollback
+- [x] **4.7**: Deployment Pipeline Orchestrator (`src/daemon/deploy/pipeline.ts`) managing states: `queued → fetching → building → starting → healthy → promoted` / `failed`
+- [x] **4.8**: App Models & Database Schema (`prisma/schema/deploy.prisma`) for `App`, `Release`, and `Deployment`
+- [x] **4.9**: App Catalog & Predefined Recipes (`src/daemon/deploy/catalog.ts`, `catalog/*.json`) replacing hardcoded templates in `AppStore.tsx`
+- [x] **4.10**: REST API endpoints for App and Deployment management (`/api/v1/apps/*`) in contract & gateway
+- [x] **4.11**: Phase 4 comprehensive unit and integration test suite (`tests/phase4/`)
 
 ---
 

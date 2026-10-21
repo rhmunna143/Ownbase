@@ -1,0 +1,21 @@
+{
+  "id": "ollama",
+  "name": "Ollama AI Hub",
+  "version": "0.1.32",
+  "category": "AI & ML",
+  "description": "Run local open-source LLMs (Llama 3, Mistral, Hermes) directly on CPU and GPU with zero cloud telemetry.",
+  "icon": "Bot",
+  "runtime": "native",
+  "spec": {
+    "command": "ollama.exe",
+    "args": ["serve"],
+    "healthPath": "/",
+    "maxMemoryMb": 4096
+  },
+  "defaultPort": 11434,
+  "defaultSubdomain": "ai",
+  "env": {},
+  "badge": "Local LLM",
+  "isPackaged": true,
+  "docs": "High-performance inference engine for local LLMs with OpenAI-compatible API endpoints."
+}

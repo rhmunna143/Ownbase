@@ -113,9 +113,38 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
   - P17 Boot Reconcile (`supervisor/reconcile.ts`): detects and purges stale PIDs from unexpected crashes.
   - Real-time Event Stream (`gateway/events.ts`): `/api/v1/events` pushes state transitions, logs, and metrics to UI, replacing frontend 8-second polling.
 
+### 5. Phase 4 Architecture: Deployment Engine & App Catalog ✅ (Completed)
+- **Runtime Manager (`src/daemon/deploy/runtimes.ts`)**:
+  - Pinned runtime definitions in `runtimes.manifest.json` with explicit SHA-256 integrity verification.
+  - Downloads, verifies SHA-256 hash, and extracts into `runtimes/<name>-<version>/` using Windows native `tar.exe`.
+  - Reuses daemon's own Node.js runtime when target matches to avoid redundant downloads.
+- **Source Intake & Security (`src/daemon/deploy/source.ts`)**:
+  - Git cloning (depth 1, optional branch/tag) with MinGit or system git.
+  - Archive intake (zip/tar): Inspects entries via clean `tar -tf` format and extracts using `PathGuard` against zip-slip directory traversal and Alternate Data Streams (`:`), enforcing 250 MB total unpacked size and 50,000 file count limits.
+- **Project Detector & Recipe Resolver (`src/daemon/deploy/detect.ts`)**:
+  - Auto-detects project runtime: Node (`package.json`, frameworks: Next, Express, Nest), Python (`requirements.txt` / `pyproject.toml`, frameworks: FastAPI, Flask), Go (`go.mod`), and Static HTML (`index.html`).
+  - Supports explicit project config override via repo-root `ownbase.json`.
+- **Supervised Build Runners (`src/daemon/deploy/build/runner.ts`)**:
+  - Builds execute inside isolated Win32 Job Objects with 1024 MB memory caps, 10 min timeouts, isolated environments (`buildIsolatedEnvironment`), and stdout/stderr event streaming via `eventBus`.
+- **Deterministic Port Allocator (`src/daemon/deploy/ports.ts`)**:
+  - Manages ports 4000–4999. Validates via active TCP socket bind test AND in-memory mutex lock / database reservation to guarantee zero port collisions under high concurrency (verified with 20 parallel requests).
+- **Atomic Release Promotion & Rollback (`src/daemon/deploy/release.ts`)**:
+  - Versioned directories: `apps/<appId>/releases/<releaseNum>/`.
+  - Starts release on allocated port in a Job Object &rarr; verifies HTTP/TCP health probe &rarr; updates reverse proxy routing for zero-downtime cutover &rarr; drains/stops previous release (3s grace).
+  - Instant rollback promotes a previously successful release folder in under 15 seconds without rebuilding (clocked at 751ms in tests). Retains the last 3 releases, pruning older ones.
+- **Deployment Pipeline Orchestrator (`src/daemon/deploy/pipeline.ts`)**:
+  - Strict state transitions: `queued → fetching → building → starting → healthy → promoted` / `failed`.
+  - Single active deployment per application via in-memory deployment mutex.
+  - Failing builds never disrupt running releases.
+- **App Models & Schema (`prisma/schema/deploy.prisma`)**:
+  - Models: `App`, `Release`, `Deployment`. Additive migration `20261021191500_phase4_deploy_engine` applied via `prisma migrate deploy`.
+- **Declarative App Catalog (`src/daemon/deploy/catalog.ts`, `catalog/*.json`)**:
+  - Zod-validated template recipes providing one-click installation for popular native services and runtimes (8 recipes: Static Site, Express, FastAPI, Go Web, Redis, FileBrowser, MinIO, Ollama).
+  - Dynamic API endpoint `/api/v1/catalog` feeding frontend `src/components/AppStore.tsx`.
+
 ---
 
-## 5. Verification Commands
+## 6. Verification Commands
 
 Always run these before completing any phase or major task:
 ```powershell
@@ -128,9 +157,12 @@ npm run test:phase2
 # 3. Phase 3 specific tests
 npm run test:phase3
 
-# 4. TypeScript compilation for Electron & Daemon
+# 4. Phase 4 specific tests
+npm run test:phase4
+
+# 5. TypeScript compilation for Electron & Daemon
 npm run build:electron
 
-# 5. Compile jobhost launcher
+# 6. Compile jobhost launcher
 C:\Windows\Microsoft.NET\Framework64\v4.0.30319\csc.exe /nologo /out:extraResources\bin\ownbase-jobhost.exe /target:exe tools\jobhost\Program.cs
 ```

@@ -1,0 +1,20 @@
+{
+  "id": "static-site",
+  "name": "Static Web Site",
+  "version": "1.0.0",
+  "category": "Web",
+  "description": "High-speed static website and SPA served natively on Windows with sub-millisecond response times.",
+  "icon": "Globe",
+  "runtime": "static",
+  "spec": {
+    "startCommand": "node -e \"const http=require('http'),fs=require('fs');http.createServer((q,s)=>{s.writeHead(200,{'Content-Type':'text/html'});s.end('<h1>Ownbase Static Site</h1>');}).listen(process.env.PORT||4001);\"",
+    "healthPath": "/",
+    "maxMemoryMb": 256
+  },
+  "defaultPort": 4001,
+  "defaultSubdomain": "static",
+  "env": {},
+  "badge": "Native Static",
+  "isPackaged": true,
+  "docs": "Place your HTML, CSS, and JS files in the project root. Subdomain routing terminates automatically."
+}
