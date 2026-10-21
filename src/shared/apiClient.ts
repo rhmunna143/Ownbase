@@ -481,95 +481,74 @@ export const serverApi = {
     return res && res.ok ? await res.json() : [];
   },
 
-  // Event subscription adapters via SSE
-  onLogAdded: (callback: (log: LogEntry) => void): (() => void) => {
+  // Event subscription adapters via shared SSE multiplexer
+  subscribeToEventStream: (handlers: {
+    onConnected?: () => void;
+    onSnapshot?: (snapshot: { services: Record<string, ProcessStatus>; postgres: PostgresStatus }) => void;
+    onServiceStatus?: (status: ProcessStatus) => void;
+    onServiceLog?: (data: { serviceId: string; log: LogEntry }) => void;
+    onLog?: (log: LogEntry) => void;
+    onPostgresStatus?: (status: PostgresStatus) => void;
+    onBootstrapUpdate?: (steps: BootstrapStep[]) => void;
+    onMetrics?: (metrics: any) => void;
+  }): (() => void) => {
     if (typeof window === 'undefined') return () => {};
     try {
-      const source = new EventSource('/api/v1/events');
+      const token = authStore.getToken();
+      const url = token ? `/api/v1/events?token=${encodeURIComponent(token)}` : '/api/v1/events';
+      const source = new EventSource(url);
+
       source.onmessage = (event) => {
         try {
           const parsed = JSON.parse(event.data);
-          if (parsed && parsed.type === 'log' && parsed.data) {
-            callback(parsed.data);
+          if (!parsed) return;
+
+          if (parsed.type === 'connected') {
+            handlers.onConnected?.();
+          } else if (parsed.type === 'snapshot' && parsed.data) {
+            handlers.onSnapshot?.(parsed.data);
+          } else if (parsed.type === 'service-status' && parsed.data) {
+            handlers.onServiceStatus?.(parsed.data);
+          } else if (parsed.type === 'service-log' && parsed.data) {
+            handlers.onServiceLog?.(parsed.data);
+          } else if (parsed.type === 'log' && parsed.data) {
+            if (parsed.data.source === 'metrics') {
+              handlers.onMetrics?.(parsed.data.sample);
+            } else {
+              handlers.onLog?.(parsed.data);
+            }
+          } else if (parsed.type === 'postgres-status' && parsed.data) {
+            handlers.onPostgresStatus?.(parsed.data);
+          } else if (parsed.type === 'bootstrap-update' && parsed.data) {
+            handlers.onBootstrapUpdate?.(parsed.data);
           }
         } catch {}
       };
+
       return () => source.close();
     } catch {
       return () => {};
     }
+  },
+
+  onLogAdded: (callback: (log: LogEntry) => void): (() => void) => {
+    return serverApi.subscribeToEventStream({ onLog: callback });
   },
 
   onBootstrapUpdate: (callback: (steps: BootstrapStep[]) => void): (() => void) => {
-    if (typeof window === 'undefined') return () => {};
-    try {
-      const source = new EventSource('/api/v1/events');
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          if (parsed && parsed.type === 'bootstrap-update' && parsed.data) {
-            callback(parsed.data);
-          }
-        } catch {}
-      };
-      return () => source.close();
-    } catch {
-      return () => {};
-    }
+    return serverApi.subscribeToEventStream({ onBootstrapUpdate: callback });
   },
 
   onPostgresStatusChange: (callback: (status: PostgresStatus) => void): (() => void) => {
-    if (typeof window === 'undefined') return () => {};
-    try {
-      const source = new EventSource('/api/v1/events');
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          if (parsed && parsed.type === 'postgres-status' && parsed.data) {
-            callback(parsed.data);
-          }
-        } catch {}
-      };
-      return () => source.close();
-    } catch {
-      return () => {};
-    }
+    return serverApi.subscribeToEventStream({ onPostgresStatus: callback });
   },
 
   onProcessStatusChanged: (callback: (proc: ProcessStatus) => void): (() => void) => {
-    if (typeof window === 'undefined') return () => {};
-    try {
-      const source = new EventSource('/api/v1/events');
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          if (parsed && parsed.type === 'service-status' && parsed.data) {
-            callback(parsed.data);
-          }
-        } catch {}
-      };
-      return () => source.close();
-    } catch {
-      return () => {};
-    }
+    return serverApi.subscribeToEventStream({ onServiceStatus: callback });
   },
 
   onServiceLog: (callback: (data: { serviceId: string; log: LogEntry }) => void): (() => void) => {
-    if (typeof window === 'undefined') return () => {};
-    try {
-      const source = new EventSource('/api/v1/events');
-      source.onmessage = (event) => {
-        try {
-          const parsed = JSON.parse(event.data);
-          if (parsed && parsed.type === 'service-log' && parsed.data) {
-            callback(parsed.data);
-          }
-        } catch {}
-      };
-      return () => source.close();
-    } catch {
-      return () => {};
-    }
+    return serverApi.subscribeToEventStream({ onServiceLog: callback });
   },
 
   // File Manager & Media Streaming operations
@@ -642,4 +621,160 @@ export const serverApi = {
     const res = await fetchWithAuth('/api/v1/openapi.json').catch(() => null);
     return res && res.ok ? await res.json() : null;
   },
+
+  // ==========================================
+  // Phase 4: Apps, Deployments & Catalog
+  // ==========================================
+  getApps: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/apps').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createApp: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/apps', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getApp: async (id: string): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}`).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  deleteApp: async (id: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}`, {
+      method: 'DELETE',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  deployApp: async (id: string, data: any = {}): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/deploy`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getDeployments: async (id: string): Promise<any[]> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/deployments`).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getReleases: async (id: string): Promise<any[]> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/releases`).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  rollbackApp: async (id: string, releaseId: string): Promise<any> => {
+    const res = await fetchWithAuth(`/api/v1/apps/${id}/rollback`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ releaseId }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getCatalog: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/catalog').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  installCatalog: async (recipeId: string, options: any = {}): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/catalog/install', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ recipeId, ...options }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  // Phase 5 Ingress, Storage & Media
+  getNetworkUrls: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/network/urls').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  checkTlsPreflight: async (domain: string): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/network/tls/preflight', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ domain }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  listTcpProxies: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/network/tcp').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  startTcpProxy: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/network/tcp', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  stopTcpProxy: async (port: number): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth(`/api/v1/network/tcp/${port}`, {
+      method: 'DELETE',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  getVolumes: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/volumes').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  refreshVolumes: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/volumes/refresh', {
+      method: 'POST',
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getStorageMounts: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/storage/mounts').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  createStorageMount: async (data: any): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/storage/mounts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getStorageUsage: async (): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/storage/usage').catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
+
+  getMediaTimeline: async (params: { page?: number; pageSize?: number } = {}): Promise<any> => {
+    const qs = new URLSearchParams();
+    if (params.page) qs.set('page', String(params.page));
+    if (params.pageSize) qs.set('pageSize', String(params.pageSize));
+    const res = await fetchWithAuth(`/api/v1/media/timeline?${qs.toString()}`).catch(() => null);
+    return res && res.ok ? await res.json() : { items: [], total: 0 };
+  },
+
+  triggerMediaScan: async (library = 'photos'): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/media/scan', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ library }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : null;
+  },
 };
+

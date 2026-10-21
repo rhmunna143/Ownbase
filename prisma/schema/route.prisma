@@ -1,15 +1,47 @@
 model Route {
-  id          String   @id @default(uuid())
-  serviceId   String
-  service     Service  @relation(fields: [serviceId], references: [id], onDelete: Cascade)
-  subdomain   String   @unique
-  targetPort  Int
-  targetHost  String   @default("127.0.0.1")
-  tlsEnabled  Boolean  @default(true)
+  id           String      @id @default(uuid())
+  serviceId    String
+  service      Service     @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  subdomain    String      @unique
+  targetPort   Int
+  targetHost   String      @default("127.0.0.1")
+  tlsEnabled   Boolean     @default(true)
+  exposeLocal  Boolean     @default(true)
+  exposeLan    Boolean     @default(true)
+  exposeMesh   Boolean     @default(false)
   customDomain String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  isActive     Boolean     @default(true)
+  createdAt    DateTime    @default(now())
+  updatedAt    DateTime    @updatedAt
+  hosts        RouteHost[]
 
   @@map("routes")
+}
+
+model RouteHost {
+  id             String   @id @default(uuid())
+  routeId        String
+  route          Route    @relation(fields: [routeId], references: [id], onDelete: Cascade)
+  hostname       String   @unique
+  isCustomDomain Boolean  @default(true)
+  tlsEnabled     Boolean  @default(true)
+  createdAt      DateTime @default(now())
+
+  @@map("route_hosts")
+}
+
+model RoutePort {
+  id               String   @id @default(uuid())
+  serviceId        String?
+  service          Service? @relation(fields: [serviceId], references: [id], onDelete: Cascade)
+  listenPort       Int      @unique
+  targetPort       Int
+  targetHost       String   @default("127.0.0.1")
+  protocol         String   @default("tcp")
+  scope            String   @default("LocalSubnet")
+  firewallRuleName String?
+  isActive         Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  @@map("route_ports")
 }

@@ -1,0 +1,23 @@
+{
+  "id": "node-express",
+  "name": "Node.js Express API",
+  "version": "1.0.0",
+  "category": "Application",
+  "description": "Minimal Node.js Express REST API server with high concurrency and automatic health probing.",
+  "icon": "Zap",
+  "runtime": "node",
+  "spec": {
+    "buildCommand": "npm install --production",
+    "startCommand": "npm start",
+    "healthPath": "/health",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 4002,
+  "defaultSubdomain": "api",
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "badge": "Managed Node",
+  "isPackaged": true,
+  "docs": "Express API server with automatic reverse proxy routing and environment secret injection."
+}

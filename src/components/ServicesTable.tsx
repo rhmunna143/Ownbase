@@ -198,9 +198,12 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                 {services.length} services
               </span>
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-800/40">
+                Job Object Sandboxed
+              </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Managed Windows processes supervised with automatic restart and <code>taskkill /T /F</code> cleanup.
+              Trusted workloads enclosed in Win32 Job Objects with memory limits, CPU quotas, and automatic crash recovery.
             </p>
           </div>
         </div>
@@ -328,6 +331,34 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                     <span className="px-2 py-0.5 rounded bg-slate-800/60 border border-slate-700/40 text-slate-400">
                       {service.autoStart ? 'Auto-Boot' : 'Manual'}
                     </span>
+
+                    {(service as any).maxMemoryMb && (
+                      <span className="px-2 py-0.5 rounded bg-amber-950/50 border border-amber-800/30 text-amber-300">
+                        {(service as any).maxMemoryMb}MB Cap
+                      </span>
+                    )}
+
+                    {(service as any).cpuLimitPct && (
+                      <span className="px-2 py-0.5 rounded bg-indigo-950/50 border border-indigo-800/30 text-indigo-300">
+                        {(service as any).cpuLimitPct}% CPU
+                      </span>
+                    )}
+
+                    <span className="px-2 py-0.5 rounded bg-slate-800/60 border border-slate-700/40 text-slate-400">
+                      policy: {(service as any).restartPolicy || 'always'}
+                    </span>
+
+                    {currentStatus === 'backoff' && (
+                      <span className="px-2 py-0.5 rounded bg-amber-950/70 border border-amber-500/50 text-amber-300 animate-pulse">
+                        Restart Backoff
+                      </span>
+                    )}
+
+                    {currentStatus === 'failed' && (
+                      <span className="px-2 py-0.5 rounded bg-rose-950/70 border border-rose-500/50 text-rose-300 font-semibold">
+                        Circuit Breaker Tripped
+                      </span>
+                    )}
 
                     {url && (
                       <span className="px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800/30 text-blue-300">

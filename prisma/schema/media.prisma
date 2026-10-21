@@ -1,0 +1,21 @@
+model MediaItem {
+  id            String    @id @default(uuid())
+  library       String    @default("photos")
+  relativePath  String
+  absolutePath  String
+  filename      String
+  mimeType      String
+  sizeBytes     BigInt
+  mtime         DateTime
+  exifDate      DateTime?
+  width         Int?
+  height        Int?
+  durationSec   Float?
+  thumbnailPath String?
+  sha256        String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([library, relativePath])
+  @@map("media_items")
+}

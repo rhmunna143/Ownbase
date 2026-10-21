@@ -1,0 +1,20 @@
+{
+  "id": "redis",
+  "name": "Memurai Redis Cache",
+  "version": "1.0.0",
+  "category": "Database",
+  "description": "Native Windows Redis-compatible in-memory cache and key-value datastore with zero emulation overhead.",
+  "icon": "Database",
+  "runtime": "native",
+  "spec": {
+    "startCommand": "memurai.exe --port 6379",
+    "healthPath": "/",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 6379,
+  "defaultSubdomain": "redis",
+  "env": {},
+  "badge": "Redis API",
+  "isPackaged": false,
+  "docs": "High-performance Redis 7 compatible Windows engine for pub/sub, caching, and sessions."
+}

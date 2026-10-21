@@ -17,6 +17,9 @@ import { ApiDocsCard } from '@/components/ApiDocsCard';
 import { SetupWizardModal } from '@/components/SetupWizardModal';
 import { LoginModal } from '@/components/LoginModal';
 import { SecurityAdminCard } from '@/components/SecurityAdminCard';
+import { Terminal as WebTerminal } from '@/components/Terminal';
+import { ObservabilityCard } from '@/components/ObservabilityCard';
+import { BackupsCard } from '@/components/BackupsCard';
 import { serverApi, authStore } from '@/shared/apiClient';
 import {
   SystemInfo,
@@ -56,11 +59,12 @@ import {
   X,
   Menu,
   Film,
+  Archive,
 } from 'lucide-react';
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'settings' | 'logs'
+    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'terminal' | 'observability' | 'backups' | 'settings' | 'logs'
   >('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
@@ -172,33 +176,34 @@ export default function DashboardPage() {
       });
     }
 
-    // Event subscriptions
-    const unsubLog = serverApi.onLogAdded((log) => {
-      setLogs((prev) => [log, ...prev].slice(0, 500));
+    // Event subscriptions via single real-time SSE stream (PRD Item 3.11 & 3.12)
+    const unsubStream = serverApi.subscribeToEventStream({
+      onSnapshot: (snapshot) => {
+        if (snapshot.services) setProcessStatuses(snapshot.services);
+        if (snapshot.postgres) setPostgresStatus(snapshot.postgres);
+      },
+      onServiceStatus: (status) => {
+        setProcessStatuses((prev) => ({
+          ...prev,
+          [status.serviceId]: status,
+        }));
+      },
+      onPostgresStatus: (status) => {
+        setPostgresStatus(status);
+      },
+      onBootstrapUpdate: (steps) => {
+        setBootstrapSteps(steps);
+      },
+      onLog: (log) => {
+        setLogs((prev) => [log, ...prev].slice(0, 500));
+      },
     });
 
-    const unsubSteps = serverApi.onBootstrapUpdate((steps) => {
-      setBootstrapSteps(steps);
-    });
-
-    const unsubPg = serverApi.onPostgresStatusChange((status) => {
-      setPostgresStatus(status);
-    });
-
-    const unsubProc = serverApi.onProcessStatusChanged((status) => {
-      setProcessStatuses((prev) => ({
-        ...prev,
-        [status.serviceId]: status,
-      }));
-    });
-
-    const interval = setInterval(fetchAllData, 8000);
+    // Gentle fallback background sync (60s instead of 8s continuous polling)
+    const interval = setInterval(fetchAllData, 60000);
 
     return () => {
-      unsubLog();
-      unsubSteps();
-      unsubPg();
-      unsubProc();
+      unsubStream();
       clearInterval(interval);
     };
   }, [fetchAllData]);
@@ -529,6 +534,59 @@ export default function DashboardPage() {
               </div>
               <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-500/10 text-purple-300 border border-purple-500/30">
                 RBAC
+              </span>
+            </button>
+
+            <button
+              onClick={() => navigateTab('terminal')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'terminal'
+                  ? 'bg-cyan-600 text-white shadow-lg shadow-cyan-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Terminal className="w-4 h-4 text-cyan-400" />
+                <span>Web Terminal</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                ROOT
+              </span>
+            </button>
+
+            {/* NEW: System Observability & Live Metrics */}
+            <button
+              onClick={() => navigateTab('observability')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'observability'
+                  ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Activity className="w-4 h-4 text-indigo-400" />
+                <span>Observability</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                Metrics
+              </span>
+            </button>
+
+            {/* NEW: Automated Backups & Disaster Recovery */}
+            <button
+              onClick={() => navigateTab('backups')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'backups'
+                  ? 'bg-sky-600 text-white shadow-lg shadow-sky-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <Archive className="w-4 h-4 text-sky-400" />
+                <span>Backups &amp; DR</span>
+              </div>
+              <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/30">
+                AES-256
               </span>
             </button>
 
@@ -970,6 +1028,15 @@ export default function DashboardPage() {
 
           {/* TAB: SECURITY CORE & RBAC (PRD Phase 1) */}
           {activeTab === 'security' && <SecurityAdminCard />}
+
+          {/* TAB: CONPTY WEB TERMINAL (PRD Phase 6) */}
+          {activeTab === 'terminal' && <WebTerminal currentUser={currentUser} />}
+
+          {/* TAB: OBSERVABILITY & METRICS (PRD Phase 7) */}
+          {activeTab === 'observability' && <ObservabilityCard />}
+
+          {/* TAB: BACKUPS & DISASTER RECOVERY (PRD Phase 7) */}
+          {activeTab === 'backups' && <BackupsCard />}
 
           {/* TAB 9: SETTINGS & 24/7 POWER */}
           {activeTab === 'settings' && (

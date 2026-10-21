@@ -1,0 +1,18 @@
+model BackupJob {
+  id             String    @id @default(uuid())
+  name           String
+  status         String    // "pending" | "running" | "completed" | "failed"
+  archivePath    String?
+  fileSizeBytes  BigInt?
+  checksumSha256 String?
+  isEncrypted    Boolean   @default(true)
+  components     Json?     // ["database", "config", "secrets_key", "releases"]
+  metadata       Json?     // database version, row counts, etc.
+  error          String?
+  trigger        String    @default("manual") // "manual" | "scheduled"
+  completedAt    DateTime?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  @@map("backup_jobs")
+}

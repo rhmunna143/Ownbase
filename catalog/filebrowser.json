@@ -1,0 +1,26 @@
+{
+  "id": "filebrowser",
+  "name": "FileBrowser Cloud Drive",
+  "version": "2.30.0",
+  "category": "Storage",
+  "description": "Native personal cloud storage, file explorer, and media streaming drive with user access control.",
+  "icon": "FolderTree",
+  "runtime": "native",
+  "source": {
+    "type": "binary",
+    "url": "https://github.com/filebrowser/filebrowser/releases/download/v2.30.0/windows-amd64-filebrowser.zip",
+    "sha256": "1104fe179fdd6be245473fe212f93ff1169230830ff7664f25e01f034082fe05"
+  },
+  "spec": {
+    "command": "filebrowser.exe",
+    "args": ["-p", "8080", "-a", "127.0.0.1"],
+    "healthPath": "/login",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 8080,
+  "defaultSubdomain": "files",
+  "env": {},
+  "badge": "Built-in Portable",
+  "isPackaged": true,
+  "docs": "Personal web drive with file management, user permissions, and direct streaming. Admin created from setup wizard with random credentials."
+}

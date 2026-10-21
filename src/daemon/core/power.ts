@@ -12,32 +12,51 @@ export class PowerManager {
   private activeGuid: string = '';
   private isSuspensionBlocked: boolean = false;
   private powerWorker: ChildProcess | null = null;
+  private lastRefreshTime: number = 0;
+  private activeRefreshPromise: Promise<void> | null = null;
 
   constructor() {
     this.refreshPowerScheme();
   }
 
-  public refreshPowerScheme(): Promise<void> {
-    return new Promise((resolve) => {
+  public refreshPowerScheme(force = false): Promise<void> {
+    if (!force && Date.now() - this.lastRefreshTime < 10000 && this.activeScheme !== 'Unknown') {
+      return Promise.resolve();
+    }
+
+    if (this.activeRefreshPromise) {
+      return this.activeRefreshPromise;
+    }
+
+    this.activeRefreshPromise = new Promise<void>((resolve) => {
       if (process.platform !== 'win32') {
         this.activeScheme = 'Non-Windows';
+        this.lastRefreshTime = Date.now();
+        this.activeRefreshPromise = null;
         return resolve();
       }
 
       exec('powercfg /getactivescheme', { windowsHide: true }, (err, stdout) => {
-        if (!err && stdout) {
-          // Output format: Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
-          const match = stdout.match(/GUID:\s*([a-f0-9\-]+)\s+\(([^)]+)\)/i);
-          if (match) {
-            this.activeGuid = match[1];
-            this.activeScheme = match[2];
-          } else {
-            this.activeScheme = stdout.trim();
+        try {
+          if (!err && stdout) {
+            // Output format: Power Scheme GUID: 381b4222-f694-41f0-9685-ff5bb260df2e  (Balanced)
+            const match = stdout.match(/GUID:\s*([a-f0-9\-]+)\s+\(([^)]+)\)/i);
+            if (match) {
+              this.activeGuid = match[1];
+              this.activeScheme = match[2];
+            } else {
+              this.activeScheme = stdout.trim();
+            }
           }
+        } finally {
+          this.lastRefreshTime = Date.now();
+          this.activeRefreshPromise = null;
+          resolve();
         }
-        resolve();
       });
     });
+
+    return this.activeRefreshPromise;
   }
 
   public async getPowerState(): Promise<PowerState> {

@@ -7,6 +7,13 @@ import {
   CreateApiKeyRequestSchema,
   CreateRouteRequestSchema,
   TableBrowserQuerySchema,
+  CreateAppRequestSchema,
+  DeployAppRequestSchema,
+  RollbackAppRequestSchema,
+  InstallCatalogRequestSchema,
+  TlsPreflightRequestSchema,
+  CreateTcpProxyRequestSchema,
+  CreateServiceMountRequestSchema,
 } from './schemas';
 
 export const ROUTE_TABLE: RouteDefinition[] = [
@@ -473,6 +480,307 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     minRole: 'ROOT',
     summary: 'Revoke an API key',
     audit: true,
+  },
+
+  // ==========================================
+  // Phase 4: Apps & Deployment Engine
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/apps',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List deployed applications',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Register a new application',
+    requestSchema: CreateAppRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get application details and active release status',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/apps/:id',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Delete application, release files, and associated routes',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps/:id/deploy',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Trigger supervised application deployment from Git or archive',
+    requestSchema: DeployAppRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id/deployments',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List deployment history for an application',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/apps/:id/releases',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List versioned atomic releases for an application',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/apps/:id/rollback',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Instant rollback (<15s) to a previously healthy release',
+    requestSchema: RollbackAppRequestSchema,
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 4: App Catalog & Recipes
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/catalog',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List declarative app catalog recipes',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/catalog/install',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'One-click install from catalog recipe',
+    requestSchema: InstallCatalogRequestSchema,
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 5: Ingress, TLS & Direct TCP Exposure
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/network/urls',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get derived accessible URLs for all routes with exposure warnings',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/network/tls/preflight',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Pre-flight check for custom domain ACME TLS and CGNAT detection',
+    requestSchema: TlsPreflightRequestSchema,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/network/tcp',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List active direct TCP proxy listeners',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/network/tcp',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Start direct TCP port forwarder with firewall rule',
+    requestSchema: CreateTcpProxyRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/network/tcp/:port',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Stop direct TCP forwarder and remove firewall rule',
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 5: Storage Volumes & Mounts
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/storage/volumes',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List discovered Windows storage volumes and free space',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/storage/volumes/refresh',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger scan and refresh of Windows storage volumes',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/storage/mounts',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List service storage mounts and directory junctions',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/storage/mounts',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Create tiered service mount with NTFS junction',
+    requestSchema: CreateServiceMountRequestSchema,
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/storage/usage',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get cached storage usage breakdown and alerts',
+  },
+
+  // ==========================================
+  // Phase 5: Media Service & Timeline
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/media/timeline',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Get paginated photo and video timeline from database',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/media/scan',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger background media library indexing scan',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/media/thumbnail/:id',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Retrieve cached WebP thumbnail for media item',
+  },
+
+  // ==========================================
+  // Phase 6: Web Terminal & Forward-Auth Guard
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/auth/verify',
+    auth: 'public',
+    summary: 'Forward-auth verification endpoint for edge reverse proxies and LAN route guarding',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/terminal/sessions',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List active terminal sessions and connected actors',
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/terminal/sessions/:sessionId',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Terminate an active terminal session',
+    audit: true,
+  },
+
+  // ==========================================
+  // Phase 7: Backups, Observability & Alerts
+  // ==========================================
+  {
+    method: 'GET',
+    path: '/api/v1/backups',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'List automated and on-demand database backup archives',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/backups',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Trigger encrypted database and configuration backup',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/backups/:id/restore',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Restore database and configuration from backup archive',
+    audit: true,
+  },
+  {
+    method: 'DELETE',
+    path: '/api/v1/backups/:id',
+    auth: 'user',
+    minRole: 'ROOT',
+    summary: 'Delete backup job and remove archive file',
+    audit: true,
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/system/health',
+    auth: 'public',
+    summary: 'Deep per-component system health report',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/system/metrics',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Real-time and historical CPU, memory, and disk metrics',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/alerts',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List alert rules and system alerts',
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/rules',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Create or update alert rule configuration',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/:id/resolve',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Mark an active alert as resolved',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/alerts/test-webhook',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Dispatch a test notification to configured webhook URL',
   },
 ];
 

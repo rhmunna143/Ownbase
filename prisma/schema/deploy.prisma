@@ -1,0 +1,59 @@
+model App {
+  id              String       @id @default(uuid())
+  name            String
+  slug            String       @unique
+  sourceType      String       @default("git") // git, archive, catalog
+  repoUrl         String?
+  branch          String?      @default("main")
+  runtime         String       @default("node") // node, python, go, static, custom
+  runtimeVersion  String?
+  buildCommand    String?
+  startCommand    String?
+  port            Int?         @unique
+  healthPath      String?      @default("/health")
+  envVars         String?      // encrypted JSON payload
+  status          String       @default("idle") // idle, deploying, running, failed, stopped
+  activeReleaseId String?
+  activeRelease   Release?     @relation("ActiveRelease", fields: [activeReleaseId], references: [id], onDelete: SetNull)
+  releases        Release[]    @relation("AppReleases")
+  deployments     Deployment[]
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@map("apps")
+}
+
+model Release {
+  id            String       @id @default(uuid())
+  appId         String
+  app           App          @relation("AppReleases", fields: [appId], references: [id], onDelete: Cascade)
+  releaseNumber Int
+  commitHash    String?
+  port          Int
+  status        String       @default("healthy") // healthy, failed, archived
+  releasePath   String
+  buildLogs     String?
+  createdAt     DateTime     @default(now())
+  activeForApp  App[]        @relation("ActiveRelease")
+  deployments   Deployment[]
+
+  @@unique([appId, releaseNumber])
+  @@map("releases")
+}
+
+model Deployment {
+  id          String    @id @default(uuid())
+  appId       String
+  app         App       @relation(fields: [appId], references: [id], onDelete: Cascade)
+  releaseId   String?
+  release     Release?  @relation(fields: [releaseId], references: [id], onDelete: SetNull)
+  status      String    @default("queued") // queued, fetching, building, starting, healthy, promoted, failed, cancelled
+  triggeredBy String?   @default("user") // user, git, webhook, rollback
+  commitHash  String?
+  error       String?
+  logs        String?
+  startedAt   DateTime  @default(now())
+  finishedAt  DateTime?
+
+  @@map("deployments")
+}

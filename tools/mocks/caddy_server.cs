@@ -143,6 +143,28 @@ namespace NativeCaddy
                 string host = ExtractHost(initialText);
                 int targetPort = ResolveTargetPort(host);
 
+                // PRD Acceptance Criterion A3: ai.* and files.* require valid Ownbase session on LAN
+                string hostLower = host.ToLowerInvariant();
+                bool isProtectedService = targetPort == 11434 || targetPort == 8080 || hostLower.StartsWith("ai.") || hostLower.StartsWith("files.");
+                bool isLanHost = hostLower.Contains(".nip.io") || (!hostLower.StartsWith("localhost") && !hostLower.StartsWith("127.0.0.1") && !hostLower.EndsWith(".localhost"));
+
+                if (isProtectedService && isLanHost)
+                {
+                    bool hasAuth = initialText.IndexOf("Authorization: Bearer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                   initialText.IndexOf("ownbase_access_token=", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                   initialText.IndexOf("x-api-key:", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                    if (!hasAuth)
+                    {
+                        string authErr = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Authentication required to access service on LAN\",\"requiresAuth\":true}\r\n";
+                        byte[] errBytes = Encoding.UTF8.GetBytes(authErr);
+                        clientStream.Write(errBytes, 0, errBytes.Length);
+                        clientStream.Flush();
+                        client.Close();
+                        return;
+                    }
+                }
+
                 TcpClient upstream = new TcpClient();
                 try
                 {

@@ -24,6 +24,13 @@ import {
   CreateUserRequestSchema,
   CreateApiKeyRequestSchema,
   CreateRouteRequestSchema,
+  CreateAppRequestSchema,
+  DeployAppRequestSchema,
+  RollbackAppRequestSchema,
+  InstallCatalogRequestSchema,
+  TlsPreflightRequestSchema,
+  CreateTcpProxyRequestSchema,
+  CreateServiceMountRequestSchema,
   AuthenticatedUser,
   Role,
 } from '../../shared/contract';
@@ -33,6 +40,44 @@ import { SetupService } from '../auth/setup';
 import { AuthGuard } from '../auth/guard';
 import { loginThrottle } from '../auth/throttle';
 import { TableBrowser } from '../db/browser';
+import { EventStreamGateway } from './events';
+import { deploymentPipeline } from '../deploy/pipeline';
+import { releaseManager } from '../deploy/release';
+import { catalogManager } from '../deploy/catalog';
+import { portAllocator } from '../deploy/ports';
+import { hostBuilder } from '../core/hostBuilder';
+import { tlsManager } from '../network/tls';
+import { tcpProxyManager } from '../network/tcpProxy';
+import { volumeManager } from '../storage/volumes';
+import { storagePlacementManager } from '../storage/placement';
+import { storageUsageManager } from '../storage/usage';
+import { uploadEngine } from '../files/upload';
+import { streamEngine } from '../files/stream';
+import { mediaIndexer } from '../files/media';
+import { terminalManager, TerminalManager } from '../terminal/manager';
+import { TerminalWsBridge } from '../terminal/ws';
+import { BackupManager } from '../backup/manager';
+import { HealthService } from '../observability/health';
+import { metricsCollector } from '../observability/metrics';
+import { AlertManager } from '../observability/alerts';
+
+export function parseCookieHeader(header?: string): Record<string, string> {
+  if (!header) return {};
+  const result: Record<string, string> = {};
+  for (const pair of header.split(';')) {
+    const idx = pair.indexOf('=');
+    if (idx > 0) {
+      const key = pair.slice(0, idx).trim();
+      const val = pair.slice(idx + 1).trim();
+      try {
+        result[key] = decodeURIComponent(val);
+      } catch {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}
 
 export class WebApiServer {
   private server: http.Server | null = null;
@@ -43,6 +88,11 @@ export class WebApiServer {
   private setupService: SetupService;
   private authGuard: AuthGuard;
   private tableBrowser: TableBrowser;
+  private eventStreamGateway: EventStreamGateway;
+  private terminalWsBridge: TerminalWsBridge;
+  private backupManager: BackupManager;
+  private healthService: HealthService;
+  private alertManager: AlertManager;
 
   constructor(
     private postgresManager: PostgresManager,
@@ -60,6 +110,42 @@ export class WebApiServer {
     this.setupService = new SetupService(this.prismaManager, this.authService, this.auditService);
     this.authGuard = new AuthGuard(this.authService);
     this.tableBrowser = new TableBrowser(this.prismaManager);
+    this.eventStreamGateway = new EventStreamGateway({
+      authService: this.authService,
+      supervisor: this.supervisor,
+      postgres: this.postgresManager,
+    });
+    this.terminalWsBridge = new TerminalWsBridge(this.authService);
+    terminalManager.setAuditService(this.auditService);
+    this.backupManager = new BackupManager(this.prismaManager);
+    this.healthService = new HealthService(
+      this.postgresManager,
+      this.prismaManager,
+      this.supervisor as any,
+      this.caddyManager,
+      this.tailscaleManager
+    );
+    this.alertManager = new AlertManager(this.prismaManager, this.supervisor as any);
+  }
+
+  public getBackupManager(): BackupManager {
+    return this.backupManager;
+  }
+
+  public getHealthService(): HealthService {
+    return this.healthService;
+  }
+
+  public getAlertManager(): AlertManager {
+    return this.alertManager;
+  }
+
+  public getTerminalWsBridge(): TerminalWsBridge {
+    return this.terminalWsBridge;
+  }
+
+  public getTerminalManager(): TerminalManager {
+    return terminalManager;
   }
 
   public getPort(): number {
@@ -115,26 +201,15 @@ export class WebApiServer {
 
         try {
           // ==========================================
-          // 1. REAL-TIME EVENT STREAM (SSE)
+          // 1. REAL-TIME EVENT STREAM (SSE) (PRD Item 3.11)
           // ==========================================
           if (pathname === '/api/v1/events') {
-            res.writeHead(200, {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-            });
-            res.write(`data: ${JSON.stringify({ type: 'connected', timestamp: new Date().toISOString() })}\n\n`);
+            await this.eventStreamGateway.handleEventStream(req, res);
+            return;
+          }
 
-            const onEvent = (event: any) => {
-              try {
-                res.write(`data: ${JSON.stringify(event)}\n\n`);
-              } catch {}
-            };
-
-            eventBus.on('*', onEvent);
-            req.on('close', () => {
-              eventBus.off('*', onEvent);
-            });
+          if (pathname === '/api/v1/events/snapshot') {
+            this.sendJson(res, this.eventStreamGateway.getSnapshot());
             return;
           }
 
@@ -321,7 +396,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookieHeader(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -362,7 +437,12 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/auth/me') {
-            this.sendJson(res, { user: decision.user });
+            this.sendJson(res, {
+              user: decision.user,
+              id: decision.user?.id,
+              username: decision.user?.username,
+              role: decision.user?.role,
+            });
             return;
           }
 
@@ -915,6 +995,728 @@ export class WebApiServer {
             return;
           }
 
+          // --- PHASE 4: APPS & DEPLOYMENTS ---
+          if (route.path === '/api/v1/apps' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const apps = await (client as any).app.findMany({
+              include: {
+                activeRelease: true,
+                deployments: {
+                  take: 1,
+                  orderBy: { startedAt: 'desc' },
+                },
+              },
+              orderBy: { createdAt: 'desc' },
+            });
+            this.sendJson(res, apps);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid app payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const client = this.prismaManager.getClient();
+            const existing = await (client as any).app.findUnique({ where: { slug: parsed.data.slug } });
+            if (existing) {
+              this.sendJson(res, { error: `App with slug '${parsed.data.slug}' already exists` }, 409);
+              return;
+            }
+
+            let targetPort = parsed.data.port;
+            if (!targetPort) {
+              targetPort = await portAllocator.allocatePort();
+            }
+
+            const created = await (client as any).app.create({
+              data: {
+                name: parsed.data.name,
+                slug: parsed.data.slug,
+                sourceType: parsed.data.sourceType,
+                repoUrl: parsed.data.repoUrl,
+                branch: parsed.data.branch,
+                runtime: parsed.data.runtime,
+                buildCommand: parsed.data.buildCommand,
+                startCommand: parsed.data.startCommand,
+                port: targetPort,
+                healthPath: parsed.data.healthPath,
+                status: 'idle',
+              },
+            });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'app.create',
+              entity: 'app',
+              entityId: created.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: created.name, slug: created.slug, port: created.port },
+            });
+
+            this.sendJson(res, created, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const app = await (client as any).app.findUnique({
+              where: { id: params.id },
+              include: {
+                activeRelease: true,
+                releases: { orderBy: { releaseNumber: 'desc' }, take: 10 },
+                deployments: { orderBy: { startedAt: 'desc' }, take: 10 },
+              },
+            });
+            if (!app) {
+              this.sendJson(res, { error: `App '${params.id}' not found` }, 404);
+              return;
+            }
+            this.sendJson(res, app);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id' && req.method === 'DELETE') {
+            const client = this.prismaManager.getClient();
+            const app = await (client as any).app.findUnique({ where: { id: params.id } });
+            if (!app) {
+              this.sendJson(res, { error: `App '${params.id}' not found` }, 404);
+              return;
+            }
+
+            if (app.activeReleaseId) {
+              await releaseManager.stopReleaseProcess(app.activeReleaseId);
+            }
+            if (app.port) {
+              portAllocator.releasePort(app.port);
+            }
+
+            await (client as any).route.deleteMany({ where: { subdomain: app.slug } });
+            await this.caddyManager.syncAllRoutes();
+
+            const appDir = path.join(paths.appsDir, app.id);
+            if (fs.existsSync(appDir)) {
+              try {
+                fs.rmSync(appDir, { recursive: true, force: true });
+              } catch {}
+            }
+
+            await (client as any).app.delete({ where: { id: params.id } });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'app.delete',
+              entity: 'app',
+              entityId: params.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { name: app.name, slug: app.slug },
+            });
+
+            this.sendJson(res, { success: true });
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/deploy' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = DeployAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid deploy payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            try {
+              const depRecord = await deploymentPipeline.triggerDeploy({
+                appId: params.id,
+                triggeredBy: decision.user?.username || 'user',
+                sourceType: parsed.data.sourceType,
+                archivePath: parsed.data.archivePath,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'app.deploy',
+                entity: 'deployment',
+                entityId: depRecord.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { appId: params.id, sourceType: parsed.data.sourceType },
+              });
+
+              this.sendJson(res, depRecord, 202);
+            } catch (deployErr: any) {
+              this.sendJson(res, { error: deployErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/deployments' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const deployments = await (client as any).deployment.findMany({
+              where: { appId: params.id },
+              orderBy: { startedAt: 'desc' },
+              take: 50,
+            });
+            this.sendJson(res, deployments);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/releases' && req.method === 'GET') {
+            const client = this.prismaManager.getClient();
+            const releases = await (client as any).release.findMany({
+              where: { appId: params.id },
+              orderBy: { releaseNumber: 'desc' },
+            });
+            this.sendJson(res, releases);
+            return;
+          }
+
+          if (route.path === '/api/v1/apps/:id/rollback' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = RollbackAppRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid rollback payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            try {
+              const rolledBack = await releaseManager.rollback(params.id, parsed.data.releaseId);
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'app.rollback',
+                entity: 'app',
+                entityId: params.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { releaseId: parsed.data.releaseId, newPort: rolledBack.port },
+              });
+              this.sendJson(res, rolledBack);
+            } catch (rollbackErr: any) {
+              this.sendJson(res, { error: rollbackErr.message }, 400);
+            }
+            return;
+          }
+
+          // --- PHASE 4: APP CATALOG & RECIPES ---
+          if (route.path === '/api/v1/catalog' && req.method === 'GET') {
+            this.sendJson(res, catalogManager.getRecipes());
+            return;
+          }
+
+          if (route.path === '/api/v1/catalog/install' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = InstallCatalogRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid catalog install payload', details: parsed.error.issues }, 400);
+              return;
+            }
+
+            const recipe = catalogManager.getRecipe(parsed.data.recipeId);
+            if (!recipe) {
+              this.sendJson(res, { error: `Catalog recipe '${parsed.data.recipeId}' not found` }, 404);
+              return;
+            }
+
+            const appName = parsed.data.name || recipe.name;
+            const subdomain = parsed.data.subdomain || recipe.defaultSubdomain;
+            const targetPort = parsed.data.port || (await portAllocator.allocatePort(recipe.defaultPort));
+            const client = this.prismaManager.getClient();
+
+            const app = await (client as any).app.create({
+              data: {
+                name: appName,
+                slug: subdomain,
+                sourceType: 'catalog',
+                runtime: recipe.runtime === 'native' ? 'custom' : recipe.runtime,
+                buildCommand: recipe.spec.buildCommand,
+                startCommand:
+                  recipe.spec.startCommand ||
+                  (recipe.spec.command ? `${recipe.spec.command} ${recipe.spec.args.join(' ')}` : undefined),
+                port: targetPort,
+                healthPath: recipe.spec.healthPath,
+                status: 'idle',
+              },
+            });
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'catalog.install',
+              entity: 'app',
+              entityId: app.id,
+              ipAddress: clientIp,
+              status: 'success',
+              details: { recipeId: recipe.id, name: app.name, port: targetPort },
+            });
+
+            this.sendJson(res, { success: true, app }, 201);
+            return;
+          }
+
+          // --- PHASE 5: INGRESS, TLS & DIRECT TCP EXPOSURE ---
+          if (route.path === '/api/v1/network/urls' && req.method === 'GET') {
+            const routes = await this.prismaManager.getRoutes();
+            const derivedList: any[] = [];
+            for (const r of routes) {
+              const intent = {
+                subdomain: r.subdomain,
+                targetPort: r.targetPort,
+                targetHost: r.targetHost,
+                customDomains: r.customDomain ? [r.customDomain] : [],
+                exposeLocal: (r as any).exposeLocal ?? true,
+                exposeLan: (r as any).exposeLan ?? true,
+                exposeMesh: (r as any).exposeMesh ?? false,
+                tlsEnabled: r.tlsEnabled ?? true,
+                requiresAuth: true,
+              };
+              const built = hostBuilder.build(intent);
+              derivedList.push({
+                serviceId: r.serviceId,
+                subdomain: r.subdomain,
+                targetPort: r.targetPort,
+                matchers: built.caddyMatchers,
+                urls: built.urls,
+              });
+            }
+            this.sendJson(res, derivedList);
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tls/preflight' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = TlsPreflightRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid domain payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const preflight = await tlsManager.checkPreflight(parsed.data.domain);
+            this.sendJson(res, preflight);
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp' && req.method === 'GET') {
+            this.sendJson(res, tcpProxyManager.getActiveListeners());
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateTcpProxyRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid TCP proxy payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            try {
+              const listener = await tcpProxyManager.startProxy({
+                listenPort: parsed.data.listenPort,
+                targetPort: parsed.data.targetPort,
+                targetHost: parsed.data.targetHost,
+                scope: parsed.data.scope,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'tcp_proxy.start',
+                entity: 'tcp_proxy',
+                entityId: String(parsed.data.listenPort),
+                ipAddress: clientIp,
+                status: 'success',
+                details: { listenPort: parsed.data.listenPort, targetPort: parsed.data.targetPort },
+              });
+
+              this.sendJson(
+                res,
+                {
+                  success: true,
+                  listenPort: listener.listenPort,
+                  targetPort: listener.targetPort,
+                  ruleName: listener.ruleName,
+                },
+                201
+              );
+            } catch (tcpErr: any) {
+              this.sendJson(res, { error: tcpErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/network/tcp/:port' && req.method === 'DELETE') {
+            const portNum = parseInt(params.port, 10);
+            if (isNaN(portNum)) {
+              this.sendJson(res, { error: 'Invalid port parameter' }, 400);
+              return;
+            }
+            const stopped = await tcpProxyManager.stopProxy(portNum);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'tcp_proxy.stop',
+              entity: 'tcp_proxy',
+              entityId: String(portNum),
+              ipAddress: clientIp,
+              status: stopped ? 'success' : 'failure',
+            });
+            this.sendJson(res, { success: stopped });
+            return;
+          }
+
+          // --- PHASE 5: STORAGE VOLUMES & MOUNTS ---
+          if (route.path === '/api/v1/storage/volumes' && req.method === 'GET') {
+            const volumes = await volumeManager.discoverVolumes(false);
+            const serialized = volumes.map((v) => ({
+              ...v,
+              totalBytes: v.totalBytes.toString(),
+              freeBytes: v.freeBytes.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/volumes/refresh' && req.method === 'POST') {
+            const volumes = await volumeManager.discoverVolumes(true);
+            const serialized = volumes.map((v) => ({
+              ...v,
+              totalBytes: v.totalBytes.toString(),
+              freeBytes: v.freeBytes.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/mounts' && req.method === 'GET') {
+            const mounts = await storagePlacementManager.listMounts();
+            const serialized = mounts.map((m: any) => ({
+              ...m,
+              quotaBytes: m.quotaBytes?.toString(),
+              usedBytes: m.usedBytes?.toString(),
+            }));
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/mounts' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const parsed = CreateServiceMountRequestSchema.safeParse(body);
+            if (!parsed.success) {
+              this.sendJson(res, { error: 'Invalid storage mount payload', details: parsed.error.issues }, 400);
+              return;
+            }
+            const client = this.prismaManager.getClient();
+            const vol = await (client as any).storageVolume.findUnique({ where: { id: parsed.data.volumeId } });
+            if (!vol) {
+              this.sendJson(res, { error: `Storage volume '${parsed.data.volumeId}' not found` }, 404);
+              return;
+            }
+
+            try {
+              const mount = await storagePlacementManager.createMount({
+                serviceId: parsed.data.serviceId,
+                volumeId: vol.id,
+                driveLetter: vol.driveLetter,
+                tier: parsed.data.tier as any,
+                sourceSubpath: parsed.data.sourceSubpath,
+                mountName: parsed.data.mountName,
+                quotaBytes: parsed.data.quotaBytes ? BigInt(parsed.data.quotaBytes) : undefined,
+              });
+
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'storage_mount.create',
+                entity: 'service_mount',
+                entityId: mount.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { tier: mount.tier, mountPath: mount.mountPath },
+              });
+
+              this.sendJson(
+                res,
+                {
+                  ...mount,
+                  quotaBytes: mount.quotaBytes?.toString(),
+                  usedBytes: mount.usedBytes.toString(),
+                },
+                201
+              );
+            } catch (mountErr: any) {
+              this.sendJson(res, { error: mountErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/storage/usage' && req.method === 'GET') {
+            const usage = await storageUsageManager.getUsageBreakdown();
+            this.sendJson(res, usage);
+            return;
+          }
+
+          // --- PHASE 5: FILE STREAMING & UPLOADS ---
+          if (route.path === '/api/v1/files/upload' && req.method === 'POST') {
+            const filenameHeader = (req.headers['x-filename'] as string) || `upload_${Date.now()}`;
+            const targetDir =
+              (req.headers['x-target-dir'] as string) || path.join(paths.dataDir, 'files');
+
+            try {
+              const uploadRes = await uploadEngine.handleUpload(req, {
+                targetDirectory: targetDir,
+                filename: filenameHeader,
+              });
+              this.sendJson(res, uploadRes, 201);
+            } catch (uploadErr: any) {
+              this.sendJson(res, { error: uploadErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/files/stream' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const filePathParam = parsedUrl.searchParams.get('path');
+            if (!filePathParam) {
+              this.sendJson(res, { error: 'Missing path query parameter' }, 400);
+              return;
+            }
+
+            try {
+              const canonical = safeResolvePath(paths.dataDir, filePathParam);
+              await streamEngine.streamFile(req, res, canonical);
+            } catch (streamErr: any) {
+              this.sendJson(res, { error: streamErr.message }, 403);
+            }
+            return;
+          }
+
+          // --- PHASE 5: MEDIA SERVICE & TIMELINE ---
+          if (route.path === '/api/v1/media/timeline' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const page = parseInt(parsedUrl.searchParams.get('page') || '1', 10);
+            const pageSize = parseInt(parsedUrl.searchParams.get('pageSize') || '50', 10);
+            const library = parsedUrl.searchParams.get('library') || undefined;
+
+            const timeline = await mediaIndexer.getTimeline({ page, pageSize, library });
+            this.sendJson(res, timeline);
+            return;
+          }
+
+          if (route.path === '/api/v1/media/scan' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req).catch(() => ({}));
+            const library = body?.library || 'photos';
+            const scanRes = await mediaIndexer.scanLibrary(library);
+
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'media.scan',
+              entity: 'media_library',
+              entityId: library,
+              ipAddress: clientIp,
+              status: 'success',
+              details: scanRes,
+            });
+
+            this.sendJson(res, scanRes);
+            return;
+          }
+
+          if (route.path === '/api/v1/media/thumbnail/:id' && req.method === 'GET') {
+            const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const size = parseInt(parsedUrl.searchParams.get('size') || '400', 10);
+            const thumbPath = await mediaIndexer.getThumbnailPath(params.id, size);
+
+            if (!thumbPath || !fs.existsSync(thumbPath)) {
+              this.sendJson(res, { error: 'Thumbnail not available' }, 404);
+              return;
+            }
+
+            await streamEngine.streamFile(req, res, thumbPath);
+            return;
+          }
+
+          // --- PHASE 6: FORWARD-AUTH & WEB TERMINAL ---
+          if (route.path === '/api/v1/auth/verify' && req.method === 'GET') {
+            const authHeader = req.headers.authorization;
+            const apiKeyHeader = req.headers['x-api-key'];
+            const forwardedHost = (req.headers['x-forwarded-host'] as string) || req.headers.host || '';
+            const clientIp = this.getClientIp(req);
+
+            let user: AuthenticatedUser | null = null;
+            if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
+              user = await this.authService.verifyAccessToken(authHeader.slice(7).trim());
+            } else if (typeof apiKeyHeader === 'string') {
+              user = await this.authService.verifyApiKey(apiKeyHeader);
+            } else if (req.headers.cookie) {
+              try {
+                const parsedCookies = parseCookieHeader(req.headers.cookie);
+                const token = parsedCookies.ownbase_access_token || parsedCookies.ownbase_session;
+                if (token) {
+                  user = await this.authService.verifyAccessToken(token);
+                }
+              } catch {}
+            }
+
+            // Determine if target host is a LAN host requiring authentication (PRD Criterion A3)
+            const isLanHost =
+              forwardedHost.includes('.nip.io') ||
+              (!forwardedHost.startsWith('localhost') &&
+                !forwardedHost.startsWith('127.0.0.1') &&
+                !forwardedHost.includes('.localhost'));
+
+            if (!user && isLanHost) {
+              res.setHeader('WWW-Authenticate', 'Bearer realm="Ownbase LAN"');
+              this.sendJson(
+                res,
+                { error: 'Authentication required to access service on LAN', verified: false, requiresAuth: true },
+                401
+              );
+              return;
+            }
+
+            if (user) {
+              res.setHeader('X-Forwarded-User', user.username);
+              res.setHeader('X-Forwarded-Role', user.role);
+              this.sendJson(res, { verified: true, user });
+            } else {
+              this.sendJson(res, { verified: true, access: 'loopback' });
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/terminal/sessions' && req.method === 'GET') {
+            this.sendJson(res, terminalManager.getActiveSessions());
+            return;
+          }
+
+          if (route.path === '/api/v1/terminal/sessions/:sessionId' && req.method === 'DELETE') {
+            const sessionId = params.sessionId;
+            const closed = terminalManager.closeSession(sessionId, 'admin_terminated');
+            if (!closed) {
+              this.sendJson(res, { error: `Terminal session '${sessionId}' not found` }, 404);
+              return;
+            }
+            this.sendJson(res, { success: true, sessionId });
+            return;
+          }
+
+          // --- PHASE 7: BACKUPS & DISASTER RECOVERY (PRD §7.4 & A2) ---
+          if (route.path === '/api/v1/backups' && req.method === 'GET') {
+            const backups = await this.backupManager.listBackups();
+            this.sendJson(res, backups);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups' && req.method === 'POST') {
+            const user = decision.user;
+            const body = await this.parseJsonBody(req);
+            const backup = await this.backupManager.createBackup({
+              name: body?.name,
+              trigger: 'manual',
+              targetVolumePath: body?.targetVolumePath,
+            });
+            await this.auditService.record({
+              action: 'backup.create',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: backup.id, size: backup.fileSizeBytes },
+            });
+            this.sendJson(res, backup, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups/:id/restore' && req.method === 'POST') {
+            const user = decision.user;
+            const result = await this.backupManager.restoreBackup(params.id);
+            await this.auditService.record({
+              action: 'backup.restore',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: params.id, recordsRestored: result.recordsRestored },
+            });
+            this.sendJson(res, result);
+            return;
+          }
+
+          if (route.path === '/api/v1/backups/:id' && req.method === 'DELETE') {
+            const user = decision.user;
+            const deleted = await this.backupManager.deleteBackup(params.id);
+            await this.auditService.record({
+              action: 'backup.delete',
+              status: 'success',
+              actorId: user?.id,
+              actorName: user?.username,
+              ipAddress: clientIp,
+              details: { backupId: params.id },
+            });
+            this.sendJson(res, { success: deleted, id: params.id });
+            return;
+          }
+
+          // --- PHASE 7: OBSERVABILITY & SYSTEM HEALTH (PRD §7.5) ---
+          if (route.path === '/api/v1/system/health' && req.method === 'GET') {
+            const report = await this.healthService.getDeepHealth();
+            const status = report.overall === 'unhealthy' ? 503 : 200;
+            this.sendJson(res, report, status);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/metrics' && req.method === 'GET') {
+            this.sendJson(res, {
+              latest: metricsCollector.getLatest(),
+              history: metricsCollector.getHistory(),
+            });
+            return;
+          }
+
+          // --- PHASE 7: ALERTS & RULES (PRD §7.5) ---
+          if (route.path === '/api/v1/alerts' && req.method === 'GET') {
+            const alerts = await this.alertManager.getAlerts();
+            this.sendJson(res, alerts);
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/rules' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const rule = await this.alertManager.createOrUpdateRule(body || {});
+            this.sendJson(res, rule, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/:id/resolve' && req.method === 'POST') {
+            const success = await this.alertManager.resolveAlert(params.id);
+            this.sendJson(res, { success, id: params.id });
+            return;
+          }
+
+          if (route.path === '/api/v1/alerts/test-webhook' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const webhookUrl = body?.webhookUrl;
+            if (!webhookUrl) {
+              this.sendJson(res, { error: 'webhookUrl is required', code: 'INVALID_PARAM', message: 'webhookUrl is required' }, 400);
+              return;
+            }
+            const testAlert = {
+              id: 'test-alert-' + Date.now(),
+              title: 'Test Webhook Notification',
+              message: 'This is a test notification from Ownbase Observability System.',
+              severity: 'info',
+              createdAt: new Date().toISOString(),
+            };
+            const dispatched = await this.alertManager.dispatchWebhook(webhookUrl, testAlert);
+            this.sendJson(res, { success: dispatched, webhookUrl });
+            return;
+          }
+
           // --- OPENAPI & DOCS ---
           if (route.path === '/api/v1/openapi.json') {
             const host = req.headers.host || `127.0.0.1:${this.port}`;
@@ -928,10 +1730,28 @@ export class WebApiServer {
           }
 
           // Fallback 404
-          this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
+          this.sendJson(res, { error: `Not found: ${req.method} ${pathname}`, code: 'NOT_FOUND', message: `Not found: ${req.method} ${pathname}` }, 404);
         } catch (err: any) {
           logger.error('web-api', `Error handling ${req.method} ${pathname}: ${err.message}`);
-          this.sendJson(res, { error: err.message || 'Internal Server Error' }, 500);
+          const isProd = process.env.NODE_ENV === 'production' || process.env.OWNBASE_MODE === 'service';
+          const safeMessage = isProd && err.statusCode !== 400 && err.statusCode !== 401 && err.statusCode !== 403 && err.statusCode !== 404
+            ? 'An internal error occurred'
+            : (err.message || 'Internal Server Error');
+          this.sendJson(res, {
+            error: safeMessage,
+            code: err.code || 'INTERNAL_ERROR',
+            message: safeMessage,
+          }, err.statusCode || 500);
+        }
+      });
+
+      // WebSocket HTTP Upgrade handler for Audited ConPTY Web Terminal (PRD §6.5 & A4)
+      this.server.on('upgrade', (req, socket, head) => {
+        const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+        if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
+          this.terminalWsBridge.handleUpgrade(req, socket, head);
+        } else {
+          socket.destroy();
         }
       });
 

@@ -5,6 +5,23 @@ import { paths } from '../core/paths';
 import { logger } from '../core/logger';
 import { PrismaManager } from '../db/prisma';
 import { TailscaleStatus } from '../../shared/types';
+import { hostBuilder } from '../core/hostBuilder';
+
+export interface TailscalePeerInfo {
+  id: string;
+  hostName: string;
+  dnsName: string;
+  ips: string[];
+  os: string;
+  online: boolean;
+}
+
+export interface TailscaleDetailedStatus extends TailscaleStatus {
+  magicDnsDomain?: string;
+  dnsName?: string;
+  peers?: TailscalePeerInfo[];
+  funnelEnabled?: boolean;
+}
 
 export class TailscaleManager {
   private binaryPath: string = '';
@@ -74,7 +91,10 @@ export class TailscaleManager {
     });
   }
 
-  public async getStatus(): Promise<TailscaleStatus> {
+  /**
+   * Queries Tailscale daemon via `tailscale status --json` (Item 5.6).
+   */
+  public async getDetailedStatus(): Promise<TailscaleDetailedStatus> {
     const bin = this.resolveBinary();
     const isInstalled = fs.existsSync(bin);
 
@@ -86,20 +106,81 @@ export class TailscaleManager {
       };
     }
 
-    const ip = await this.getMeshIp();
+    return new Promise((resolve) => {
+      execFile(bin, ['status', '--json'], { windowsHide: true }, (err, stdout) => {
+        if (err || !stdout) {
+          return resolve({
+            connected: false,
+            ip: null,
+            binaryPath: bin,
+          });
+        }
 
+        try {
+          const data = JSON.parse(stdout);
+          const self = data.Self || {};
+          const ipList: string[] = self.TailscaleIPs || [];
+          const ipv4 = ipList.find((ip) => ip.startsWith('100.')) || null;
+
+          const peers: TailscalePeerInfo[] = [];
+          if (data.Peer) {
+            for (const peerId of Object.keys(data.Peer)) {
+              const p = data.Peer[peerId];
+              peers.push({
+                id: peerId,
+                hostName: p.HostName || '',
+                dnsName: p.DNSName || '',
+                ips: p.TailscaleIPs || [],
+                os: p.OS || 'unknown',
+                online: !!p.Online,
+              });
+            }
+          }
+
+          const dnsName = self.DNSName ? self.DNSName.replace(/\.$/, '') : undefined;
+          const magicDnsDomain = data.MagicDNSSuffix || undefined;
+
+          if (dnsName) {
+            hostBuilder.setTailscaleDomain(dnsName);
+          }
+
+          resolve({
+            connected: data.BackendState === 'Running' || !!ipv4,
+            ip: ipv4,
+            binaryPath: bin,
+            dnsName,
+            magicDnsDomain,
+            peers,
+            funnelEnabled: !!data.Funnel,
+          });
+        } catch {
+          resolve({
+            connected: false,
+            ip: null,
+            binaryPath: bin,
+          });
+        }
+      });
+    });
+  }
+
+  public async getStatus(): Promise<TailscaleStatus> {
+    const detailed = await this.getDetailedStatus();
     return {
-      connected: !!ip,
-      ip: ip || null,
-      binaryPath: bin,
+      connected: detailed.connected,
+      ip: detailed.ip,
+      binaryPath: detailed.binaryPath,
     };
   }
 
   /**
    * Connects to Tailscale mesh.
-   * Passes auth key via TS_AUTHKEY environment variable, avoiding argv exposure (Item 1.9).
+   * Passes auth key via TS_AUTHKEY environment variable, avoiding argv exposure (Item 1.9 & 5.6).
    */
-  public async connect(authKey: string, hostname?: string): Promise<{ success: boolean; ip?: string; error?: string }> {
+  public async connect(
+    authKey: string,
+    hostname?: string
+  ): Promise<{ success: boolean; ip?: string; error?: string }> {
     const bin = this.resolveBinary();
     if (!fs.existsSync(bin)) {
       return { success: false, error: 'Tailscale binary not found on system.' };
@@ -152,7 +233,10 @@ export class TailscaleManager {
 
           try {
             const client = this.prismaManager.getClient();
-            const masked = authKey.length > 8 ? `${authKey.substring(0, 6)}...${authKey.substring(authKey.length - 4)}` : 'configured';
+            const masked =
+              authKey.length > 8
+                ? `${authKey.substring(0, 6)}...${authKey.substring(authKey.length - 4)}`
+                : 'configured';
             await client.systemConfig.upsert({
               where: { key: 'tailscale_auth_key' },
               create: { key: 'tailscale_auth_key', value: masked, category: 'network' },
@@ -194,3 +278,5 @@ export class TailscaleManager {
     });
   }
 }
+
+export const tailscaleManager = new TailscaleManager(new PrismaManager());

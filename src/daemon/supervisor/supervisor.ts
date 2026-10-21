@@ -1,11 +1,21 @@
-import { spawn, execFile, execSync, ChildProcess } from 'child_process';
 import path from 'path';
 import fs from 'fs';
+import { execSync } from 'child_process';
 import { paths } from '../core/paths';
 import { logger } from '../core/logger';
 import { eventBus } from '../core/events';
 import { PrismaManager } from '../db/prisma';
 import { ProcessStatus, LogEntry, ServiceRecord } from '../../shared/types';
+import { ServiceSpec, resolveServiceSpec } from './spec';
+import { ServiceStateMachine, ServiceState } from './machine';
+import { RestartController } from './restart';
+import { ServiceHealthProber } from './health';
+import { buildIsolatedEnvironment } from './env';
+import { spawnInJob, ManagedJob } from './jobhost';
+import { ServiceLogManager } from './logs';
+import { ServiceMetricsCollector } from './metrics';
+import { gracefulStopProcess } from './stop';
+import { reconcileStaleProcesses } from './reconcile';
 
 export interface ManagedProcess {
   serviceId: string;
@@ -15,22 +25,30 @@ export interface ManagedProcess {
   resolvedPath: string;
   port: number | null;
   args: string[];
-  child: ChildProcess | null;
+  job: ManagedJob | null;
   pid?: number;
-  status: ProcessStatus['status'];
+  status: ServiceState;
   startTime?: Date;
   restartCount: number;
   recentLogs: LogEntry[];
   error?: string;
+  spec: ServiceSpec;
+  stateMachine: ServiceStateMachine;
+  restartController: RestartController;
+  healthProber?: ServiceHealthProber;
+  logManager: ServiceLogManager;
+  metricsCollector?: ServiceMetricsCollector;
 }
 
 export class ProcessSupervisor {
   private processes: Map<string, ManagedProcess> = new Map();
   private prismaManager: PrismaManager;
   private isShuttingDown: boolean = false;
+  private metricsTimer: NodeJS.Timeout | null = null;
 
   constructor(prismaManager: PrismaManager) {
     this.prismaManager = prismaManager;
+    this.startPeriodicMetricsSampling();
   }
 
   public resolveExecutablePath(executable: string): string | null {
@@ -72,119 +90,132 @@ export class ProcessSupervisor {
 
   public registerService(service: ServiceRecord, customArgs?: string[]): ManagedProcess {
     let managed = this.processes.get(service.id);
-    const resolvedPath = this.resolveExecutablePath(service.executable) || service.executable;
-
-    // Build standard arguments based on binary type if not customized
-    let args: string[] = customArgs || [];
-    if (args.length === 0) {
-      if (service.type === 'caddy') {
-        args = ['run'];
-      } else if (service.type === 'filebrowser') {
-        const storageDir = paths.storageDir;
-        const dbPath = path.join(paths.dataDir, 'filebrowser.db');
-        if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
-
-        // Initialize FileBrowser database configuration if not present
-        if (!fs.existsSync(dbPath)) {
-          try {
-            const execPath = this.resolveExecutablePath(service.executable);
-            if (execPath) {
-              execSync(`"${execPath}" config init -d "${dbPath}"`, { windowsHide: true });
-              logger.info('supervisor', 'Initialized FileBrowser database configuration.');
-            }
-          } catch (e: any) {
-            logger.warn('supervisor', `FileBrowser auto-initialization notice: ${e.message}`);
-          }
-        }
-
-        args = ['-p', (service.port || 8080).toString(), '-a', '0.0.0.0', '-r', storageDir, '-d', dbPath];
-      } else if (service.type === 'ollama') {
-        args = ['serve'];
-      } else if (service.type === 'minio') {
-        const storageDir = path.join(paths.dataDir, 'minio-data');
-        if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
-        args = ['server', storageDir, '--address', `:${service.port || 9000}`];
-      }
-    }
+    const spec = resolveServiceSpec(service, customArgs ? { args: customArgs } : undefined);
+    const resolvedPath = this.resolveExecutablePath(spec.executable) || spec.executable;
 
     if (!managed) {
+      const stateMachine = new ServiceStateMachine(service.id, service.name, 'stopped');
+      const restartController = new RestartController({
+        policy: spec.restartPolicy,
+      });
+      const logManager = new ServiceLogManager(service.id, service.name);
+
       managed = {
         serviceId: service.id,
         name: service.name,
         type: service.type,
-        executable: service.executable,
+        executable: spec.executable,
         resolvedPath,
-        port: service.port,
-        args,
-        child: null,
+        port: spec.port,
+        args: spec.args,
+        job: null,
         status: 'stopped',
         restartCount: 0,
         recentLogs: [],
+        spec,
+        stateMachine,
+        restartController,
+        logManager,
       };
+
+      // Set up health prober if configured in spec
+      if (spec.healthProbe) {
+        managed.healthProber = new ServiceHealthProber(service.id, service.name, spec.healthProbe);
+      }
+
+      // Synchronize state machine events to managed process & DB
+      stateMachine.on('transition', async (evt) => {
+        if (managed) {
+          managed.status = evt.to;
+          await this.syncServiceStatusToDb(managed);
+        }
+      });
+
       this.processes.set(service.id, managed);
     } else {
+      managed.spec = spec;
       managed.resolvedPath = resolvedPath;
-      managed.port = service.port;
-      managed.args = args;
+      managed.port = spec.port;
+      managed.args = spec.args;
+      if (spec.healthProbe) {
+        managed.healthProber = new ServiceHealthProber(service.id, service.name, spec.healthProbe);
+      }
     }
 
     return managed;
   }
 
-  public async startService(serviceId: string): Promise<{ success: boolean; pid?: number; error?: string }> {
+  public async startService(
+    serviceId: string
+  ): Promise<{ success: boolean; pid?: number; error?: string }> {
     const managed = this.processes.get(serviceId);
     if (!managed) {
       return { success: false, error: `Service ID ${serviceId} not registered in supervisor` };
     }
 
-    if (managed.status === 'running' && managed.child) {
+    if (managed.status === 'running' && managed.job && managed.job.pid) {
       return { success: true, pid: managed.pid };
     }
 
-    this.updateStatus(managed, 'starting');
+    managed.stateMachine.transition('starting', 'Explicit start request');
     logger.info('supervisor', `Starting native service "${managed.name}" (${managed.executable})...`);
 
     // Verify binary exists
-    const execPath = this.resolveExecutablePath(managed.executable);
+    const execPath = this.resolveExecutablePath(managed.spec.executable);
     if (!execPath) {
-      const err = `Executable "${managed.executable}" not found in extraResources/bin or system PATH`;
+      const err = `Executable "${managed.spec.executable}" not found in extraResources/bin or system PATH`;
       logger.error('supervisor', err);
-      this.updateStatus(managed, 'error', err);
+      managed.stateMachine.transition('failed', err);
       return { success: false, error: err };
     }
     managed.resolvedPath = execPath;
 
     try {
-      logger.info('supervisor', `Spawning: "${execPath}" ${managed.args.join(' ')}`);
+      logger.info('supervisor', `Spawning in Job Object: "${execPath}" ${managed.args.join(' ')}`);
 
-      const child = spawn(execPath, managed.args, {
-        windowsHide: true,
-        detached: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-        env: {
-          ...process.env,
-          OLLAMA_HOST: '0.0.0.0:11434',
-        },
+      // Build isolated environment
+      const env = await buildIsolatedEnvironment({
+        serviceEnv: managed.spec.env,
+        allowlist: managed.spec.envAllowlist,
+        encryptedEnvJson: (managed.spec as any).envVars,
       });
 
-      managed.child = child;
-      managed.pid = child.pid;
+      // Spawn enclosed in native Win32 Job Object with resource limits
+      const job = await spawnInJob({
+        executable: execPath,
+        args: managed.args,
+        cwd: managed.spec.cwd || paths.rootDir,
+        env,
+        limits: managed.spec.limits,
+        killOnClose: true,
+      });
+
+      managed.job = job;
+      managed.pid = job.pid;
       managed.startTime = new Date();
       managed.error = undefined;
+      managed.restartController.onStarted();
+      managed.metricsCollector = new ServiceMetricsCollector(managed.serviceId, job);
 
-      this.updateStatus(managed, 'running');
-      logger.success('supervisor', `Service "${managed.name}" started successfully with PID: ${child.pid}`);
+      managed.stateMachine.transition('running', `Spawned with PID: ${job.pid}`);
+      logger.success(
+        'supervisor',
+        `Service "${managed.name}" running in Job Object with PID: ${job.pid}`
+      );
 
-      // Handle standard output stream
-      child.stdout?.on('data', (data) => {
+      // Start health probing if configured
+      managed.healthProber?.start();
+
+      // Handle stdout
+      job.child.stdout?.on('data', (data) => {
         const lines = data.toString().split(/\r?\n/).filter(Boolean);
         for (const line of lines) {
           this.handleProcessLog(managed, 'info', line);
         }
       });
 
-      // Handle standard error stream
-      child.stderr?.on('data', (data) => {
+      // Handle stderr
+      job.child.stderr?.on('data', (data) => {
         const lines = data.toString().split(/\r?\n/).filter(Boolean);
         for (const line of lines) {
           this.handleProcessLog(managed, 'warn', line);
@@ -192,132 +223,147 @@ export class ProcessSupervisor {
       });
 
       // Handle process exit
-      child.on('exit', (code, signal) => {
-        logger.warn('supervisor', `Service "${managed.name}" (PID: ${managed.pid}) exited with code: ${code}, signal: ${signal}`);
-        managed.child = null;
+      job.child.on('exit', (code, signal) => {
+        logger.warn(
+          'supervisor',
+          `Service "${managed.name}" (PID: ${managed.pid}) exited with code: ${code}, signal: ${signal}`
+        );
+
+        managed.healthProber?.stop();
+        managed.job = null;
         managed.pid = undefined;
 
         if (this.isShuttingDown || managed.status === 'stopping') {
-          this.updateStatus(managed, 'stopped');
+          managed.stateMachine.transition('stopped', 'Shutdown or stopped by request');
         } else {
-          this.updateStatus(managed, code === 0 ? 'stopped' : 'crashed', `Process exited with code ${code}`);
+          // Process exited unexpectedly or crashed
+          const isClean = code === 0;
+          if (isClean) {
+            managed.stateMachine.transition('stopped', 'Process exited with code 0');
+          } else {
+            managed.stateMachine.transition('crashed', `Process exited with code ${code}`);
+          }
+
+          // Evaluate restart policy
+          const decision = managed.restartController.shouldRestart(code);
+          if (decision.circuitTripped) {
+            managed.stateMachine.transition('failed', 'Crash loop circuit breaker tripped');
+          } else if (decision.restart) {
+            managed.stateMachine.transition(
+              'backoff',
+              `Scheduled restart in ${Math.round(decision.delayMs / 1000)}s`
+            );
+            setTimeout(() => {
+              if (managed.status === 'backoff' && !this.isShuttingDown) {
+                managed.restartCount += 1;
+                this.startService(managed.serviceId).catch((e) => {
+                  logger.warn('supervisor', `Restart attempt notice: ${e.message}`);
+                });
+              }
+            }, decision.delayMs);
+          }
         }
       });
 
       // Handle process error
-      child.on('error', (err) => {
-        logger.error('supervisor', `Failed to run "${managed.name}": ${err.message}`);
-        managed.child = null;
+      job.child.on('error', (err) => {
+        logger.error('supervisor', `Failed to execute "${managed.name}": ${err.message}`);
+        managed.healthProber?.stop();
+        managed.job = null;
         managed.pid = undefined;
-        this.updateStatus(managed, 'error', err.message);
+        managed.stateMachine.transition('failed', err.message);
       });
 
-      // Update Prisma database record
       await this.syncServiceStatusToDb(managed);
-
-      return { success: true, pid: child.pid };
+      return { success: true, pid: job.pid };
     } catch (err: any) {
       logger.error('supervisor', `Exception starting service "${managed.name}": ${err.message}`);
-      this.updateStatus(managed, 'error', err.message);
+      managed.stateMachine.transition('failed', err.message);
       return { success: false, error: err.message };
     }
   }
 
   public async stopService(serviceId: string): Promise<{ success: boolean; error?: string }> {
     const managed = this.processes.get(serviceId);
-    if (!managed || !managed.child || !managed.pid) {
+    if (!managed || (!managed.job && !managed.pid)) {
       if (managed) {
-        this.updateStatus(managed, 'stopped');
+        managed.stateMachine.transition('stopped', 'Stop called on idle service');
         await this.syncServiceStatusToDb(managed);
       }
       return { success: true };
     }
 
-    const pid = managed.pid;
-    this.updateStatus(managed, 'stopping');
-    logger.info('supervisor', `Terminating process tree for "${managed.name}" (PID: ${pid})...`);
+    managed.healthProber?.stop();
+    managed.stateMachine.transition('stopping', 'Stop requested');
 
     try {
-      await this.killProcessTree(pid);
-      managed.child = null;
+      await gracefulStopProcess({
+        job: managed.job,
+        pid: managed.pid,
+        timeoutMs: managed.spec.stopBehavior?.timeoutMs ?? 3000,
+        serviceName: managed.name,
+      });
+
+      managed.job = null;
       managed.pid = undefined;
-      this.updateStatus(managed, 'stopped');
+      managed.stateMachine.transition('stopped', 'Stopped cleanly');
       await this.syncServiceStatusToDb(managed);
-      logger.success('supervisor', `Service "${managed.name}" terminated cleanly.`);
       return { success: true };
     } catch (err: any) {
-      logger.error('supervisor', `Error killing process tree for "${managed.name}": ${err.message}`);
-      this.updateStatus(managed, 'error', err.message);
+      logger.error('supervisor', `Error stopping "${managed.name}": ${err.message}`);
+      managed.stateMachine.transition('failed', err.message);
       return { success: false, error: err.message };
     }
   }
 
-  public async restartService(serviceId: string): Promise<{ success: boolean; pid?: number; error?: string }> {
+  public async restartService(
+    serviceId: string
+  ): Promise<{ success: boolean; pid?: number; error?: string }> {
     const managed = this.processes.get(serviceId);
     if (managed) {
       managed.restartCount += 1;
+      managed.restartController.reset();
     }
     await this.stopService(serviceId);
     await new Promise((r) => setTimeout(r, 600));
     return await this.startService(serviceId);
   }
 
-  public killProcessTree(pid: number): Promise<void> {
-    return new Promise((resolve) => {
-      if (!pid || pid <= 0) return resolve();
-
-      const isWindows = process.platform === 'win32';
-      if (isWindows) {
-        execFile('taskkill', ['/pid', pid.toString(), '/T', '/F'], { windowsHide: true }, (err, stdout) => {
-          if (stdout) logger.info('supervisor', `[taskkill stdout] ${stdout.trim()}`);
-          if (err && !err.message.includes('not found')) {
-            logger.warn('supervisor', `taskkill notice for PID ${pid}: ${err.message}`);
-          }
-          resolve();
-        });
-      } else {
-        try {
-          process.kill(pid, 'SIGKILL');
-        } catch {}
-        resolve();
-      }
-    });
-  }
-
   public async stopAll(): Promise<void> {
     this.isShuttingDown = true;
-    logger.info('supervisor', 'Shutting down all supervised native processes...');
+    if (this.metricsTimer) {
+      clearInterval(this.metricsTimer);
+      this.metricsTimer = null;
+    }
 
-    const activeList = Array.from(this.processes.values()).filter((p) => p.child && p.pid);
+    logger.info('supervisor', 'Gracefully shutting down all supervised native processes...');
+    const activeList = Array.from(this.processes.values()).filter((p) => p.job || p.pid);
+
     const stopPromises = activeList.map((managed) => {
-      if (managed.pid) {
-        return this.killProcessTree(managed.pid).then(() => {
-          managed.child = null;
-          managed.pid = undefined;
-          managed.status = 'stopped';
-        });
-      }
-      return Promise.resolve();
+      managed.healthProber?.stop();
+      return gracefulStopProcess({
+        job: managed.job,
+        pid: managed.pid,
+        timeoutMs: 2000,
+        serviceName: managed.name,
+      }).then(() => {
+        managed.job = null;
+        managed.pid = undefined;
+        managed.stateMachine.reset('stopped');
+      });
     });
 
     await Promise.all(stopPromises);
-    logger.success('supervisor', 'All supervised processes forcefully and cleanly terminated.');
+    logger.success('supervisor', 'All supervised processes stopped cleanly.');
   }
 
-  private handleProcessLog(managed: ManagedProcess, level: 'info' | 'warn' | 'error', message: string) {
-    const entry: LogEntry = {
-      id: Math.random().toString(36).substring(2, 9),
-      level,
-      source: managed.type,
-      message,
-      timestamp: new Date().toISOString(),
-      serviceId: managed.serviceId,
-    };
-
-    managed.recentLogs.push(entry);
-    if (managed.recentLogs.length > 250) {
-      managed.recentLogs.shift();
-    }
+  private handleProcessLog(
+    managed: ManagedProcess,
+    level: 'info' | 'warn' | 'error',
+    message: string
+  ) {
+    const entry = managed.logManager.appendLog(level, message);
+    managed.recentLogs = managed.logManager.getRecentLogs();
 
     if (level === 'error') {
       logger.error(managed.type as any, message);
@@ -326,38 +372,6 @@ export class ProcessSupervisor {
     } else {
       logger.info(managed.type as any, message);
     }
-
-    // Publish to event bus for real-time subscribers
-    eventBus.emitEvent({
-      type: 'service-log',
-      data: {
-        serviceId: managed.serviceId,
-        log: entry,
-      },
-    });
-  }
-
-  private updateStatus(managed: ManagedProcess, status: ProcessStatus['status'], error?: string) {
-    managed.status = status;
-    if (error !== undefined) {
-      managed.error = error;
-    }
-
-    const payload: ProcessStatus = {
-      serviceId: managed.serviceId,
-      name: managed.name,
-      type: managed.type,
-      status: managed.status,
-      pid: managed.pid,
-      startTime: managed.startTime?.toISOString(),
-      restartCount: managed.restartCount,
-      error: managed.error,
-    };
-
-    eventBus.emitEvent({
-      type: 'service-status',
-      data: payload,
-    });
   }
 
   private async syncServiceStatusToDb(managed: ManagedProcess) {
@@ -382,7 +396,7 @@ export class ProcessSupervisor {
       serviceId: p.serviceId,
       name: p.name,
       type: p.type,
-      status: p.status,
+      status: p.status as any,
       pid: p.pid,
       startTime: p.startTime?.toISOString(),
       restartCount: p.restartCount,
@@ -397,7 +411,7 @@ export class ProcessSupervisor {
         serviceId: p.serviceId,
         name: p.name,
         type: p.type,
-        status: p.status,
+        status: p.status as any,
         pid: p.pid,
         startTime: p.startTime?.toISOString(),
         restartCount: p.restartCount,
@@ -409,13 +423,16 @@ export class ProcessSupervisor {
 
   public getServiceLogs(serviceId: string): LogEntry[] {
     const p = this.processes.get(serviceId);
-    return p ? [...p.recentLogs] : [];
+    return p ? p.logManager.getRecentLogs() : [];
   }
 
   public async syncAndAutoStart(): Promise<void> {
     logger.info('supervisor', 'Initializing Process Supervisor from database manifests...');
-    const services = await this.prismaManager.getServices();
 
+    // P17 Boot Reconcile: Clean up any stale PIDs from past hard crashes
+    await reconcileStaleProcesses(this.prismaManager);
+
+    const services = await this.prismaManager.getServices();
     for (const service of services) {
       this.registerService(service);
       if (service.autoStart) {
@@ -425,5 +442,20 @@ export class ProcessSupervisor {
         });
       }
     }
+  }
+
+  public setWindow(_win: any) {
+    // Deprecated Electron main window reference (kept for no-op backwards compatibility)
+  }
+
+  private startPeriodicMetricsSampling(): void {
+    // Periodically sample Job Object CPU/memory accounting every 5 seconds
+    this.metricsTimer = setInterval(() => {
+      for (const managed of this.processes.values()) {
+        if (managed.status === 'running' && managed.metricsCollector) {
+          managed.metricsCollector.sample();
+        }
+      }
+    }, 5000);
   }
 }

@@ -1,0 +1,33 @@
+model StorageVolume {
+  id            String         @id @default(uuid())
+  driveLetter   String         @unique
+  label         String?
+  fileSystem    String?
+  totalBytes    BigInt         @default(0)
+  freeBytes     BigInt         @default(0)
+  isSystemDrive Boolean        @default(false)
+  status        String         @default("online")
+  lastScannedAt DateTime       @default(now())
+  mounts        ServiceMount[]
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  @@map("storage_volumes")
+}
+
+model ServiceMount {
+  id         String        @id @default(uuid())
+  serviceId  String?
+  service    Service?      @relation(fields: [serviceId], references: [id], onDelete: SetNull)
+  volumeId   String
+  volume     StorageVolume @relation(fields: [volumeId], references: [id], onDelete: Cascade)
+  tier       String        // DATA, MEDIA, BACKUP, CACHE
+  sourcePath String
+  mountPath  String
+  quotaBytes BigInt?
+  usedBytes  BigInt        @default(0)
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+
+  @@map("service_mounts")
+}
