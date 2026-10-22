@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterAll } from 'vitest';
+import path from 'path';
 import http from 'http';
 import { WebApiServer } from '../../src/daemon/gateway/httpServer';
 import { AuthService } from '../../src/daemon/auth/authService';
@@ -130,6 +131,8 @@ describe('Phase 7 - Item 7.2: OWASP ASVS L1 Security Re-Test & RBAC Matrix Audit
       expect(() => safeResolvePath(baseDir, '....//....//Windows')).toThrow(/escape|traversal/i);
       expect(() => safeResolvePath(baseDir, 'file.txt:hidden_stream')).toThrow(/colon|alternate/i);
       expect(() => safeResolvePath(baseDir, 'C:\\any\\other\\directory\\secret.txt')).toThrow(/forbidden|escape|traversal/i);
+      expect(safeResolvePath(baseDir, '100%.txt')).toBe(path.join(path.resolve(baseDir), '100%.txt'));
+      expect(safeResolvePath(baseDir, '50% discount.png')).toBe(path.join(path.resolve(baseDir), '50% discount.png'));
     });
 
     it('P5: setup wizard rejects weak password or default admin12345678', async () => {

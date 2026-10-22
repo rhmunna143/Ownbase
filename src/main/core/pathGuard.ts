@@ -37,13 +37,22 @@ export function safeResolvePath(rootDir: string, userInput: string, options: Pat
     throw new PathSecurityError('Null bytes are forbidden in paths');
   }
 
-  // 2. Decode percent-encoding to catch %2e%2e, %2f, etc.
+  // 2. Decode percent-encoding to catch %2e%2e, %2f, %00, etc.
+  // Iteratively decode valid %xx hex sequences up to 3 passes to catch nested encodings (e.g. %252e),
+  // while preserving literal '%' characters that are not valid hex escapes (e.g. "100%.txt").
   let decoded = userInput;
-  try {
-    decoded = decodeURIComponent(userInput);
-  } catch {
-    // Malformed URI sequence
-    throw new PathSecurityError('Invalid URI encoding in path');
+  for (let i = 0; i < 3; i++) {
+    const next = decoded.replace(/%([0-9a-fA-F]{2})/g, (_, hex) => {
+      const code = parseInt(hex, 16);
+      return String.fromCharCode(code);
+    });
+    if (next === decoded) break;
+    decoded = next;
+  }
+
+  // Verify no null bytes introduced via percent-encoding (e.g. %00)
+  if (decoded.includes('\0')) {
+    throw new PathSecurityError('Null bytes are forbidden in paths');
   }
 
   // 3. Reject Windows Alternate Data Streams (ADS) and drive colons

@@ -298,13 +298,25 @@ export class FileManager {
   }
 
   public renameItem(oldSubPath: string, newName: string): boolean {
+    if (!oldSubPath || oldSubPath.trim() === '' || oldSubPath.trim() === '.') {
+      throw new Error('Cannot rename storage root directory');
+    }
     const oldPath = this.safeResolve(oldSubPath);
     if (!fs.existsSync(oldPath)) {
       throw new Error('Item to rename does not exist');
     }
+    if (path.resolve(oldPath) === path.resolve(this.storageDir)) {
+      throw new Error('Cannot rename storage root directory');
+    }
+    const cleanName = newName.replace(/[\/\\:*?"<>|]/g, '_').trim();
+    if (!cleanName || cleanName === '.' || cleanName === '..') {
+      throw new Error('Invalid destination name');
+    }
     const targetDir = path.dirname(oldPath);
-    const cleanName = newName.replace(/[\/\\:*?"<>|]/g, '_');
     const newPath = path.join(targetDir, cleanName);
+    if (path.resolve(newPath) === path.resolve(this.storageDir)) {
+      throw new Error('Invalid target path');
+    }
     fs.renameSync(oldPath, newPath);
     return true;
   }
