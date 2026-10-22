@@ -34,6 +34,7 @@
     "test:phase7": "vitest run tests/phase7",
     "test:phase8": "vitest run tests/phase8",
     "compile:jobhost": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\ownbase-jobhost.exe /target:exe tools\\jobhost\\Program.cs",
+    "compile:ollama": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\ollama.exe /target:exe tools\\mocks\\ollama_server.cs",
     "dist:dir": "npm run build && electron-builder --dir",
     "build:installer": "npm run build && electron-builder --win nsis:x64",
     "build:portable": "npm run build && electron-builder --win portable:x64",
