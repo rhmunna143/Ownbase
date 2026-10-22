@@ -19,6 +19,7 @@ const TAB_LABELS: Record<string, string> = {
   overview: 'Dashboard',
   files: 'File Explorer',
   photos: 'Photos & Memories',
+  storage: 'Storage Drives & Allocation',
   apidocs: 'API Docs & Explorer',
   services: 'Installed Services',
   store: '1-Click App Store',

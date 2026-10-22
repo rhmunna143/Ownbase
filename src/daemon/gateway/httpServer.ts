@@ -652,31 +652,66 @@ export class WebApiServer {
               return;
             }
             let serviceId: string = parsed.data.serviceId || 'default-service-id';
-            if (!parsed.data.serviceId) {
-              const client = this.prismaManager.getClient();
-              const firstSvc = client && (client as any).service ? await (client as any).service.findFirst() : null;
-              if (firstSvc) serviceId = firstSvc.id;
+            const client = this.prismaManager.getClient();
+            const isCustomOrFallback =
+              !parsed.data.serviceId ||
+              parsed.data.serviceId === 'custom' ||
+              parsed.data.serviceId === 'default-service-id' ||
+              parsed.data.serviceId === 'ownbase-hub';
+
+            if (isCustomOrFallback) {
+              let targetSvc = client && (client as any).service ? await (client as any).service.findFirst() : null;
+              if (!targetSvc) {
+                targetSvc = await (client as any).service.create({
+                  data: {
+                    name: 'Ownbase Web Hub',
+                    type: 'ownbase',
+                    executable: 'node.exe',
+                    port: 3001,
+                    status: 'running',
+                    autoStart: true,
+                    description: 'Central server management portal and web dashboard',
+                  },
+                });
+              }
+              serviceId = targetSvc.id;
+            } else {
+              const existingSvc = await (client as any).service.findUnique({ where: { id: serviceId } }).catch(() => null);
+              if (!existingSvc) {
+                const firstSvc = await (client as any).service.findFirst().catch(() => null);
+                if (firstSvc) serviceId = firstSvc.id;
+              }
             }
-            const r = await this.prismaManager.createRoute({
-              serviceId,
-              subdomain: parsed.data.subdomain,
-              targetPort: parsed.data.targetPort,
-              tlsEnabled: parsed.data.tlsEnabled,
-              customDomain: parsed.data.customDomain,
-            });
-            await this.caddyManager.syncAllRoutes();
-            await this.auditService.record({
-              actorId: decision.user?.id,
-              actorName: decision.user?.username,
-              action: 'route.create',
-              entity: 'route',
-              entityId: r.id,
-              ipAddress: clientIp,
-              status: 'success',
-              details: { subdomain: r.subdomain, port: r.targetPort },
-            });
-            this.sendJson(res, r, 201);
-            return;
+
+            try {
+              const r = await this.prismaManager.createRoute({
+                serviceId,
+                subdomain: parsed.data.subdomain,
+                targetPort: parsed.data.targetPort,
+                tlsEnabled: parsed.data.tlsEnabled,
+                customDomain: parsed.data.customDomain,
+              });
+              await this.caddyManager.syncAllRoutes();
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'route.create',
+                entity: 'route',
+                entityId: r.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { subdomain: r.subdomain, port: r.targetPort, customDomain: r.customDomain },
+              });
+              this.sendJson(res, r, 201);
+              return;
+            } catch (createErr: any) {
+              const errMsg = createErr.message || 'Failed to create route in database';
+              const userFriendly = errMsg.includes('Unique constraint failed')
+                ? `Route subdomain '${parsed.data.subdomain}' is already in use. Please choose a different subdomain.`
+                : errMsg;
+              this.sendJson(res, { error: userFriendly }, 400);
+              return;
+            }
           }
 
           if (route.path === '/api/v1/routes/:id' && req.method === 'DELETE') {

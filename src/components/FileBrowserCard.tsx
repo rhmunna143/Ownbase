@@ -371,6 +371,20 @@ export const FileBrowserCard: React.FC = () => {
             </button>
 
             <button
+              onClick={() => {
+                if (typeof window !== 'undefined') {
+                  const event = new CustomEvent('ownbase:navigate', { detail: 'storage' });
+                  window.dispatchEvent(event);
+                }
+              }}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-3 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-cyan-300 border border-cyan-500/30 text-xs font-medium transition-colors min-h-[40px] touch-manipulation"
+              title="Select Windows storage drive letter and configure storage directories"
+            >
+              <HardDrive className="w-4 h-4 text-cyan-400" />
+              <span>Storage Drives</span>
+            </button>
+
+            <button
               onClick={() => loadDirectory(currentPath)}
               className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-300 border border-slate-700/80 transition-colors min-h-[40px] min-w-[40px] flex items-center justify-center"
               title="Refresh"

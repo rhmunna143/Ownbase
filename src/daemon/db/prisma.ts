@@ -94,73 +94,110 @@ export class PrismaManager {
     }
   }
 
-  private async seedInitialServices() {
+  public async seedInitialServices() {
     const client = this.getClient();
     const count = await client.service.count();
     if (count === 0) {
-      logger.info('prisma', 'Seeding default services (Caddy, FileBrowser, Ollama)...');
+      logger.info('prisma', 'Seeding default services (Ownbase, Caddy, FileBrowser, Ollama)...');
+
+      // Seed Ownbase Web Hub
+      try {
+        await client.service.create({
+          data: {
+            name: 'Ownbase Web Hub',
+            type: 'ownbase',
+            executable: 'node.exe',
+            port: 3001,
+            status: 'running',
+            autoStart: true,
+            description: 'Central server management portal and web dashboard',
+            routes: {
+              create: {
+                subdomain: 'hub',
+                targetPort: 3001,
+                tlsEnabled: true,
+              },
+            },
+          },
+        });
+      } catch {}
 
       // Seed Caddy
-      await client.service.create({
-        data: {
-          name: 'Caddy Reverse Proxy',
-          type: 'caddy',
-          executable: 'caddy.exe',
-          port: 2019,
-          status: 'stopped',
-          autoStart: true,
-          description: 'Dynamic reverse proxy & automatic TLS termination gateway',
-          config: { adminApi: '127.0.0.1:2019', httpPort: 80, httpsPort: 443 },
-        },
-      });
+      try {
+        await client.service.create({
+          data: {
+            name: 'Caddy Reverse Proxy',
+            type: 'caddy',
+            executable: 'caddy.exe',
+            port: 2019,
+            status: 'stopped',
+            autoStart: true,
+            description: 'Dynamic reverse proxy & automatic TLS termination gateway',
+            config: { adminApi: '127.0.0.1:2019', httpPort: 80, httpsPort: 443 },
+          },
+        });
+      } catch {}
 
       // Seed FileBrowser
-      await client.service.create({
-        data: {
-          name: 'FileBrowser Storage',
-          type: 'filebrowser',
-          executable: 'filebrowser.exe',
-          port: 8080,
-          status: 'stopped',
-          autoStart: true,
-          description: 'High-performance native file manager & cloud drive',
-          config: { root: 'C:\\ServerStorage', address: '127.0.0.1' },
-          routes: {
-            create: {
-              subdomain: 'files',
-              targetPort: 8080,
-              tlsEnabled: true,
+      try {
+        await client.service.create({
+          data: {
+            name: 'FileBrowser Storage',
+            type: 'filebrowser',
+            executable: 'filebrowser.exe',
+            port: 8080,
+            status: 'stopped',
+            autoStart: true,
+            description: 'High-performance native file manager & cloud drive',
+            config: { root: 'C:\\ServerStorage', address: '127.0.0.1' },
+            routes: {
+              create: {
+                subdomain: 'files',
+                targetPort: 8080,
+                tlsEnabled: true,
+              },
             },
           },
-        },
-      });
+        });
+      } catch {}
 
       // Seed Ollama
-      await client.service.create({
-        data: {
-          name: 'Ollama AI Engine',
-          type: 'ollama',
-          executable: 'ollama.exe',
-          port: 11434,
-          status: 'stopped',
-          autoStart: false,
-          description: 'Local LLM inference server (Hermes & Llama3 models)',
-          config: { modelsDir: 'C:\\OllamaModels' },
-          routes: {
-            create: {
-              subdomain: 'ai',
-              targetPort: 11434,
-              tlsEnabled: true,
+      try {
+        await client.service.create({
+          data: {
+            name: 'Ollama AI Engine',
+            type: 'ollama',
+            executable: 'ollama.exe',
+            port: 11434,
+            status: 'stopped',
+            autoStart: false,
+            description: 'Local LLM inference server (Hermes & Llama3 models)',
+            config: { modelsDir: 'C:\\OllamaModels' },
+            routes: {
+              create: {
+                subdomain: 'ai',
+                targetPort: 11434,
+                tlsEnabled: true,
+              },
             },
           },
-        },
-      });
+        });
+      } catch {}
 
       logger.success('prisma', 'Initial services and routes seeded into PostgreSQL.');
     }
 
     // Ensure core services and routes exist even if database was initialized previously
     const defaultServices = [
+      {
+        name: 'Ownbase Web Hub',
+        type: 'ownbase',
+        executable: 'node.exe',
+        port: 3001,
+        autoStart: true,
+        description: 'Central server management portal and web dashboard',
+        subdomain: 'hub',
+      },
       {
         name: 'Web Terminal',
         type: 'terminal',
@@ -229,10 +266,19 @@ export class PrismaManager {
 
   public async getServices(): Promise<ServiceRecord[]> {
     const client = this.getClient();
-    const services = await client.service.findMany({
+    let services = await client.service.findMany({
       include: { routes: true },
       orderBy: { createdAt: 'asc' },
     });
+    if (services.length === 0) {
+      try {
+        await this.seedInitialServices();
+        services = await client.service.findMany({
+          include: { routes: true },
+          orderBy: { createdAt: 'asc' },
+        });
+      } catch {}
+    }
     return services.map((s) => ({
       ...s,
       createdAt: s.createdAt.toISOString(),

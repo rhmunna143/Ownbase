@@ -387,6 +387,10 @@ export const serverApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Failed to create route (${res.status})` }));
+      throw new Error(err.error || err.message || `Failed to create route (${res.status})`);
+    }
     return await res.json();
   },
 

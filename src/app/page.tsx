@@ -70,7 +70,7 @@ import {
 
 export default function DashboardPage() {
   const [activeTab, setActiveTab] = useState<
-    'overview' | 'files' | 'photos' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'terminal' | 'observability' | 'backups' | 'settings' | 'logs'
+    'overview' | 'files' | 'photos' | 'storage' | 'apidocs' | 'services' | 'store' | 'routes' | 'database' | 'security' | 'terminal' | 'observability' | 'backups' | 'settings' | 'logs'
   >('overview');
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
@@ -257,9 +257,21 @@ export default function DashboardPage() {
         setActiveTab('photos');
       } else if (host.startsWith('files.') || search.includes('tab=files') || hash === '#files' || path.startsWith('/files')) {
         setActiveTab('files');
+      } else if (search.includes('tab=storage') || hash === '#storage' || path.startsWith('/storage') || search.includes('tab=drives')) {
+        setActiveTab('storage');
       } else if (search.includes('tab=security') || hash === '#security') {
         setActiveTab('security');
       }
+    }
+
+    const handleGlobalNav = (e: any) => {
+      if (e.detail) {
+        setActiveTab(e.detail);
+        setIsMobileMenuOpen(false);
+      }
+    };
+    if (typeof window !== 'undefined') {
+      window.addEventListener('ownbase:navigate', handleGlobalNav);
     }
 
     serverApi.getSetupStatus().then((status) => {
@@ -320,6 +332,9 @@ export default function DashboardPage() {
     return () => {
       unsubStream();
       clearInterval(interval);
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('ownbase:navigate', handleGlobalNav);
+      }
     };
   }, [fetchAllData]);
 
@@ -722,6 +737,24 @@ export default function DashboardPage() {
               </span>
             </button>
 
+            {/* Storage Drives & Disk Allocation */}
+            <button
+              onClick={() => navigateTab('storage')}
+              className={`w-full flex items-center justify-between px-3.5 py-2.5 rounded-xl text-xs font-semibold transition-all ${
+                activeTab === 'storage'
+                  ? 'bg-blue-600 text-white shadow-lg shadow-blue-600/25'
+                  : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+              }`}
+            >
+              <div className="flex items-center space-x-2.5">
+                <HardDrive className="w-4 h-4 text-cyan-400" />
+                <span>Storage &amp; Drives</span>
+              </div>
+              <span className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-cyan-500/10 text-cyan-300 border border-cyan-500/30">
+                Disks
+              </span>
+            </button>
+
             {/* NEW: Universal REST API Explorer */}
             <button
               onClick={() => navigateTab('apidocs')}
@@ -1026,6 +1059,16 @@ export default function DashboardPage() {
                 </button>
 
                 <button
+                  onClick={() => navigateTab('storage')}
+                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'storage' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <HardDrive className="w-4 h-4 text-cyan-400" />
+                  <span>Storage Drives &amp; Disks</span>
+                </button>
+
+                <button
                   onClick={() => navigateTab('apidocs')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
                     activeTab === 'apidocs' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'
@@ -1293,6 +1336,24 @@ export default function DashboardPage() {
                   </div>
                   <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
                 </div>
+
+                <div
+                  onClick={() => navigateTab('storage')}
+                  className="glass-card rounded-2xl p-4 sm:p-5 border border-cyan-500/30 bg-cyan-950/20 hover:border-cyan-500/60 transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div className="flex items-center space-x-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-cyan-500/10 border border-cyan-500/30 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <HardDrive className="w-5 h-5 text-cyan-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-semibold text-white">Storage Drives &amp; Disks</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Select drive (C:, D:) &amp; folders
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </div>
               </div>
             </div>
           )}
@@ -1302,6 +1363,13 @@ export default function DashboardPage() {
 
           {/* TAB 3: GOOGLE PHOTOS & MEMORIES */}
           {activeTab === 'photos' && <PhotosGalleryCard />}
+
+          {/* TAB: STORAGE DRIVES & ALLOCATION */}
+          {activeTab === 'storage' && (
+            <div className="space-y-6">
+              <StorageAllocationCard />
+            </div>
+          )}
 
           {/* TAB 4: API DOCUMENTATION & EXPLORER */}
           {activeTab === 'apidocs' && <ApiDocsCard />}
