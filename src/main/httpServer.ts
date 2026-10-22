@@ -365,6 +365,22 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/bootstrap-steps') {
+            try {
+              const tsStatus = await this.tailscaleManager.getStatus();
+              const steps = this.getBootstrapSteps();
+              const tsStep = steps.find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                if (tsStatus.connected) {
+                  tsStep.status = 'success';
+                  tsStep.detail = tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network';
+                  tsStep.timestamp = new Date().toISOString();
+                } else if (tsStep.status === 'success') {
+                  tsStep.status = 'pending';
+                  tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+                  tsStep.timestamp = new Date().toISOString();
+                }
+              }
+            } catch {}
             this.sendJson(res, this.getBootstrapSteps());
             return;
           }
@@ -552,13 +568,34 @@ export class WebApiServer {
 
           // --- TAILSCALE MESH ---
           if (route.path === '/api/v1/tailscale/status') {
-            this.sendJson(res, await this.tailscaleManager.getStatus());
+            const status = await this.tailscaleManager.getStatus();
+            const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+            if (tsStep) {
+              if (status.connected) {
+                tsStep.status = 'success';
+                tsStep.detail = status.ip ? `Connected (Mesh IP: ${status.ip})` : 'Connected to mesh network';
+                tsStep.timestamp = new Date().toISOString();
+              } else if (tsStep.status === 'success') {
+                tsStep.status = 'pending';
+                tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
+            this.sendJson(res, status);
             return;
           }
 
           if (route.path === '/api/v1/tailscale/connect') {
             const body = await this.parseJsonBody(req);
             const tsRes = await this.tailscaleManager.connect(body.authKey, body.hostname);
+            if (tsRes.success) {
+              const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                tsStep.status = 'success';
+                tsStep.detail = tsRes.ip ? `Connected (Mesh IP: ${tsRes.ip})` : 'Connected to mesh network';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
             await this.auditService.record({
               actorId: decision.user?.id,
               actorName: decision.user?.username,
@@ -572,6 +609,14 @@ export class WebApiServer {
 
           if (route.path === '/api/v1/tailscale/disconnect') {
             const tsRes = await this.tailscaleManager.disconnect();
+            if (tsRes.success) {
+              const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                tsStep.status = 'pending';
+                tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
             await this.auditService.record({
               actorId: decision.user?.id,
               actorName: decision.user?.username,

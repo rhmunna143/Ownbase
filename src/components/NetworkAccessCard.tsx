@@ -40,7 +40,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
 
   const localIp = systemInfo?.localIp || '192.168.0.108';
-  const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.')) || '100.84.32.40';
+  const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.'));
   const hasTailscale = !!tailscaleIp || !!tailscaleStatus?.connected;
 
   const firewallCmd = `New-NetFirewallRule -DisplayName "Windows Server Hub" -Direction Inbound -LocalPort 80,443,2019,3000,3001,8080,9000,11434,5432 -Protocol TCP -Action Allow`;

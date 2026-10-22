@@ -122,7 +122,21 @@ export default function DashboardPage() {
       if (sys) setSystemInfo(sys);
       if (pg) setPostgresStatus(pg);
       if (mig) setMigrationStatus(mig);
-      if (steps && steps.length > 0) setBootstrapSteps(steps);
+      if (steps && steps.length > 0) {
+        const isTsConnected = tailscale?.connected || !!sys?.tailscaleIp;
+        const tsIp = tailscale?.ip || sys?.tailscaleIp;
+        const reconciledSteps = steps.map((s) => {
+          if (s.id === 'tailscale-mesh' && isTsConnected) {
+            return {
+              ...s,
+              status: 'success' as const,
+              detail: tsIp ? `Connected (Mesh IP: ${tsIp})` : (s.status === 'success' && s.detail ? s.detail : 'Connected to mesh network'),
+            };
+          }
+          return s;
+        });
+        setBootstrapSteps(reconciledSteps);
+      }
       if (srvs) setServices(srvs);
       if (rts) setRoutes(rts);
       if (initialLogs) setLogs(initialLogs);
@@ -303,12 +317,30 @@ export default function DashboardPage() {
   };
 
   const handleConnectTailscale = async (authKey: string, hostname?: string) => {
-    await serverApi.connectTailscale(authKey, hostname);
+    const res = await serverApi.connectTailscale(authKey, hostname);
+    if (res && (res as any).success) {
+      setBootstrapSteps((prev) =>
+        prev.map((s) =>
+          s.id === 'tailscale-mesh'
+            ? { ...s, status: 'success' as const, detail: (res as any).ip ? `Connected (Mesh IP: ${(res as any).ip})` : 'Connected to mesh network' }
+            : s
+        )
+      );
+    }
     fetchAllData();
   };
 
   const handleDisconnectTailscale = async () => {
-    await serverApi.disconnectTailscale();
+    const res = await serverApi.disconnectTailscale();
+    if (res && (res as any).success) {
+      setBootstrapSteps((prev) =>
+        prev.map((s) =>
+          s.id === 'tailscale-mesh'
+            ? { ...s, status: 'pending' as const, detail: 'Tailscale CLI ready (awaiting Auth Key)' }
+            : s
+        )
+      );
+    }
     fetchAllData();
   };
 

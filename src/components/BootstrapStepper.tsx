@@ -26,7 +26,7 @@ export const BootstrapStepper: React.FC<BootstrapStepperProps> = ({ steps }) => 
               <span className="text-xs font-semibold text-white">Engine Architecture</span>
               {allSuccessful && (
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <Check className="w-3 h-3" /> All 12 Systems Healthy
+                  <Check className="w-3 h-3" /> All {steps.length} Systems Healthy
                 </span>
               )}
               {hasError && (

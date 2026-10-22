@@ -69,15 +69,23 @@ export class TailscaleManager {
   }
 
   public async getMeshIp(): Promise<string | null> {
+    const netState = hostBuilder.getNetworkState();
+    if (netState.tailscaleIp) {
+      this.cachedIp = netState.tailscaleIp;
+      this.isConnected = true;
+      return netState.tailscaleIp;
+    }
+
     const bin = this.resolveBinary();
     if (!fs.existsSync(bin)) return null;
 
     return new Promise((resolve) => {
       execFile(bin, ['ip', '-4'], { windowsHide: true }, (err, stdout) => {
         if (err || !stdout) {
-          this.cachedIp = null;
-          this.isConnected = false;
-          return resolve(null);
+          const fallback = hostBuilder.getNetworkState().tailscaleIp;
+          this.cachedIp = fallback || null;
+          this.isConnected = !!fallback;
+          return resolve(fallback || null);
         }
 
         const ip = stdout.trim().split(/\r?\n/)[0]?.trim();
@@ -86,7 +94,10 @@ export class TailscaleManager {
           this.isConnected = true;
           return resolve(ip);
         }
-        resolve(null);
+        const fallback = hostBuilder.getNetworkState().tailscaleIp;
+        this.cachedIp = fallback || null;
+        this.isConnected = !!fallback;
+        resolve(fallback || null);
       });
     });
   }
@@ -99,9 +110,12 @@ export class TailscaleManager {
     const isInstalled = fs.existsSync(bin);
 
     if (!isInstalled) {
+      const fallbackIp = hostBuilder.getNetworkState().tailscaleIp;
+      this.cachedIp = fallbackIp || null;
+      this.isConnected = !!fallbackIp;
       return {
-        connected: false,
-        ip: null,
+        connected: !!fallbackIp,
+        ip: fallbackIp || null,
         binaryPath: bin,
       };
     }
@@ -109,9 +123,12 @@ export class TailscaleManager {
     return new Promise((resolve) => {
       execFile(bin, ['status', '--json'], { windowsHide: true }, (err, stdout) => {
         if (err || !stdout) {
+          const fallbackIp = hostBuilder.getNetworkState().tailscaleIp;
+          this.cachedIp = fallbackIp || null;
+          this.isConnected = !!fallbackIp;
           return resolve({
-            connected: false,
-            ip: null,
+            connected: !!fallbackIp,
+            ip: fallbackIp || null,
             binaryPath: bin,
           });
         }
@@ -119,8 +136,12 @@ export class TailscaleManager {
         try {
           const data = JSON.parse(stdout);
           const self = data.Self || {};
-          const ipList: string[] = self.TailscaleIPs || [];
-          const ipv4 = ipList.find((ip) => ip.startsWith('100.')) || null;
+          const ipList: string[] = self.TailscaleIPs || data.TailscaleIPs || [];
+          let ipv4 = ipList.find((ip) => ip.startsWith('100.')) || null;
+
+          if (!ipv4) {
+            ipv4 = hostBuilder.getNetworkState().tailscaleIp || null;
+          }
 
           const peers: TailscalePeerInfo[] = [];
           if (data.Peer) {
@@ -144,8 +165,12 @@ export class TailscaleManager {
             hostBuilder.setTailscaleDomain(dnsName);
           }
 
+          const connected = data.BackendState === 'Running' || !!ipv4;
+          this.isConnected = connected;
+          this.cachedIp = ipv4;
+
           resolve({
-            connected: data.BackendState === 'Running' || !!ipv4,
+            connected,
             ip: ipv4,
             binaryPath: bin,
             dnsName,
@@ -154,9 +179,12 @@ export class TailscaleManager {
             funnelEnabled: !!data.Funnel,
           });
         } catch {
+          const fallbackIp = hostBuilder.getNetworkState().tailscaleIp;
+          this.cachedIp = fallbackIp || null;
+          this.isConnected = !!fallbackIp;
           resolve({
-            connected: false,
-            ip: null,
+            connected: !!fallbackIp,
+            ip: fallbackIp || null,
             binaryPath: bin,
           });
         }
@@ -166,10 +194,21 @@ export class TailscaleManager {
 
   public async getStatus(): Promise<TailscaleStatus> {
     const detailed = await this.getDetailedStatus();
+    let authKeyMasked: string | undefined;
+    try {
+      const client = this.prismaManager.getClient();
+      const cfg = await client.systemConfig.findUnique({ where: { key: 'tailscale_auth_key' } });
+      if (cfg && cfg.value) {
+        authKeyMasked = cfg.value;
+      }
+    } catch {}
+
     return {
       connected: detailed.connected,
       ip: detailed.ip,
       binaryPath: detailed.binaryPath,
+      authKeyMasked,
+      lastChecked: new Date().toISOString(),
     };
   }
 

@@ -49,15 +49,37 @@ export class TailscaleManager {
   }
 
   public async getMeshIp(): Promise<string | null> {
+    const checkInterfaces = (): string | null => {
+      try {
+        const interfaces = require('os').networkInterfaces();
+        for (const name of Object.keys(interfaces)) {
+          for (const net of interfaces[name] || []) {
+            if (net.family === 'IPv4' && !net.internal && (name.toLowerCase().includes('tailscale') || net.address.startsWith('100.'))) {
+              return net.address;
+            }
+          }
+        }
+      } catch {}
+      return null;
+    };
+
+    const nicIp = checkInterfaces();
+    if (nicIp) {
+      this.cachedIp = nicIp;
+      this.isConnected = true;
+      return nicIp;
+    }
+
     const bin = this.resolveBinary();
-    if (!fs.existsSync(bin)) return null;
+    if (!fs.existsSync(bin)) return checkInterfaces();
 
     return new Promise((resolve) => {
       execFile(bin, ['ip', '-4'], { windowsHide: true }, (err, stdout) => {
         if (err || !stdout) {
-          this.cachedIp = null;
-          this.isConnected = false;
-          return resolve(null);
+          const fallback = checkInterfaces();
+          this.cachedIp = fallback;
+          this.isConnected = !!fallback;
+          return resolve(fallback);
         }
         const ip = stdout.trim();
         if (ip && ip.startsWith('100.')) {
@@ -65,9 +87,10 @@ export class TailscaleManager {
           this.isConnected = true;
           return resolve(ip);
         }
-        this.cachedIp = null;
-        this.isConnected = false;
-        resolve(null);
+        const fallback = checkInterfaces();
+        this.cachedIp = fallback;
+        this.isConnected = !!fallback;
+        resolve(fallback);
       });
     });
   }

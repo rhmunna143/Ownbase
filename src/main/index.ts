@@ -197,16 +197,21 @@ async function startBootstrap() {
 
   // Step 10: Phase 3 Tailscale Mesh Tunneling
   updateStep('tailscale-mesh', 'running', 'Checking Tailscale mesh state');
-  try {
-    const tsStatus = await tailscaleManager.getStatus();
-    if (tsStatus.connected && tsStatus.ip) {
-      updateStep('tailscale-mesh', 'success', `Connected (Mesh IP: ${tsStatus.ip})`);
-    } else {
-      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (configure Auth Key to connect)');
+  const syncTailscaleMesh = async () => {
+    try {
+      const tsStatus = await tailscaleManager.getStatus();
+      if (tsStatus.connected) {
+        updateStep('tailscale-mesh', 'success', tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network');
+      } else {
+        updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (configure Auth Key to connect)');
+      }
+    } catch {
+      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
     }
-  } catch (err: any) {
-    updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
-  }
+  };
+  await syncTailscaleMesh();
+  setTimeout(syncTailscaleMesh, 2000);
+  setTimeout(syncTailscaleMesh, 5000);
 
   // Step 11: Phase 4 24/7 Server Persistence & Power Suspension Blocker
   updateStep('lifecycle-init', 'running', 'Engaging power suspension blocker & system tray');
