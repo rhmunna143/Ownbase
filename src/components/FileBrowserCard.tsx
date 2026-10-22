@@ -29,6 +29,7 @@ import {
   Music,
   ExternalLink,
   Volume2,
+  Loader2,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
 import { FileItem, FileListResponse } from '@/shared/types';
@@ -52,6 +53,15 @@ export const FileBrowserCard: React.FC = () => {
   const [newName, setNewName] = useState('');
   const [isUploading, setIsUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState(0);
+  const [uploadStatus, setUploadStatus] = useState<{
+    fileName: string;
+    currentIndex: number;
+    totalFiles: number;
+    loadedBytes: number;
+    totalBytes: number;
+    filePercent: number;
+    overallPercent: number;
+  } | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -160,14 +170,36 @@ export const FileBrowserCard: React.FC = () => {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
-    setUploadProgress(0);
+    const totalFilesCount = files.length;
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < totalFilesCount; i++) {
       const file = files[i];
-      await serverApi.uploadFile(currentPath, file);
-      setUploadProgress(Math.round(((i + 1) / files.length) * 100));
+      setUploadStatus({
+        fileName: file.name,
+        currentIndex: i + 1,
+        totalFiles: totalFilesCount,
+        loadedBytes: 0,
+        totalBytes: file.size,
+        filePercent: 0,
+        overallPercent: Math.round((i / totalFilesCount) * 100),
+      });
+
+      await serverApi.uploadFile(currentPath, file, (progress) => {
+        const overall = Math.round(((i + (progress.percent / 100)) / totalFilesCount) * 100);
+        setUploadStatus({
+          fileName: file.name,
+          currentIndex: i + 1,
+          totalFiles: totalFilesCount,
+          loadedBytes: progress.loaded,
+          totalBytes: progress.total,
+          filePercent: progress.percent,
+          overallPercent: Math.min(100, overall),
+        });
+        setUploadProgress(progress.percent);
+      });
     }
 
+    setUploadStatus(null);
     setIsUploading(false);
     if (fileInputRef.current) fileInputRef.current.value = '';
     loadDirectory(currentPath);
@@ -343,6 +375,58 @@ export const FileBrowserCard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Live Upload Progress Banner */}
+      {uploadStatus && (
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-blue-500/40 bg-gradient-to-r from-blue-950/40 via-slate-900/60 to-slate-900/40 backdrop-blur-md shadow-xl shadow-blue-950/30 animate-in fade-in slide-in-from-top-2 duration-200 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/30 flex items-center justify-center shrink-0">
+                <Loader2 className="w-4 h-4 text-blue-400 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-white truncate max-w-[200px] sm:max-w-md">
+                    {uploadStatus.fileName}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-500/30 shrink-0">
+                    File {uploadStatus.currentIndex} of {uploadStatus.totalFiles}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Streaming bytes to server storage...
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right font-mono text-xs text-blue-300 shrink-0 pl-10 sm:pl-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center">
+              <div>
+                <span>{formatFileSize(uploadStatus.loadedBytes)}</span>
+                <span className="text-slate-500"> / </span>
+                <span>{formatFileSize(uploadStatus.totalBytes)}</span>
+              </div>
+              <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                {uploadStatus.filePercent}%
+              </div>
+            </div>
+          </div>
+
+          {/* Glowing Animated Progress Bar */}
+          <div className="w-full bg-slate-950/80 h-2.5 rounded-full overflow-hidden border border-slate-800 p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 rounded-full transition-all duration-150 shadow-sm shadow-blue-500/50"
+              style={{ width: `${uploadStatus.filePercent}%` }}
+            />
+          </div>
+
+          {uploadStatus.totalFiles > 1 && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-0.5">
+              <span>Overall Batch Progress ({uploadStatus.currentIndex} of {uploadStatus.totalFiles} files)</span>
+              <span className="text-slate-300 font-semibold">{uploadStatus.overallPercent}%</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Directory Contents */}
       {isLoading ? (

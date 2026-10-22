@@ -595,13 +595,55 @@ export const serverApi = {
     return res && res.ok ? { content: await res.text() } : { content: '' };
   },
 
-  uploadFile: async (targetPath: string, file: File): Promise<{ success: boolean; path?: string }> => {
-    const res = await fetchWithAuth(`/api/v1/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: file,
-    }).catch(() => null);
-    return res && res.ok ? await res.json() : { success: false };
+  uploadFile: (
+    targetPath: string,
+    file: File,
+    onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
+  ): Promise<{ success: boolean; path?: string }> => {
+    return new Promise((resolve) => {
+      const url = `/api/v1/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.withCredentials = true;
+
+      const token = authStore.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            resolve({ success: true });
+          }
+        } else {
+          resolve({ success: false });
+        }
+      };
+
+      xhr.onerror = () => {
+        resolve({ success: false });
+      };
+
+      xhr.ontimeout = () => {
+        resolve({ success: false });
+      };
+
+      xhr.send(file);
+    });
   },
 
   // Google Photos & Memories operations

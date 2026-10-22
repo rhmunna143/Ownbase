@@ -20,6 +20,7 @@ import {
   Heart,
   ZoomIn,
   Check,
+  Loader2,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
 import { PhotoItem, PhotoTimelineSection, PhotosResponse } from '@/shared/types';
@@ -35,6 +36,15 @@ export const PhotosGalleryCard: React.FC = () => {
   const [showInfoDrawer, setShowInfoDrawer] = useState<boolean>(false);
   const [isUploading, setIsUploading] = useState<boolean>(false);
   const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [uploadStatus, setUploadStatus] = useState<{
+    fileName: string;
+    currentIndex: number;
+    totalFiles: number;
+    loadedBytes: number;
+    totalBytes: number;
+    filePercent: number;
+    overallPercent: number;
+  } | null>(null);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -78,14 +88,36 @@ export const PhotosGalleryCard: React.FC = () => {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
-    setUploadProgress(0);
+    const totalFilesCount = files.length;
 
-    for (let i = 0; i < files.length; i++) {
+    for (let i = 0; i < totalFilesCount; i++) {
       const file = files[i];
-      await serverApi.uploadFile('Photos', file);
-      setUploadProgress(Math.round(((i + 1) / files.length) * 100));
+      setUploadStatus({
+        fileName: file.name,
+        currentIndex: i + 1,
+        totalFiles: totalFilesCount,
+        loadedBytes: 0,
+        totalBytes: file.size,
+        filePercent: 0,
+        overallPercent: Math.round((i / totalFilesCount) * 100),
+      });
+
+      await serverApi.uploadFile('Photos', file, (progress) => {
+        const overall = Math.round(((i + (progress.percent / 100)) / totalFilesCount) * 100);
+        setUploadStatus({
+          fileName: file.name,
+          currentIndex: i + 1,
+          totalFiles: totalFilesCount,
+          loadedBytes: progress.loaded,
+          totalBytes: progress.total,
+          filePercent: progress.percent,
+          overallPercent: Math.min(100, overall),
+        });
+        setUploadProgress(progress.percent);
+      });
     }
 
+    setUploadStatus(null);
     setIsUploading(false);
     if (photoInputRef.current) photoInputRef.current.value = '';
     loadPhotos();
@@ -245,6 +277,58 @@ export const PhotosGalleryCard: React.FC = () => {
           </div>
         </div>
       </div>
+
+      {/* Live Media Upload Progress Banner */}
+      {uploadStatus && (
+        <div className="glass-card rounded-2xl p-4 sm:p-5 border border-indigo-500/40 bg-gradient-to-r from-indigo-950/40 via-slate-900/60 to-purple-950/30 backdrop-blur-md shadow-xl shadow-indigo-950/30 animate-in fade-in slide-in-from-top-2 duration-200 space-y-2.5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs">
+            <div className="flex items-center gap-2.5 min-w-0">
+              <div className="w-8 h-8 rounded-lg bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center shrink-0">
+                <Loader2 className="w-4 h-4 text-indigo-400 animate-spin" />
+              </div>
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="font-semibold text-white truncate max-w-[200px] sm:max-w-md">
+                    {uploadStatus.fileName}
+                  </span>
+                  <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 shrink-0">
+                    Media {uploadStatus.currentIndex} of {uploadStatus.totalFiles}
+                  </span>
+                </div>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Uploading high-res media to timeline storage...
+                </p>
+              </div>
+            </div>
+
+            <div className="text-right font-mono text-xs text-indigo-300 shrink-0 pl-10 sm:pl-0 flex sm:flex-col items-center sm:items-end justify-between sm:justify-center">
+              <div>
+                <span>{formatFileSize(uploadStatus.loadedBytes)}</span>
+                <span className="text-slate-500"> / </span>
+                <span>{formatFileSize(uploadStatus.totalBytes)}</span>
+              </div>
+              <div className="text-sm font-bold text-emerald-400 mt-0.5">
+                {uploadStatus.filePercent}%
+              </div>
+            </div>
+          </div>
+
+          {/* Glowing Animated Progress Bar */}
+          <div className="w-full bg-slate-950/80 h-2.5 rounded-full overflow-hidden border border-slate-800 p-0.5">
+            <div
+              className="h-full bg-gradient-to-r from-blue-600 via-indigo-500 to-purple-400 rounded-full transition-all duration-150 shadow-sm shadow-indigo-500/50"
+              style={{ width: `${uploadStatus.filePercent}%` }}
+            />
+          </div>
+
+          {uploadStatus.totalFiles > 1 && (
+            <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono pt-0.5">
+              <span>Overall Upload Progress ({uploadStatus.currentIndex} of {uploadStatus.totalFiles} items)</span>
+              <span className="text-slate-300 font-semibold">{uploadStatus.overallPercent}%</span>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Timeline Sections */}
       {isLoading ? (
