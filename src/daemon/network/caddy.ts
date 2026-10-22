@@ -132,11 +132,11 @@ export class CaddyManager {
         customDomains,
         exposeLocal: r.exposeLocal ?? true,
         exposeLan: r.exposeLan ?? true,
-        exposeMesh: r.exposeMesh ?? false,
+        exposeMesh: r.exposeMesh ?? true,
         tlsEnabled: r.tlsEnabled ?? true,
       };
 
-      const isProtected = ['ai', 'files', 's3', 'minio'].includes(r.subdomain) || r.requiresAuth;
+      const isProtected = r.requiresAuth === true || r.subdomain === 'ai';
       const built = hostBuilder.build(intent);
 
       if (built.caddyMatchers.length > 0) {
@@ -196,21 +196,46 @@ export class CaddyManager {
                       match: {
                         status_code: [200, 201, 204],
                       },
+                      routes: [
+                        {
+                          handle: [
+                            {
+                              handler: 'reverse_proxy',
+                              headers: {
+                                request: {
+                                  set: {
+                                    Host: ['{http.reverse_proxy.upstream.hostport}'],
+                                    'X-Forwarded-Host': ['{http.request.host}'],
+                                    'X-Forwarded-Proto': ['{http.request.scheme}'],
+                                  },
+                                },
+                              },
+                              upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      match: {
+                        status_code: [401, 403],
+                      },
+                      routes: [
+                        {
+                          handle: [
+                            {
+                              handler: 'static_response',
+                              status_code: 401,
+                              headers: {
+                                'Content-Type': ['text/html; charset=utf-8'],
+                              },
+                              body: '<html><body style="font-family:sans-serif;padding:2rem;background:#0f172a;color:#f8fafc"><h2>Access Restricted</h2><p>Authentication required to access this service on LAN/remote network.</p><a href="/" style="color:#38bdf8">Sign in to Ownbase</a></body></html>',
+                            },
+                          ],
+                        },
+                      ],
                     },
                   ],
-                },
-                {
-                  handler: 'reverse_proxy',
-                  headers: {
-                    request: {
-                      set: {
-                        Host: ['{http.reverse_proxy.upstream.hostport}'],
-                        'X-Forwarded-Host': ['{http.request.host}'],
-                        'X-Forwarded-Proto': ['{http.request.scheme}'],
-                      },
-                    },
-                  },
-                  upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
                 },
               ],
               terminal: true,

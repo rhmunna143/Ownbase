@@ -5,7 +5,11 @@ import Link from 'next/link';
 import { PhotosGalleryCard } from '@/components/PhotosGalleryCard';
 import { Camera, ArrowLeft, Sparkles, Smartphone, ShieldCheck, Heart } from 'lucide-react';
 
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
+
 export default function PhotosStandalonePage() {
+  const filesUrl = getAccessibleServiceUrl('files');
+
   return (
     <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col selection:bg-amber-500/30 selection:text-amber-200">
       {/* Top Header */}
@@ -40,7 +44,7 @@ export default function PhotosStandalonePage() {
             <span>Ownbase</span>
           </Link>
           <a
-            href="http://files.localhost"
+            href={filesUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="hidden md:flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-blue-950/40 hover:bg-blue-900/50 text-blue-300 border border-blue-800/60 transition-all"

@@ -18,6 +18,7 @@ import {
   Check,
 } from 'lucide-react';
 import { ServiceRecord, ProcessStatus } from '@/shared/types';
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
 
 interface DiagnosticsProps {
   services: ServiceRecord[];
@@ -44,6 +45,8 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
 }) => {
   const [isRunning, setIsRunning] = useState(false);
   const [copiedText, setCopiedText] = useState<string | null>(null);
+  const filesUrl = getAccessibleServiceUrl('files');
+  const aiUrl = getAccessibleServiceUrl('ai');
   const [results, setResults] = useState<ProbeResult[]>([
     {
       id: 'db',
@@ -329,22 +332,22 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
         <div className="flex items-center space-x-2">
 
           <a
-            href="http://files.localhost"
+            href={filesUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors"
           >
-            <span>Open Storage (files.localhost)</span>
+            <span>Open Storage ({filesUrl.replace(/^https?:\/\//, '')})</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
 
           <a
-            href="http://ai.localhost"
+            href={aiUrl}
             target="_blank"
             rel="noopener noreferrer"
             className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors"
           >
-            <span>Open AI Hub (ai.localhost)</span>
+            <span>Open AI Hub ({aiUrl.replace(/^https?:\/\//, '')})</span>
             <ExternalLink className="w-3.5 h-3.5" />
           </a>
         </div>

@@ -37,6 +37,7 @@ import {
 } from 'lucide-react';
 import { ServiceRecord, ProcessStatus, LogEntry } from '@/shared/types';
 import { serverApi } from '@/shared/apiClient';
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
 
 interface ServicesTableProps {
   services: ServiceRecord[];
@@ -474,7 +475,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
   const getServiceUrl = (service: ServiceRecord) => {
     if (service.routes && service.routes.length > 0) {
       const r = service.routes[0];
-      return `http://${r.subdomain}.localhost`;
+      return getAccessibleServiceUrl(r.subdomain, service.port, r.customDomain);
     }
     if (service.port) {
       return `http://127.0.0.1:${service.port}`;
@@ -708,7 +709,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
 
                     {url && (
                       <span className="px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800/30 text-blue-300">
-                        {service.routes?.[0]?.subdomain ? `${service.routes[0].subdomain}.localhost` : `:${service.port}`}
+                        {url.replace(/^https?:\/\//, '')}
                       </span>
                     )}
                   </div>
@@ -824,6 +825,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                 const operating = operatingIds[service.id];
                 const isRunning = currentStatus === 'running';
                 const theme = getServiceVisualTheme(service);
+                const url = getServiceUrl(service);
 
                 return (
                   <tr key={service.id} className="hover:bg-slate-800/30 transition-colors">
@@ -892,6 +894,17 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                     </td>
                     <td className="py-3 px-3 text-right">
                       <div className="flex items-center justify-end space-x-1.5">
+                        {url && (
+                          <a
+                            href={url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 rounded-lg border border-blue-600/30 bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 transition-colors"
+                            title={`Open ${url}`}
+                          >
+                            <ExternalLink className="w-3.5 h-3.5" />
+                          </a>
+                        )}
                         <button
                           onClick={() => handleOpenLogs(service)}
                           className="p-1.5 rounded-lg border border-slate-700/80 bg-slate-900 text-slate-300 hover:text-white"

@@ -20,6 +20,7 @@ import {
   Loader2,
 } from 'lucide-react';
 import { RouteRecord, ServiceRecord, CaddyStatus, TailscaleStatus } from '@/shared/types';
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
 
 interface RoutesTableProps {
   routes: RouteRecord[];
@@ -346,6 +347,15 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
             <tbody className="divide-y divide-slate-800/50">
               {routes.map((route) => {
                 const host = `${route.subdomain}.localhost`;
+                const accessibleUrl = getAccessibleServiceUrl(
+                  route.subdomain,
+                  route.targetPort,
+                  route.customDomain,
+                  tailscaleStatus?.ip
+                );
+                const meshUrl = tailscaleStatus?.ip
+                  ? `http://${route.subdomain}.${tailscaleStatus.ip}.nip.io`
+                  : null;
                 const isTesting = testingHost === host || (route.customDomain && testingHost === route.customDomain);
                 const testRes = testResults[host] || (route.customDomain ? testResults[route.customDomain] : undefined);
                 const hasCustomDomain = !!route.customDomain;
@@ -360,6 +370,15 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
                         <div className="font-mono font-medium text-blue-300 flex items-center gap-1.5">
                           <Globe className="w-3.5 h-3.5 text-blue-400 shrink-0" />
                           <span>{host}</span>
+                          <a
+                            href={accessibleUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="text-slate-400 hover:text-blue-400 transition-colors p-0.5 rounded"
+                            title={`Open accessible URL (${accessibleUrl})`}
+                          >
+                            <ExternalLink className="w-3 h-3" />
+                          </a>
                         </div>
                         {hasCustomDomain && (
                           <div className="flex items-center gap-1.5">
@@ -396,9 +415,16 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
                     <td className="py-3 px-3">
                       {tailscaleStatus?.ip ? (
                         <div className="flex items-center gap-1.5">
-                          <span className="font-mono text-[11px] text-emerald-400 bg-emerald-950/30 px-2 py-0.5 rounded border border-emerald-800/40">
-                            http://{tailscaleStatus.ip}:{route.targetPort}
-                          </span>
+                          <a
+                            href={meshUrl!}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="font-mono text-[11px] text-emerald-400 bg-emerald-950/30 hover:bg-emerald-900/40 px-2 py-0.5 rounded border border-emerald-800/40 flex items-center gap-1 transition-colors"
+                            title={`Open on Tailscale: ${meshUrl}`}
+                          >
+                            <span>{route.subdomain}.{tailscaleStatus.ip}.nip.io</span>
+                            <ExternalLink className="w-3 h-3 text-emerald-400 shrink-0" />
+                          </a>
                         </div>
                       ) : (
                         <span className="text-slate-600 text-[10px]">Connect Tailscale</span>
