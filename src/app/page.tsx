@@ -381,14 +381,14 @@ export default function DashboardPage() {
   };
 
   return (
-    <div className="min-h-screen bg-[#070b12] text-slate-100 flex flex-col md:flex-row font-sans overflow-x-hidden">
+    <div className="h-screen w-full bg-[#070b12] text-slate-100 flex flex-col md:flex-row font-sans overflow-hidden">
       {/* ======================================================== */}
       {/* 1. DESKTOP 1PANEL SIDEBAR (Hidden on mobile < md) */}
       {/* ======================================================== */}
-      <aside className="hidden md:flex w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex-col justify-between shrink-0 select-none z-20 min-h-screen sticky top-0 h-screen">
-        <div className="overflow-y-auto flex-1">
+      <aside className="hidden md:flex w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex-col justify-between shrink-0 select-none z-20 h-full">
+        <div className="overflow-y-auto flex-1 min-h-0">
           {/* Brand Header */}
-          <div className="p-5 border-b border-slate-800/80 flex items-center space-x-3">
+          <div className="p-5 border-b border-slate-800/80 flex items-center space-x-3 shrink-0">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-blue-600/20">
               <div className="w-full h-full bg-[#0d121f] rounded-[11px] flex items-center justify-center">
                 <Server className="w-4 h-4 text-blue-400" />
@@ -660,7 +660,7 @@ export default function DashboardPage() {
         </div>
 
         {/* Sidebar Footer: Quick Tray & Persistence Controls */}
-        <div className="p-3.5 border-t border-slate-800/80 space-y-2 bg-slate-950/40">
+        <div className="p-3.5 border-t border-slate-800/80 space-y-2 bg-slate-950/40 shrink-0">
           <div className="p-2.5 rounded-xl bg-slate-900/60 border border-slate-800 text-[11px] space-y-1">
             <div className="flex items-center justify-between text-slate-300 font-medium">
               <span>Sleep Prevention:</span>
@@ -848,7 +848,7 @@ export default function DashboardPage() {
       {/* ======================================================== */}
       {/* 3. MAIN CONTENT AREA */}
       {/* ======================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-y-auto">
+      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
         <Header
           systemInfo={systemInfo}
           onRefresh={fetchAllData}
@@ -861,7 +861,7 @@ export default function DashboardPage() {
         />
 
         {!isElectronAvailable && (
-          <div className="bg-blue-950/40 border-b border-blue-600/30 px-4 sm:px-6 py-2 text-[11px] sm:text-xs text-blue-300 flex items-center justify-between gap-2">
+          <div className="bg-blue-950/40 border-b border-blue-600/30 px-4 sm:px-6 py-2 text-[11px] sm:text-xs text-blue-300 flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2 truncate">
               <span className="w-2 h-2 rounded-full bg-emerald-400 live-indicator-active shrink-0" />
               <span className="truncate">Remote Mobile Session • Connected to Windows Server Hub</span>
@@ -872,7 +872,8 @@ export default function DashboardPage() {
           </div>
         )}
 
-        <main className="flex-1 p-3.5 sm:p-6 space-y-6 max-w-7xl w-full mx-auto pb-24 md:pb-8">
+        <div className="flex-1 min-h-0 overflow-y-auto">
+          <main className="p-3.5 sm:p-6 space-y-6 max-w-7xl w-full mx-auto pb-24 md:pb-8">
           {/* TAB 1: OVERVIEW */}
           {activeTab === 'overview' && (
             <div className="space-y-6">
@@ -1093,7 +1094,8 @@ export default function DashboardPage() {
           {activeTab === 'logs' && (
             <LogViewer logs={logs} onClear={() => setLogs([])} />
           )}
-        </main>
+          </main>
+        </div>
       </div>
 
       {/* ======================================================== */}
