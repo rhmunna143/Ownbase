@@ -825,6 +825,7 @@ export default function DashboardPage() {
           currentUser={currentUser}
           onLoginClick={() => setIsLoginModalOpen(true)}
           onLogoutClick={handleLogout}
+          activeTab={activeTab}
         />
 
         {!isElectronAvailable && (
