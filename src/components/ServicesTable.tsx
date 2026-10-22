@@ -127,6 +127,17 @@ export const getServiceVisualTheme = (service: ServiceRecord): ServiceVisualThem
     };
   }
 
+  // Syncthing / Peer-to-Peer Sync & Backup
+  if (haystack.includes('syncthing') || haystack.includes('sync') || haystack.includes('backup')) {
+    return {
+      icon: <RotateCw className="w-5 h-5 text-amber-400" />,
+      bgClass: 'bg-amber-500/10',
+      borderClass: 'border-amber-500/30 group-hover:border-amber-500/50',
+      badgeLabel: 'P2P Sync',
+      badgeClass: 'bg-amber-950/60 text-amber-300 border-amber-800/40',
+    };
+  }
+
   // 5. Caddy / Reverse Proxy
   if (
     haystack.includes('caddy') ||

@@ -38,6 +38,17 @@ export class ProcessSupervisor {
   }
 
   public resolveExecutablePath(executable: string): string | null {
+    if (!executable) return null;
+
+    // Check direct absolute path or working directory relative path
+    if (path.isAbsolute(executable) && fs.existsSync(executable)) {
+      return executable;
+    }
+    const directPath = path.resolve(process.cwd(), executable);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      return directPath;
+    }
+
     const resourcesPath = (process as any).resourcesPath || process.cwd();
     
     // Candidate search directories in priority order
@@ -116,6 +127,13 @@ export class ProcessSupervisor {
         const storageDir = path.join(appData, 'minio-data');
         if (!fs.existsSync(storageDir)) fs.mkdirSync(storageDir, { recursive: true });
         args = ['server', storageDir, '--address', `:${service.port || 9000}`];
+      } else if (service.type === 'syncthing') {
+        const appData = (app && typeof app.getPath === 'function')
+          ? app.getPath('userData')
+          : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
+        const syncthingDir = path.join(appData, 'syncthing');
+        if (!fs.existsSync(syncthingDir)) fs.mkdirSync(syncthingDir, { recursive: true });
+        args = ['-home', syncthingDir, '-gui-address', `127.0.0.1:${service.port || 8384}`, '-no-browser', '-no-restart'];
       }
     }
 

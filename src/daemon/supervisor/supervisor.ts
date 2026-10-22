@@ -52,6 +52,17 @@ export class ProcessSupervisor {
   }
 
   public resolveExecutablePath(executable: string): string | null {
+    if (!executable) return null;
+
+    // Check direct absolute path or working directory relative path
+    if (path.isAbsolute(executable) && fs.existsSync(executable)) {
+      return executable;
+    }
+    const directPath = path.resolve(process.cwd(), executable);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      return directPath;
+    }
+
     const candidatePaths = [
       path.join(paths.extraResourcesDir, 'bin', executable),
       path.join(paths.extraResourcesDir, executable),

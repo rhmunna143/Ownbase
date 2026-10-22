@@ -78,6 +78,7 @@ export const AppStore: React.FC<AppStoreProps> = ({
         else if (r.icon === 'Server') iconElem = <Server className="w-6 h-6 text-indigo-400" />;
         else if (r.icon === 'Database') iconElem = <Database className="w-6 h-6 text-red-400" />;
         else if (r.icon === 'Terminal') iconElem = <Terminal className="w-6 h-6 text-amber-400" />;
+        else if (r.icon === 'RefreshCw' || r.icon === 'RotateCw' || r.icon === 'FolderSync') iconElem = <RotateCw className="w-6 h-6 text-amber-400" />;
 
         return {
           id: r.id,
@@ -171,6 +172,18 @@ export const AppStore: React.FC<AppStoreProps> = ({
       defaultPort: 6379,
       defaultSubdomain: 'redis',
       badge: 'Key-Value Cache',
+      isPackaged: false,
+    },
+    {
+      id: 'syncthing',
+      name: 'Syncthing Continuous Sync & Backup',
+      category: 'Storage',
+      description: 'Continuous, encrypted peer-to-peer file synchronization and backup between Android, iOS, Windows, Mac, and Linux devices.',
+      icon: <RotateCw className="w-6 h-6 text-amber-400" />,
+      defaultExecutable: 'syncthing.exe',
+      defaultPort: 8384,
+      defaultSubdomain: 'syncthing',
+      badge: 'P2P Backup Engine',
       isPackaged: false,
     },
     {
@@ -375,9 +388,20 @@ export const AppStore: React.FC<AppStoreProps> = ({
                   placeholder="e.g. node.exe, python.exe, or C:\Apps\service.exe"
                   className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
                 />
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Searched automatically in <code>extraResources/bin</code>, project folder, and Windows PATH.
-                </p>
+                <div className="mt-2 p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
+                  <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                    <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>How custom executables install &amp; resolve:</span>
+                  </div>
+                  <ul className="list-disc list-inside space-y-1 text-slate-400 pl-1">
+                    <li><strong className="text-slate-300">App folder:</strong> Drop your binary into <code className="text-indigo-300">extraResources\bin\&lt;app&gt;.exe</code>.</li>
+                    <li><strong className="text-slate-300">Absolute path:</strong> Specify any full path like <code className="text-indigo-300">C:\Apps\my-tool\server.exe</code>.</li>
+                    <li><strong className="text-slate-300">Windows PATH:</strong> Any command already installed on your machine (e.g. <code className="text-indigo-300">node.exe</code>, <code className="text-indigo-300">python.exe</code>).</li>
+                  </ul>
+                  <p className="text-[10px] text-slate-500 pt-1 border-t border-slate-800/80">
+                    💡 Any native Windows service or daemon that listens on a TCP port can be supervised here.
+                  </p>
+                </div>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

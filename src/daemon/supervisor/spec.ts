@@ -206,6 +206,36 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
       },
     };
   },
+
+  syncthing: (service) => {
+    const dataDir = path.join(paths.dataDir, 'syncthing');
+    if (!fs.existsSync(dataDir)) {
+      try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+    }
+    const port = service.port || 8384;
+    return {
+      templateId: 'syncthing',
+      appType: 'native',
+      executable: 'syncthing.exe',
+      args: ['-home', dataDir, '-gui-address', `127.0.0.1:${port}`, '-no-browser', '-no-restart'],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 5000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 512,
+        cpuLimitPct: 50,
+      },
+    };
+  },
 };
 
 /**
