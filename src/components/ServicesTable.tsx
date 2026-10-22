@@ -426,14 +426,14 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
   return (
     <div className="space-y-4">
       {/* Top Bar with Controls */}
-      <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/30 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center">
+      <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/30 flex flex-col md:flex-row md:items-center justify-between gap-3">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="w-10 h-10 rounded-xl bg-emerald-500/10 border border-emerald-500/30 flex items-center justify-center shrink-0">
             <Layers className="w-5 h-5 text-emerald-400" />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-white flex items-center gap-2">
-              Installed Native Services
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-white flex flex-wrap items-center gap-2">
+              <span>Installed Native Services</span>
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
                 {services.length} registered
               </span>
@@ -441,27 +441,27 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                 Job Object Sandboxed
               </span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
               Workloads enclosed in Win32 Job Objects with memory caps, CPU quotas, and crash recovery.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center space-x-2">
+        <div className="flex flex-wrap items-center gap-2 w-full md:w-auto justify-between md:justify-end">
           {/* Quick Search */}
-          <div className="relative">
+          <div className="relative flex-1 sm:w-48 sm:flex-initial min-w-[130px]">
             <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             <input
               type="text"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
               placeholder="Filter services..."
-              className="pl-8 pr-3 py-1.5 text-xs bg-slate-900/80 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-36 sm:w-48 transition-all"
+              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-900/80 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-all"
             />
           </div>
 
           {/* View Toggle */}
-          <div className="bg-slate-900 border border-slate-800 rounded-lg p-0.5 flex items-center">
+          <div className="bg-slate-900 border border-slate-800 rounded-lg p-0.5 flex items-center shrink-0">
             <button
               onClick={() => setViewMode('grid')}
               className={`p-1.5 rounded-md transition-colors ${
@@ -488,7 +488,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
 
           <button
             onClick={() => setIsModalOpen(true)}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition-all"
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white shadow-md shadow-emerald-600/20 transition-all shrink-0"
           >
             <Plus className="w-3.5 h-3.5" />
             <span>Add Service</span>
@@ -510,7 +510,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
 
       {/* Grid View (1Panel Style) */}
       {viewMode === 'grid' && filteredServices.length > 0 && (
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
           {filteredServices.map((service) => {
             const proc = processStatuses[service.id];
             const currentStatus = proc ? proc.status : service.status;
@@ -527,32 +527,34 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
               >
                 <div>
                   {/* Card Header */}
-                  <div className="flex items-start justify-between mb-3">
-                    <div className="flex items-center space-x-3">
+                  <div className="flex flex-wrap sm:flex-nowrap items-start justify-between gap-2 mb-3">
+                    <div className="flex items-center space-x-3 min-w-0">
                       <div
-                        className={`w-10 h-10 rounded-xl ${theme.bgClass} border ${theme.borderClass} flex items-center justify-center transition-all shadow-inner`}
+                        className={`w-10 h-10 rounded-xl ${theme.bgClass} border ${theme.borderClass} flex items-center justify-center transition-all shadow-inner shrink-0`}
                       >
                         {theme.icon}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <h3 className="text-sm font-semibold text-white tracking-tight">{service.name}</h3>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <h3 className="text-sm font-semibold text-white tracking-tight truncate max-w-[130px] sm:max-w-[180px]">
+                            {service.name}
+                          </h3>
                           <span
-                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${theme.badgeClass}`}
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border shrink-0 ${theme.badgeClass}`}
                           >
                             {theme.badgeLabel}
                           </span>
                         </div>
                         <div className="text-[11px] font-mono text-slate-400 mt-0.5 flex items-center gap-1.5">
-                          <span className="truncate max-w-[140px]">{service.executable}</span>
-                          {service.port && <span className="text-blue-400">:{service.port}</span>}
+                          <span className="truncate max-w-[130px] sm:max-w-[160px]">{service.executable}</span>
+                          {service.port && <span className="text-blue-400 shrink-0">:{service.port}</span>}
                         </div>
                       </div>
                     </div>
 
                     {/* Status Pill */}
                     <span
-                      className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-medium ${
+                      className={`inline-flex items-center gap-1.5 text-[10px] px-2.5 py-1 rounded-full border font-medium shrink-0 ${
                         isRunning
                           ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/30'
                           : currentStatus === 'starting'
@@ -642,12 +644,12 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                 </div>
 
                 {/* Card Action Footer */}
-                <div className="mt-5 pt-3.5 border-t border-slate-800/80 flex items-center justify-between">
-                  <div className="flex items-center space-x-1.5">
+                <div className="mt-5 pt-3.5 border-t border-slate-800/80 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center space-x-1.5 flex-wrap gap-y-1">
                     {/* View Logs Button */}
                     <button
                       onClick={() => handleOpenLogs(service)}
-                      className="p-1.5 rounded-lg border border-slate-700/80 bg-slate-900/60 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors"
+                      className="p-1.5 rounded-lg border border-slate-700/80 bg-slate-900/60 text-slate-300 hover:text-white hover:bg-slate-800 transition-colors shrink-0"
                       title="View Console Logs"
                     >
                       <FileText className="w-3.5 h-3.5" />
@@ -659,7 +661,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                         href={url}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-600/30 bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 transition-colors text-[11px]"
+                        className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-600/30 bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 transition-colors text-[11px] shrink-0"
                         title={`Open ${url}`}
                       >
                         <span>Open</span>
@@ -672,7 +674,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                       <button
                         onClick={() => setDeleteConfirmService(service)}
                         disabled={!!operating || isDeleting}
-                        className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 hover:border-rose-800/50 transition-colors disabled:opacity-50"
+                        className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 hover:border-rose-800/50 transition-colors disabled:opacity-50 shrink-0"
                         title={`Delete ${service.name}`}
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -681,7 +683,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                   </div>
 
                   {/* Lifecycle Buttons */}
-                  <div className="flex items-center space-x-1.5">
+                  <div className="flex items-center space-x-1.5 shrink-0">
                     {isRunning ? (
                       <>
                         <button
@@ -730,7 +732,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       {/* Table View */}
       {viewMode === 'table' && filteredServices.length > 0 && (
         <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[720px]">
             <thead>
               <tr className="border-b border-slate-800 text-slate-400 font-mono uppercase text-[10px]">
                 <th className="pb-3 px-3">Service Name</th>
@@ -866,7 +868,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       {/* Delete Confirmation Modal */}
       {deleteConfirmService && (
         <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl p-6 border border-rose-500/30 max-w-md w-full shadow-2xl bg-[#0d121f]">
+          <div className="glass-card rounded-2xl p-6 border border-rose-500/30 max-w-md w-full shadow-2xl bg-[#0d121f] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center space-x-3 mb-4">
               <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center shrink-0">
                 <AlertTriangle className="w-5 h-5 text-rose-400" />
@@ -949,7 +951,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       {/* Modal for Registering a New Service */}
       {isModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl p-6 border border-slate-700 max-w-md w-full shadow-2xl bg-[#0d121f]">
+          <div className="glass-card rounded-2xl p-6 border border-slate-700 max-w-md w-full shadow-2xl bg-[#0d121f] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-4">
               <h3 className="text-sm font-semibold text-white">Add Native Service</h3>
               <button
@@ -1056,7 +1058,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       {/* Log Viewer Slide-Over */}
       {activeLogService && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-[#0b101d] border border-slate-700 rounded-2xl p-5 max-w-3xl w-full shadow-2xl flex flex-col h-[520px]">
+          <div className="bg-[#0b101d] border border-slate-700 rounded-2xl p-5 max-w-3xl w-full shadow-2xl flex flex-col h-[520px] max-h-[90vh]">
             <div className="flex items-center justify-between pb-3 border-b border-slate-800 mb-3">
               <div className="flex items-center space-x-2.5">
                 <Terminal className="w-4 h-4 text-emerald-400" />

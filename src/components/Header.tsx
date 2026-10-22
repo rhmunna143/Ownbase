@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Right: System Specs & Refresh */}
         <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
           {systemInfo && (
-            <div className="hidden lg:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
+            <div className="hidden xl:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
               <div className="flex items-center gap-1.5 text-slate-400">
                 <Cpu className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="font-mono text-slate-200">

@@ -145,7 +145,7 @@ export const DatabaseCard: React.FC<DatabaseCardProps> = ({
             </button>
           </div>
 
-          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mb-4">
             <div className="bg-slate-900/70 border border-slate-800 rounded-xl p-3">
               <span className="text-[10px] uppercase font-mono tracking-wider text-slate-500">Port</span>
               <div className="text-sm font-semibold font-mono text-blue-400 mt-1">
@@ -372,7 +372,7 @@ export const DatabaseCard: React.FC<DatabaseCardProps> = ({
           <div>
             {tableData.rows.length > 0 ? (
               <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/40">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs min-w-[600px]">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[10px] uppercase">
                       {tableData.columns.map((col) => (

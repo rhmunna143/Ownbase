@@ -881,7 +881,7 @@ export default function DashboardPage() {
               <BootstrapStepper steps={bootstrapSteps} />
 
               {/* 4-KPI Status Strip */}
-              <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-3 sm:gap-4">
                 <div className="glass-card rounded-2xl p-3.5 sm:p-4 border border-slate-800 bg-slate-900/40">
                   <div className="flex items-center justify-between text-slate-400 mb-1.5">
                     <span className="text-[11px] sm:text-xs font-medium">Relational DB</span>
@@ -947,7 +947,7 @@ export default function DashboardPage() {
               />
 
               {/* Quick Launch Cards */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
                 <div
                   onClick={() => navigateTab('files')}
                   className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 transition-all flex items-center justify-between cursor-pointer group"

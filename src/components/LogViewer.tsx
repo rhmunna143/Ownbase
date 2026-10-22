@@ -47,7 +47,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
         </div>
 
         {/* Filters */}
-        <div className="flex items-center space-x-2 text-xs">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
           {/* Search */}
           <div className="relative">
             <Search className="w-3 h-3 absolute left-2.5 top-2 text-slate-500" />
@@ -56,7 +56,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
               placeholder="Filter logs..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="pl-7 pr-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-md text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-blue-500 w-36"
+              className="pl-7 pr-2.5 py-1 bg-slate-900 border border-slate-700/80 rounded-md text-[11px] text-slate-200 placeholder:text-slate-600 focus:outline-none focus:border-blue-500 w-32 sm:w-36"
             />
           </div>
 

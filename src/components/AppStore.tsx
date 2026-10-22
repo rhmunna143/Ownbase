@@ -269,7 +269,7 @@ export const AppStore: React.FC<AppStoreProps> = ({
       </div>
 
       {/* Templates Grid */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-4">
         {filteredTemplates.map((template) => {
           const isInstalled = existingServices.some(
             (s) => s.type === template.id || s.name.toLowerCase().includes(template.name.toLowerCase().slice(0, 6))
@@ -330,7 +330,7 @@ export const AppStore: React.FC<AppStoreProps> = ({
       {/* 1-Click Install Modal */}
       {selectedTemplate && (
         <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="glass-card rounded-2xl p-6 border border-slate-700 w-full max-w-lg shadow-2xl bg-[#0d121f]">
+          <div className="glass-card rounded-2xl p-6 border border-slate-700 w-full max-w-lg shadow-2xl bg-[#0d121f] max-h-[90vh] overflow-y-auto">
             <div className="flex items-center justify-between pb-4 border-b border-slate-800">
               <div className="flex items-center space-x-3">
                 <div className="w-9 h-9 rounded-lg bg-indigo-500/10 border border-indigo-500/20 flex items-center justify-center">
@@ -380,7 +380,7 @@ export const AppStore: React.FC<AppStoreProps> = ({
                 </p>
               </div>
 
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-slate-300 mb-1 font-medium">Internal TCP Port</label>
                   <input

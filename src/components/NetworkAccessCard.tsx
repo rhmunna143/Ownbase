@@ -68,7 +68,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
       {/* 1. Local Network / Wi-Fi Access */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 bg-slate-900/40 flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+          <div className="flex flex-wrap items-center justify-between pb-4 border-b border-slate-800 mb-4 gap-3">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
                 <Wifi className="w-5 h-5" />
@@ -279,7 +279,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
       {/* 2. Tailscale Mesh VPN (Internet / Remote Access from Anywhere) */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 bg-slate-900/40 flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+          <div className="flex flex-wrap items-center justify-between pb-4 border-b border-slate-800 mb-4 gap-3">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
                 <Globe className="w-5 h-5" />

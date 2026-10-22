@@ -270,7 +270,7 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
       </div>
 
       {/* Grid of Results */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3.5 mt-5">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3.5 mt-5">
         {results.map((res) => {
           const isSuccess = res.status === 'success';
           const isFailed = res.status === 'failed';

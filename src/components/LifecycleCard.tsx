@@ -75,20 +75,20 @@ export const LifecycleCard: React.FC<LifecycleCardProps> = ({
           <div className="w-9 h-9 rounded-lg bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center">
             <Clock className="w-5 h-5 text-emerald-400" />
           </div>
-          <div>
-            <h2 className="text-sm font-semibold text-slate-100 flex items-center gap-2">
-              24/7 Server Persistence &amp; Windows Lifecycle
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-slate-100 flex flex-wrap items-center gap-2">
+              <span>24/7 Server Persistence &amp; Windows Lifecycle</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-400 border border-emerald-800/40">
                 Always-On Engine
               </span>
             </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
+            <p className="text-xs text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
               Continuous background daemon execution with system tray minimization and Windows sleep overrides.
             </p>
           </div>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={onMinimizeToTray}
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 bg-slate-900/60 text-slate-300 hover:bg-slate-800 transition-colors"

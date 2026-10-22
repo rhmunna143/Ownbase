@@ -285,7 +285,7 @@ export const SecurityAdminCard: React.FC = () => {
                 <div className="p-8 text-center text-xs text-slate-500">Loading accounts...</div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/40">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs min-w-[500px]">
                     <thead>
                       <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[10px] uppercase">
                         <th className="py-2.5 px-3">Username</th>
@@ -423,7 +423,7 @@ export const SecurityAdminCard: React.FC = () => {
                 <div className="p-8 text-center text-xs text-slate-500">Loading API keys...</div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/40">
-                  <table className="w-full text-left text-xs">
+                  <table className="w-full text-left text-xs min-w-[620px]">
                     <thead>
                       <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[10px] uppercase">
                         <th className="py-2.5 px-3">Name</th>
@@ -489,7 +489,7 @@ export const SecurityAdminCard: React.FC = () => {
               <div className="p-8 text-center text-xs text-slate-500">Loading audit events...</div>
             ) : (
               <div className="overflow-x-auto rounded-xl border border-slate-800 bg-black/40">
-                <table className="w-full text-left text-xs">
+                <table className="w-full text-left text-xs min-w-[700px]">
                   <thead>
                     <tr className="border-b border-slate-800 bg-slate-900/60 text-slate-400 font-mono text-[10px] uppercase">
                       <th className="py-2.5 px-3">Timestamp</th>

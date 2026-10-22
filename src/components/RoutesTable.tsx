@@ -273,11 +273,11 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
             </div>
           </div>
 
-          <div className="flex items-center space-x-2">
+          <div className="flex flex-wrap items-center gap-2">
             <button
               onClick={handleSync}
               disabled={isSyncing || !isCaddyActive}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-40"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg border border-slate-700 text-slate-300 hover:bg-slate-800 transition-colors disabled:opacity-40 shrink-0"
               title="Push all database routes to Caddy Admin API"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin text-blue-400' : ''}`} />
@@ -292,7 +292,7 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
                 }
                 setIsModalOpen(true);
               }}
-              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20 transition-all"
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-500 text-white shadow-md shadow-blue-600/20 transition-all shrink-0"
             >
               <Plus className="w-3.5 h-3.5" />
               <span>Add Dynamic Route</span>
@@ -301,7 +301,7 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
         </div>
 
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
+          <table className="w-full text-left text-xs min-w-[680px]">
             <thead>
               <tr className="border-b border-slate-800/80 text-slate-400 font-mono uppercase text-[10px]">
                 <th className="pb-3 px-3">Subdomain Host</th>
@@ -398,7 +398,7 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
         {/* Modal for adding route */}
         {isModalOpen && (
           <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-            <div className="bg-[#0f172a] border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl">
+            <div className="bg-[#0f172a] border border-slate-700 rounded-xl p-6 max-w-md w-full shadow-2xl max-h-[90vh] overflow-y-auto">
               <h3 className="text-sm font-semibold text-slate-100 mb-1">Add Dynamic Proxy Route</h3>
               <p className="text-xs text-slate-400 mb-4">
                 Registers host mapping dynamically into Caddy REST API without server restart.
