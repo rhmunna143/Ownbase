@@ -52,7 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
               className="md:hidden p-2 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-slate-300 border border-slate-700/80 touch-manipulation min-h-[40px] min-w-[40px] flex items-center justify-center"
               aria-label="Open Navigation Menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5" /> 
             </button>
           )}
 
@@ -63,7 +63,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <Server className="w-3.5 h-3.5 text-blue-400" />
               </div>
             </div>
-            <span className="text-xs font-bold text-white tracking-tight truncate">Windows Hub</span>
+            <span className="text-xs font-bold text-white tracking-tight truncate">Ownbase</span>
           </div>
 
           {/* Desktop Breadcrumb Navigation: Replaces redundant logo on desktop */}

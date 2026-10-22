@@ -744,10 +744,33 @@ export class WebApiServer {
           if (route.path === '/api/v1/lifecycle/status') {
             const powerState = await powerManager.getPowerState();
             this.sendJson(res, {
+              trayActive: false,
+              isMinimizedToTray: false,
               isQuitting: false,
+              powerBlocker: {
+                active: powerState.preventSuspensionActive,
+                blockerId: null,
+                type: 'prevent-app-suspension',
+              },
+              autoStart: {
+                enabled: false,
+                openAsHidden: false,
+              },
               preventAppSuspension: powerState.preventSuspensionActive,
               openAtLogin: false,
               activePowerScheme: powerState.schemeName,
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/lifecycle/autostart') {
+            const body = await this.parseJsonBody(req);
+            this.sendJson(res, {
+              success: true,
+              autoStart: {
+                enabled: !!body.enabled,
+                openAsHidden: !!body.openAsHidden,
+              },
             });
             return;
           }
@@ -760,7 +783,15 @@ export class WebApiServer {
               powerManager.disablePowerPersistence();
             }
             const powerState = await powerManager.getPowerState();
-            this.sendJson(res, { success: true, preventSuspensionActive: powerState.preventSuspensionActive });
+            this.sendJson(res, {
+              success: true,
+              preventSuspensionActive: powerState.preventSuspensionActive,
+              powerBlocker: {
+                active: powerState.preventSuspensionActive,
+                blockerId: null,
+                type: 'prevent-app-suspension',
+              },
+            });
             return;
           }
 

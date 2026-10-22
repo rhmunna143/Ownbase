@@ -37,13 +37,21 @@ export const LifecycleCard: React.FC<LifecycleCardProps> = ({
   const [isUpdatingAutoStart, setIsUpdatingAutoStart] = useState(false);
   const [isUpdatingPower, setIsUpdatingPower] = useState(false);
 
-  const isPowerActive = lifecycleStatus?.powerBlocker.active ?? true;
-  const isAutoStartEnabled = lifecycleStatus?.autoStart.enabled ?? false;
+  const isPowerActive =
+    lifecycleStatus?.powerBlocker?.active ??
+    (lifecycleStatus as any)?.preventAppSuspension ??
+    true;
+  const isAutoStartEnabled =
+    lifecycleStatus?.autoStart?.enabled ??
+    (lifecycleStatus as any)?.openAtLogin ??
+    false;
 
   const handleToggleAutoStart = async () => {
     setIsUpdatingAutoStart(true);
     try {
       await onToggleAutoStart(!isAutoStartEnabled);
+    } catch (err: any) {
+      console.error('Failed to update autostart:', err);
     } finally {
       setIsUpdatingAutoStart(false);
     }
@@ -53,6 +61,8 @@ export const LifecycleCard: React.FC<LifecycleCardProps> = ({
     setIsUpdatingPower(true);
     try {
       await onTogglePowerBlocker(!isPowerActive);
+    } catch (err: any) {
+      console.error('Failed to update power persistence:', err);
     } finally {
       setIsUpdatingPower(false);
     }
