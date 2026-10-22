@@ -17,6 +17,16 @@ export async function createTestServer(port = 3199): Promise<TestServerInstance>
     getServices: async () => [],
     getRoutes: async () => [],
     executeQuery: async (sql: string) => [{ result: 'vulnerable_raw_sql_executed', query: sql }],
+    getClient: () => ({
+      $transaction: async (cb: any) =>
+        cb({
+          $executeRawUnsafe: async () => 1,
+          $queryRawUnsafe: async (q: string) => {
+            if (q.includes('count(*)')) return [{ count: 0 }];
+            return [];
+          },
+        }),
+    }),
   };
 
   const mockSupervisor: any = {

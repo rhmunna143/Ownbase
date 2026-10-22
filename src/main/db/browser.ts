@@ -47,8 +47,9 @@ export class TableBrowser {
 
     // Enforce read-only transaction with statement timeout (5 seconds)
     return await client.$transaction(async (tx) => {
-      // Set read-only session and strict statement timeout
-      await tx.$executeRawUnsafe(`SET LOCAL default_transaction_read_only = on; SET LOCAL statement_timeout = 5000;`);
+      // Set read-only session and strict statement timeout (separate prepared statements required by PostgreSQL)
+      await tx.$executeRawUnsafe('SET LOCAL default_transaction_read_only = on');
+      await tx.$executeRawUnsafe('SET LOCAL statement_timeout = 5000');
 
       // Safe parameterized queries using allow-listed table identifier
       const safeTable = `"${table.replace(/"/g, '')}"`;

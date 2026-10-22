@@ -182,6 +182,14 @@ describe('Phase 1 Acceptance Criteria (A1 - A7)', () => {
         tableBrowser.queryTable('pg_shadow')
       ).rejects.toThrow(/not permitted/);
     });
+
+    it('table browser successfully queries permitted tables inside isolated read-only transaction', async () => {
+      const tableBrowser = testServer.server.getTableBrowser();
+      const res = await tableBrowser.queryTable('services');
+      expect(res).toBeDefined();
+      expect(Array.isArray(res.rows)).toBe(true);
+      expect(typeof res.totalCount).toBe('number');
+    });
   });
 
   // ==========================================
