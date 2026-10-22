@@ -4,6 +4,7 @@ import fs from 'fs';
 import path from 'path';
 import cookie from 'cookie';
 import { paths } from '../core/paths';
+import { configManager } from '../core/config';
 import { logger } from '../core/logger';
 import { eventBus } from '../core/events';
 import { safeResolvePath } from '../core/pathGuard';
@@ -1626,7 +1627,7 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/system/storage-allocation' && req.method === 'GET') {
-            const cfg = this.configManager ? this.configManager.getConfig() : null;
+            const cfg = configManager.getConfig();
             const currentAlloc = (cfg as any)?.storageAllocation || {};
             const systemDrive = process.env.SystemDrive || 'C:';
             this.sendJson(res, {
@@ -1651,16 +1652,14 @@ export class WebApiServer {
               }
             }
 
-            if (this.configManager) {
-              this.configManager.updateConfig({
-                storageAllocation: {
-                  selectedDrive,
-                  storageRoot,
-                  mediaRoot,
-                  backupsRoot,
-                },
-              } as any);
-            }
+            configManager.updateConfig({
+              storageAllocation: {
+                selectedDrive,
+                storageRoot,
+                mediaRoot,
+                backupsRoot,
+              },
+            } as any);
 
             this.sendJson(res, {
               success: true,
@@ -1685,11 +1684,21 @@ export class WebApiServer {
                 isRunning = statusOut.toLowerCase() === 'running';
               }
             } catch {}
+            let hostIp = '127.0.0.1';
+            const nets = os.networkInterfaces();
+            for (const name of Object.keys(nets)) {
+              for (const net of nets[name] || []) {
+                if (net.family === 'IPv4' && !net.internal) {
+                  hostIp = net.address;
+                  break;
+                }
+              }
+            }
             this.sendJson(res, {
               installed: isInstalled,
               running: isRunning,
               port: 22,
-              host: this.systemInfoProvider ? (this.systemInfoProvider.getSystemInfo().localIp || '127.0.0.1') : '127.0.0.1',
+              host: hostIp,
             });
             return;
           }
