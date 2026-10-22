@@ -37,7 +37,7 @@ export default function PhotosStandalonePage() {
             title="Return to Server Gateway Hub"
           >
             <ArrowLeft className="w-3.5 h-3.5" />
-            <span>Server Hub</span>
+            <span>Ownbase</span>
           </Link>
           <a
             href="http://files.localhost"

@@ -726,13 +726,13 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { installed: false, running: false, port: 22, host: '127.0.0.1' };
   },
 
-  toggleSsh: async (enable: boolean): Promise<{ success: boolean; running: boolean }> => {
+  toggleSsh: async (enable: boolean): Promise<{ success: boolean; running: boolean; error?: string; command?: string }> => {
     const res = await fetchWithAuth('/api/v1/system/ssh-toggle', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ enable }),
     }).catch(() => null);
-    return res && res.ok ? await res.json() : { success: false, running: false };
+    return res && res.ok ? await res.json() : { success: false, running: false, error: 'Failed to communicate with SSH toggle service' };
   },
 
   applyFirewallRules: async (): Promise<{ success: boolean; message: string }> => {

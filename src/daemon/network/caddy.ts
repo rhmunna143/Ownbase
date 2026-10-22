@@ -113,31 +113,7 @@ export class CaddyManager {
   public generateFullConfig(routes: any[]): { config: any; hash: string } {
     const caddyRoutes: any[] = [];
 
-    // 1. Core Platform Routes: /api/*, /ws, /_next/*, /favicon.ico -> Daemon Gateway
-    caddyRoutes.push({
-      '@id': 'core-gateway-api',
-      match: [{ path: ['/api/*', '/ws', '/_next/*', '/favicon.ico'] }],
-      handle: [
-        {
-          handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
-        },
-      ],
-    });
-
-    // 2. Core Dashboard SPA Root: / -> Daemon Gateway
-    caddyRoutes.push({
-      '@id': 'core-dashboard-root',
-      match: [{ path: ['/'] }],
-      handle: [
-        {
-          handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
-        },
-      ],
-    });
-
-    // 3. User & Service Routes
+    // 1. User & Service Routes (Evaluated first with terminal: true)
     for (const r of routes) {
       if (r.isActive === false) continue;
 
@@ -269,6 +245,30 @@ export class CaddyManager {
         }
       }
     }
+
+    // 2. Core Platform Routes: /api/*, /ws, /_next/*, /favicon.ico -> Daemon Gateway
+    caddyRoutes.push({
+      '@id': 'core-gateway-api',
+      match: [{ path: ['/api/*', '/ws', '/_next/*', '/favicon.ico'] }],
+      handle: [
+        {
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: '127.0.0.1:3001' }],
+        },
+      ],
+    });
+
+    // 3. Core Dashboard Catch-All SPA Root -> Daemon Gateway
+    caddyRoutes.push({
+      '@id': 'core-dashboard-root',
+      match: [{ path: ['/*'] }],
+      handle: [
+        {
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: '127.0.0.1:3001' }],
+        },
+      ],
+    });
 
     const fullConfig = {
       admin: {

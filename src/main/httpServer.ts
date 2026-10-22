@@ -842,13 +842,41 @@ export class WebApiServer {
             try {
               const { execSync } = require('child_process');
               if (enable) {
-                execSync('powershell.exe -NoProfile -Command "Start-Service sshd -ErrorAction SilentlyContinue; Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue"', { timeout: 8000 });
+                const serviceExists = execSync('powershell.exe -NoProfile -Command "[bool](Get-Service sshd -ErrorAction SilentlyContinue)"', { encoding: 'utf-8', timeout: 4000 }).trim();
+                if (serviceExists.toLowerCase() !== 'true') {
+                  try {
+                    execSync('powershell.exe -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList \\"-NoProfile -Command Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd; Set-Service -Name sshd -StartupType Automatic; ssh-keygen -A\\""', { timeout: 15000 });
+                  } catch {
+                    this.sendJson(res, {
+                      success: false,
+                      error: 'OpenSSH Server requires Administrator privilege to install. Run the command below in an elevated PowerShell terminal.',
+                      requiresAdmin: true,
+                      command: 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd; Set-Service -Name sshd -StartupType Automatic',
+                    });
+                    return;
+                  }
+                } else {
+                  execSync('powershell.exe -NoProfile -Command "ssh-keygen -A -ErrorAction SilentlyContinue; Start-Service sshd -ErrorAction SilentlyContinue; Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue"', { timeout: 8000 });
+                }
               } else {
                 execSync('powershell.exe -NoProfile -Command "Stop-Service sshd -ErrorAction SilentlyContinue"', { timeout: 8000 });
               }
-              this.sendJson(res, { success: true, running: enable });
+
+              const checkOut = execSync('powershell.exe -NoProfile -Command "(Get-Service sshd -ErrorAction SilentlyContinue).Status"', { encoding: 'utf-8', timeout: 3000 }).trim();
+              const isRunning = checkOut.toLowerCase() === 'running';
+
+              this.sendJson(res, {
+                success: enable ? isRunning : !isRunning,
+                running: isRunning,
+                error: (enable && !isRunning) ? 'Failed to start sshd service. Windows Administrator privilege may be required.' : undefined,
+                command: (enable && !isRunning) ? 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd' : undefined,
+              });
             } catch (err: any) {
-              this.sendJson(res, { success: false, error: err.message }, 500);
+              this.sendJson(res, {
+                success: false,
+                error: err.message || 'Error configuring SSH service',
+                command: 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd',
+              }, 200);
             }
             return;
           }

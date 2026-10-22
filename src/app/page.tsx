@@ -61,6 +61,11 @@ import {
   Menu,
   Film,
   Archive,
+  Upload,
+  Play,
+  Check,
+  AlertCircle,
+  Loader2,
 } from 'lucide-react';
 
 export default function DashboardPage() {
@@ -97,6 +102,97 @@ export default function DashboardPage() {
   const [logs, setLogs] = useState<LogEntry[]>([]);
   const [isRefreshing, setIsRefreshing] = useState<boolean>(false);
   const [isElectronAvailable, setIsElectronAvailable] = useState<boolean>(true);
+  const [authChecked, setAuthChecked] = useState<boolean>(false);
+  const [loginUsername, setLoginUsername] = useState<string>('');
+  const [loginPassword, setLoginPassword] = useState<string>('');
+  const [loginError, setLoginError] = useState<string | null>(null);
+  const [isLoggingIn, setIsLoggingIn] = useState<boolean>(false);
+
+  // Dedicated Upload Executable Modal
+  const [isUploadExeModalOpen, setIsUploadExeModalOpen] = useState<boolean>(false);
+  const [exeFile, setExeFile] = useState<File | null>(null);
+  const [exeName, setExeName] = useState<string>('');
+  const [exeBinary, setExeBinary] = useState<string>('');
+  const [exePort, setExePort] = useState<number>(8085);
+  const [exeSubdomain, setExeSubdomain] = useState<string>('myapp');
+  const [exeAutoStart, setExeAutoStart] = useState<boolean>(true);
+  const [isUploadingExeFile, setIsUploadingExeFile] = useState<boolean>(false);
+  const [uploadExeProgress, setUploadExeProgress] = useState<number>(0);
+  const [exeUploadSuccess, setExeUploadSuccess] = useState<boolean>(false);
+  const [isDeployingExe, setIsDeployingExe] = useState<boolean>(false);
+
+  const handleInlineLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoginError(null);
+    setIsLoggingIn(true);
+    try {
+      const res = await serverApi.login(loginUsername, loginPassword);
+      if (res.ok && res.user) {
+        setCurrentUser(res.user);
+        fetchAllData();
+      } else {
+        setLoginError(res.error || 'Authentication failed. Please verify credentials.');
+      }
+    } catch (err: any) {
+      setLoginError(err.message || 'Login error occurred.');
+    } finally {
+      setIsLoggingIn(false);
+    }
+  };
+
+  const handleExeFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setExeFile(file);
+    setIsUploadingExeFile(true);
+    setUploadExeProgress(0);
+    setExeUploadSuccess(false);
+
+    try {
+      const res = await serverApi.uploadBinary(file, (p) => {
+        setUploadExeProgress(p.percent);
+      });
+      if (res.success && res.filename) {
+        setExeBinary(res.filename);
+        setExeUploadSuccess(true);
+        const baseName = res.filename.replace(/\.[^/.]+$/, '');
+        if (!exeName) setExeName(baseName.charAt(0).toUpperCase() + baseName.slice(1));
+        if (!exeSubdomain || exeSubdomain === 'myapp') setExeSubdomain(baseName.toLowerCase().replace(/[^a-z0-9-]/g, ''));
+      } else {
+        alert(res.error || 'Failed to upload binary');
+      }
+    } catch (err: any) {
+      alert(`Upload error: ${err.message}`);
+    } finally {
+      setIsUploadingExeFile(false);
+    }
+  };
+
+  const handleDeployUploadedExe = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!exeName || !exeBinary || !exePort || !exeSubdomain) return;
+    setIsDeployingExe(true);
+    try {
+      await handleCreateServiceWithRoute({
+        name: exeName,
+        type: 'custom',
+        executable: exeBinary,
+        port: exePort,
+        subdomain: exeSubdomain,
+        description: 'Uploaded native Windows binary service',
+        autoStart: exeAutoStart,
+      });
+      setIsUploadExeModalOpen(false);
+      setExeFile(null);
+      setExeBinary('');
+      setExeName('');
+      setExeUploadSuccess(false);
+    } catch (err: any) {
+      alert(`Deploy error: ${err.message}`);
+    } finally {
+      setIsDeployingExe(false);
+    }
+  };
 
   const fetchAllData = useCallback(async () => {
     if (typeof window === 'undefined') return;
@@ -152,6 +248,7 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (typeof window !== 'undefined') {
+      document.title = 'Ownbase';
       const host = window.location.hostname.toLowerCase();
       const search = window.location.search.toLowerCase();
       const hash = window.location.hash.toLowerCase();
@@ -176,6 +273,7 @@ export default function DashboardPage() {
 
     if (initialUser && initialToken) {
       setCurrentUser(initialUser);
+      setAuthChecked(true);
       fetchAllData();
     } else {
       serverApi.restoreSession().then((restoredUser) => {
@@ -184,9 +282,11 @@ export default function DashboardPage() {
         } else {
           setCurrentUser(null);
         }
+        setAuthChecked(true);
         fetchAllData();
       }).catch(() => {
         setCurrentUser(null);
+        setAuthChecked(true);
         fetchAllData();
       });
     }
@@ -246,6 +346,7 @@ export default function DashboardPage() {
     port: number;
     description: string;
     subdomain: string;
+    autoStart?: boolean;
   }) => {
     const svc = await serverApi.createService({
       name: data.name,
@@ -253,7 +354,7 @@ export default function DashboardPage() {
       executable: data.executable,
       port: data.port,
       description: data.description,
-      autoStart: true,
+      autoStart: data.autoStart ?? true,
     });
 
     if (svc && svc.id) {
@@ -381,6 +482,154 @@ export default function DashboardPage() {
     setIsMobileMenuOpen(false);
   };
 
+  // 1. Initial State: Engine Booting Probe
+  if (!authChecked) {
+    return (
+      <div className="h-screen w-full bg-[#070b12] text-slate-100 flex flex-col items-center justify-center p-6 select-none font-sans">
+        <div className="flex flex-col items-center space-y-4 max-w-sm text-center animate-in fade-in duration-300">
+          <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-2xl shadow-blue-500/30 animate-pulse">
+            <div className="w-full h-full bg-[#0d121f] rounded-[15px] flex items-center justify-center">
+              <Server className="w-7 h-7 text-blue-400" />
+            </div>
+          </div>
+          <div>
+            <h1 className="text-xl font-bold tracking-tight text-white flex items-center justify-center gap-2">
+              Ownbase
+              <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/20 text-indigo-400 border border-indigo-500/30">
+                PaaS
+              </span>
+            </h1>
+            <p className="text-xs text-slate-400 mt-1">Initializing native Windows server engine...</p>
+          </div>
+          <div className="w-48 h-1 bg-slate-800 rounded-full overflow-hidden">
+            <div className="h-full bg-blue-500 rounded-full animate-indeterminate" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // 2. Authentication Gate: No Guest Dashboard Access
+  if (authChecked && !currentUser) {
+    return (
+      <div className="min-h-screen w-full bg-[#070b12] text-slate-100 flex flex-col items-center justify-center p-4 select-none font-sans relative overflow-hidden">
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-blue-600/10 rounded-full blur-3xl pointer-events-none" />
+        <div className="absolute bottom-1/4 left-1/2 -translate-x-1/2 translate-y-1/2 w-96 h-96 bg-purple-600/10 rounded-full blur-3xl pointer-events-none" />
+
+        <div className="w-full max-w-md glass-card bg-slate-900/95 border border-slate-800 rounded-3xl p-8 shadow-2xl space-y-6 relative z-10 animate-in fade-in zoom-in-95 duration-200">
+          <div className="flex flex-col items-center text-center space-y-3 pb-2 border-b border-slate-800/80">
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-indigo-600/20">
+              <div className="w-full h-full bg-[#0d121f] rounded-[15px] flex items-center justify-center">
+                <Server className="w-7 h-7 text-blue-400" />
+              </div>
+            </div>
+            <div>
+              <div className="text-xl font-bold text-white tracking-tight flex items-center justify-center gap-2">
+                Ownbase
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-indigo-500/15 text-indigo-400 border border-indigo-500/30">
+                  PaaS
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 mt-1">Native Windows Server Orchestration Platform</p>
+            </div>
+          </div>
+
+          <div className="text-center">
+            <h2 className="text-sm font-semibold text-slate-200">Authentication Required</h2>
+            <p className="text-xs text-slate-400 mt-0.5">Please sign in to access your server dashboard</p>
+          </div>
+
+          {loginError && (
+            <div className="p-3.5 rounded-xl bg-rose-950/40 border border-rose-500/30 text-rose-300 text-xs flex items-center gap-2.5">
+              <AlertCircle className="w-4 h-4 flex-shrink-0 text-rose-400" />
+              <span>{loginError}</span>
+            </div>
+          )}
+
+          <form onSubmit={handleInlineLogin} className="space-y-4">
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1.5">
+                Username
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-2.5 text-slate-500">
+                  <ShieldCheck className="w-4 h-4" />
+                </span>
+                <input
+                  type="text"
+                  required
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder="Enter administrator username"
+                  className="w-full bg-black/50 border border-slate-700/80 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1.5">
+                Password
+              </label>
+              <div className="relative">
+                <span className="absolute left-3.5 top-2.5 text-slate-500">
+                  <Activity className="w-4 h-4" />
+                </span>
+                <input
+                  type="password"
+                  required
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder="••••••••••••"
+                  className="w-full bg-black/50 border border-slate-700/80 rounded-xl pl-10 pr-3.5 py-2.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 transition-all font-mono"
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={isLoggingIn}
+              className="w-full py-3 px-4 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold text-xs transition-all shadow-lg shadow-indigo-600/25 flex items-center justify-center gap-2 disabled:opacity-50"
+            >
+              {isLoggingIn ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <span>Verifying Credentials...</span>
+                </>
+              ) : (
+                <>
+                  <ShieldCheck className="w-4 h-4" />
+                  <span>Sign In to Ownbase Server</span>
+                </>
+              )}
+            </button>
+          </form>
+
+          <div className="pt-2 border-t border-slate-800 text-center">
+            <button
+              type="button"
+              onClick={() => setIsSetupWizardOpen(true)}
+              className="text-xs text-indigo-400 hover:text-indigo-300 transition-colors"
+            >
+              Initial Setup: Create Root Admin Account
+            </button>
+          </div>
+        </div>
+
+        <SetupWizardModal
+          isOpen={isSetupWizardOpen}
+          onSetupComplete={() => {
+            setIsSetupWizardOpen(false);
+            const user = authStore.getUser();
+            if (user) {
+              setCurrentUser(user);
+              fetchAllData();
+            }
+          }}
+        />
+      </div>
+    );
+  }
+
   return (
     <div className="h-screen w-full bg-[#070b12] text-slate-100 flex flex-col md:flex-row font-sans overflow-hidden">
       {/* ======================================================== */}
@@ -407,6 +656,17 @@ export default function DashboardPage() {
                 <span>24/7 Server Engine Active</span>
               </div>
             </div>
+          </div>
+
+          {/* Prominent Quick Action: Upload / Deploy .exe */}
+          <div className="px-3 pt-3 pb-1">
+            <button
+              onClick={() => setIsUploadExeModalOpen(true)}
+              className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 border border-indigo-400/30 transition-all transform hover:scale-[1.02] active:scale-[0.98]"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>+ Upload .exe Service</span>
+            </button>
           </div>
 
           {/* Desktop Navigation Links */}
@@ -720,6 +980,20 @@ export default function DashboardPage() {
                 </button>
               </div>
 
+              {/* Mobile Quick Action: Upload / Deploy .exe */}
+              <div>
+                <button
+                  onClick={() => {
+                    setIsMobileMenuOpen(false);
+                    setIsUploadExeModalOpen(true);
+                  }}
+                  className="w-full flex items-center justify-center gap-2 py-2.5 px-3 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 text-white font-semibold text-xs shadow-md shadow-indigo-600/20 border border-indigo-400/30"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>+ Upload .exe Service</span>
+                </button>
+              </div>
+
               <div className="space-y-1">
                 <button
                   onClick={() => navigateTab('overview')}
@@ -860,12 +1134,11 @@ export default function DashboardPage() {
           onLogoutClick={handleLogout}
           activeTab={activeTab}
         />
-
         {!isElectronAvailable && (
           <div className="bg-blue-950/40 border-b border-blue-600/30 px-4 sm:px-6 py-2 text-[11px] sm:text-xs text-blue-300 flex items-center justify-between gap-2 shrink-0">
             <div className="flex items-center gap-2 truncate">
               <span className="w-2 h-2 rounded-full bg-emerald-400 live-indicator-active shrink-0" />
-              <span className="truncate">Remote Mobile Session • Connected to Windows Server Hub</span>
+              <span className="truncate">Remote Session • Connected to Ownbase Server</span>
             </div>
             <span className="text-[9px] sm:text-[10px] font-mono px-2 py-0.5 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30 shrink-0">
               Web REST Gateway
@@ -925,7 +1198,7 @@ export default function DashboardPage() {
                     <Power className="w-4 h-4 text-amber-400" />
                   </div>
                   <div className="text-base sm:text-lg font-bold text-white">Persistence Lock</div>
-                  <div className="text-[10px] sm:text-[11px] text-amber-300 mt-1">
+                  <div className="text-[10px] sm:text-[11px] text-slate-400 mt-1">
                     Sleep blocked
                   </div>
                 </div>
@@ -948,7 +1221,25 @@ export default function DashboardPage() {
               />
 
               {/* Quick Launch Cards */}
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 sm:gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+                <div
+                  onClick={() => setIsUploadExeModalOpen(true)}
+                  className="glass-card rounded-2xl p-4 sm:p-5 border border-indigo-500/30 bg-indigo-950/20 hover:border-indigo-500/60 transition-all flex items-center justify-between cursor-pointer group"
+                >
+                  <div className="flex items-center space-x-3.5">
+                    <div className="w-11 h-11 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center group-hover:scale-105 transition-transform">
+                      <Upload className="w-5 h-5 text-indigo-400" />
+                    </div>
+                    <div>
+                      <h3 className="text-xs sm:text-sm font-semibold text-white">Upload &amp; Deploy .exe</h3>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        Native Windows binary service
+                      </p>
+                    </div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-slate-500 group-hover:text-white transition-colors" />
+                </div>
+
                 <div
                   onClick={() => navigateTab('files')}
                   className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/40 hover:border-emerald-500/40 transition-all flex items-center justify-between cursor-pointer group"
@@ -1176,6 +1467,190 @@ export default function DashboardPage() {
         }}
         onClose={() => setIsLoginModalOpen(false)}
       />
+
+      {/* Dedicated Upload & Deploy Executable Modal Dialog */}
+      {isUploadExeModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-md">
+          <div className="w-full max-w-lg glass-card bg-slate-900/95 border border-indigo-500/30 rounded-3xl p-6 shadow-2xl space-y-5 animate-in fade-in zoom-in-95 duration-200">
+            <div className="flex items-center justify-between pb-3 border-b border-slate-800">
+              <div className="flex items-center space-x-3">
+                <div className="w-10 h-10 rounded-xl bg-indigo-500/10 border border-indigo-500/30 flex items-center justify-center text-indigo-400">
+                  <Upload className="w-5 h-5" />
+                </div>
+                <div>
+                  <h2 className="text-base font-semibold text-white">Upload &amp; Deploy Native .exe</h2>
+                  <p className="text-xs text-slate-400">Deploy custom Windows executable as a managed service</p>
+                </div>
+              </div>
+              <button
+                onClick={() => {
+                  setIsUploadExeModalOpen(false);
+                  setExeFile(null);
+                  setExeBinary('');
+                  setExeUploadSuccess(false);
+                }}
+                className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Step 1: Upload File Area */}
+            <div className="space-y-2">
+              <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono">
+                Executable Binary (.exe)
+              </label>
+              <div className="relative border-2 border-dashed border-slate-700 hover:border-indigo-500/60 rounded-2xl p-6 text-center transition-colors bg-slate-950/40">
+                <input
+                  type="file"
+                  accept=".exe"
+                  onChange={handleExeFileUpload}
+                  className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                  disabled={isUploadingExeFile}
+                />
+                {isUploadingExeFile ? (
+                  <div className="space-y-3">
+                    <Loader2 className="w-8 h-8 text-indigo-400 animate-spin mx-auto" />
+                    <div className="text-xs text-slate-300 font-medium">Uploading {exeFile?.name}...</div>
+                    <div className="w-full bg-slate-800 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-indigo-500 h-2 rounded-full transition-all duration-150"
+                        style={{ width: `${uploadExeProgress}%` }}
+                      />
+                    </div>
+                    <div className="text-[11px] font-mono text-indigo-400">{uploadExeProgress}%</div>
+                  </div>
+                ) : exeUploadSuccess ? (
+                  <div className="flex items-center justify-center gap-2 text-emerald-400 text-xs font-medium">
+                    <Check className="w-5 h-5" />
+                    <span>Uploaded: {exeBinary}</span>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    <Upload className="w-8 h-8 text-slate-500 mx-auto" />
+                    <div className="text-xs text-slate-300 font-medium">
+                      Drag &amp; drop your .exe here, or <span className="text-indigo-400 underline">browse</span>
+                    </div>
+                    <div className="text-[11px] text-slate-500">
+                      Supports standalone Go, Rust, C#, Python, or Node .exe binaries
+                    </div>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Step 2: Service Configuration Form */}
+            <form onSubmit={handleDeployUploadedExe} className="space-y-3.5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1">
+                    Service Name
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    value={exeName}
+                    onChange={(e) => setExeName(e.target.value)}
+                    placeholder="e.g. My REST API"
+                    className="w-full bg-black/60 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-sans"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1">
+                    Port Number
+                  </label>
+                  <input
+                    type="number"
+                    required
+                    min={1}
+                    max={65535}
+                    value={exePort}
+                    onChange={(e) => setExePort(parseInt(e.target.value) || 8085)}
+                    placeholder="8085"
+                    className="w-full bg-black/60 border border-slate-700 rounded-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                  />
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1">
+                    Subdomain / Route
+                  </label>
+                  <div className="flex items-center">
+                    <input
+                      type="text"
+                      required
+                      value={exeSubdomain}
+                      onChange={(e) => setExeSubdomain(e.target.value)}
+                      placeholder="myapp"
+                      className="w-full bg-black/60 border border-slate-700 rounded-l-xl px-3 py-2 text-xs text-white focus:outline-none focus:border-indigo-500 font-mono"
+                    />
+                    <span className="bg-slate-800 border border-l-0 border-slate-700 rounded-r-xl px-2.5 py-2 text-xs text-slate-400 font-mono">
+                      .localhost
+                    </span>
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] uppercase tracking-wider text-slate-400 font-mono mb-1">
+                    Binary Filename
+                  </label>
+                  <input
+                    type="text"
+                    required
+                    readOnly
+                    value={exeBinary}
+                    placeholder="Auto-filled after upload"
+                    className="w-full bg-slate-950/80 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-400 font-mono cursor-not-allowed"
+                  />
+                </div>
+              </div>
+
+              <div className="flex items-center gap-2 pt-1">
+                <input
+                  type="checkbox"
+                  id="exeAutoStart"
+                  checked={exeAutoStart}
+                  onChange={(e) => setExeAutoStart(e.target.checked)}
+                  className="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0"
+                />
+                <label htmlFor="exeAutoStart" className="text-xs text-slate-300 cursor-pointer">
+                  Auto-start process with Ownbase on system boot
+                </label>
+              </div>
+
+              <div className="pt-2 flex items-center justify-end gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => setIsUploadExeModalOpen(false)}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={!exeBinary || isDeployingExe}
+                  className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 hover:from-blue-500 hover:to-purple-500 text-white text-xs font-semibold shadow-lg shadow-indigo-600/30 disabled:opacity-50 flex items-center gap-2"
+                >
+                  {isDeployingExe ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Deploying Service...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Deploy &amp; Start Service</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

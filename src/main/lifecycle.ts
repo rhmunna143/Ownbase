@@ -192,7 +192,7 @@ export class LifecycleManager {
       },
       { type: 'separator' },
       {
-        label: 'Quit Server Hub',
+        label: 'Quit Ownbase',
         click: () => this.quitApp(),
       },
     ]);

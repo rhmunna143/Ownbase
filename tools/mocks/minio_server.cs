@@ -154,7 +154,8 @@ namespace NativeMinio
 
                 // 3. S3 REST XML or JSON API
                 bool isS3Client = userAgent.Contains("aws-sdk") || userAgent.Contains("minio") || userAgent.Contains("boto") || userAgent.Contains("rclone") || req.Headers["Authorization"] != null;
-                bool isXmlRequest = accept.Contains("xml") || req.QueryString["format"] == "xml" || (isS3Client && !accept.Contains("json"));
+                bool isBrowser = accept.Contains("text/html");
+                bool isXmlRequest = !isBrowser && (accept.Contains("xml") || req.QueryString["format"] == "xml" || (isS3Client && !accept.Contains("json")));
                 bool isJsonRequest = accept.Contains("application/json") || req.QueryString["format"] == "json";
 
                 if (lowerPath == "/" || lowerPath == "")
@@ -315,7 +316,7 @@ namespace NativeMinio
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>MinIO S3 Object Storage Console - Native Windows Server</title>
+    <title>Ownbase S3 Storage Console</title>
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"" rel=""stylesheet"">
@@ -368,7 +369,7 @@ namespace NativeMinio
         </div>
         <div style=""display: flex; gap: 10px;"">
             <button onclick=""copyEndpoint()"" class=""btn btn-subtle"" id=""copyBtn"">&#128203; Copy S3 Endpoint</button>
-            <a href=""http://localhost:3000"" class=""btn btn-subtle"">&larr; Server Hub</a>
+            <a href=""http://localhost:3000"" class=""btn btn-subtle"">&larr; Ownbase</a>
         </div>
     </header>
 

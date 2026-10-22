@@ -16,6 +16,7 @@ import {
   AlertTriangle,
   Server,
   Wifi,
+  ShieldAlert,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
 
@@ -52,6 +53,9 @@ export const StorageAllocationCard: React.FC = () => {
   const [sshStatus, setSshStatus] = useState<{ installed: boolean; running: boolean; port: number; host: string } | null>(null);
   const [isTogglingSsh, setIsTogglingSsh] = useState(false);
   const [copiedSsh, setCopiedSsh] = useState(false);
+  const [sshError, setSshError] = useState<string | null>(null);
+  const [sshAdminCommand, setSshAdminCommand] = useState<string | null>(null);
+  const [copiedAdminCmd, setCopiedAdminCmd] = useState(false);
 
   // Firewall State
   const [isApplyingFirewall, setIsApplyingFirewall] = useState(false);
@@ -110,13 +114,21 @@ export const StorageAllocationCard: React.FC = () => {
   const handleToggleSsh = async () => {
     if (!sshStatus) return;
     setIsTogglingSsh(true);
+    setSshError(null);
+    setSshAdminCommand(null);
     try {
       const res = await serverApi.toggleSsh(!sshStatus.running);
       if (res.success) {
-        setSshStatus((prev) => (prev ? { ...prev, running: res.running } : null));
+        setSshStatus((prev) => (prev ? { ...prev, running: res.running, installed: true } : null));
+        setSshError(null);
+      } else {
+        setSshError(res.error || 'Failed to start OpenSSH service.');
+        if (res.command) {
+          setSshAdminCommand(res.command);
+        }
       }
     } catch (err: any) {
-      alert(`SSH Toggle error: ${err.message}`);
+      setSshError(err.message || 'Error communicating with SSH daemon API');
     } finally {
       setIsTogglingSsh(false);
     }
@@ -341,9 +353,38 @@ export const StorageAllocationCard: React.FC = () => {
                     : 'bg-purple-600 text-white hover:bg-purple-500 shadow-md shadow-purple-600/20'
                 }`}
               >
-                {isTogglingSsh ? 'Updating...' : sshStatus?.running ? 'Stop SSH' : 'Enable SSH'}
+                {isTogglingSsh ? 'Configuring SSH...' : sshStatus?.running ? 'Stop SSH' : 'Enable SSH'}
               </button>
             </div>
+
+            {sshError && (
+              <div className="p-3 rounded-xl bg-amber-950/40 border border-amber-500/30 text-amber-200 text-xs space-y-2 mb-3">
+                <div className="font-semibold flex items-center gap-1.5 text-amber-300">
+                  <ShieldAlert className="w-4 h-4 text-amber-400 shrink-0" />
+                  <span>SSH Service Notice</span>
+                </div>
+                <p className="text-[11px] text-amber-200/90 leading-relaxed">{sshError}</p>
+                {sshAdminCommand && (
+                  <div className="pt-1">
+                    <div className="text-[10px] text-slate-400 font-mono mb-1">Run in PowerShell as Administrator:</div>
+                    <div className="flex items-center justify-between bg-black/60 px-2.5 py-1.5 rounded border border-amber-500/40 font-mono text-[11px] text-amber-300">
+                      <span className="truncate max-w-[280px] sm:max-w-md">{sshAdminCommand}</span>
+                      <button
+                        onClick={() => {
+                          navigator.clipboard.writeText(sshAdminCommand);
+                          setCopiedAdminCmd(true);
+                          setTimeout(() => setCopiedAdminCmd(false), 2000);
+                        }}
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0 ml-2"
+                        title="Copy command"
+                      >
+                        {copiedAdminCmd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
 
             <div className="space-y-3 text-xs">
               <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">

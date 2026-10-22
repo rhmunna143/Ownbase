@@ -745,7 +745,7 @@ namespace NativeFileBrowser
                 <p>RFC 7233 Streaming • Touch Ready • Native Windows Engine</p>
             </div>
         </div>
-        <a href=""http://localhost:3000"" class=""hub-link"">← Server Hub</a>
+        <a href=""http://localhost:3000"" class=""hub-link"">← Ownbase</a>
     </header>
 
     <div class=""main-container"">

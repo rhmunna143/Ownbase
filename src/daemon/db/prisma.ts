@@ -158,6 +158,73 @@ export class PrismaManager {
 
       logger.success('prisma', 'Initial services and routes seeded into PostgreSQL.');
     }
+
+    // Ensure core services and routes exist even if database was initialized previously
+    const defaultServices = [
+      {
+        name: 'Web Terminal',
+        type: 'terminal',
+        executable: 'terminal.exe',
+        port: 7681,
+        autoStart: true,
+        description: 'Interactive browser terminal with PowerShell & CMD access',
+        subdomain: 'terminal',
+      },
+      {
+        name: 'S3-Compatible Object Storage',
+        type: 'minio',
+        executable: 'minio.exe',
+        port: 9000,
+        autoStart: true,
+        description: 'High-performance S3-compatible object storage server with Web Console',
+        subdomain: 's3',
+      },
+      {
+        name: 'Syncthing Device Sync',
+        type: 'syncthing',
+        executable: 'syncthing.exe',
+        port: 8384,
+        autoStart: false,
+        description: 'Continuous peer-to-peer file synchronization and backup between devices',
+        subdomain: 'syncthing',
+      },
+    ];
+
+    for (const def of defaultServices) {
+      const existing = await client.service.findFirst({ where: { type: def.type } });
+      if (!existing) {
+        await client.service.create({
+          data: {
+            name: def.name,
+            type: def.type,
+            executable: def.executable,
+            port: def.port,
+            status: 'stopped',
+            autoStart: def.autoStart,
+            description: def.description,
+            routes: {
+              create: {
+                subdomain: def.subdomain,
+                targetPort: def.port,
+                tlsEnabled: true,
+              },
+            },
+          },
+        });
+      } else {
+        const existingRoute = await client.route.findFirst({ where: { subdomain: def.subdomain } });
+        if (!existingRoute) {
+          await client.route.create({
+            data: {
+              serviceId: existing.id,
+              subdomain: def.subdomain,
+              targetPort: def.port,
+              tlsEnabled: true,
+            },
+          });
+        }
+      }
+    }
   }
 
   public async getServices(): Promise<ServiceRecord[]> {

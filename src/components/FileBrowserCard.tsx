@@ -165,8 +165,10 @@ export const FileBrowserCard: React.FC = () => {
     }
   };
 
-  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
+  const [isDraggingOver, setIsDraggingOver] = useState(false);
+  const dragCounter = useRef(0);
+
+  const processUpload = async (files: FileList | File[]) => {
     if (!files || files.length === 0) return;
 
     setIsUploading(true);
@@ -199,10 +201,63 @@ export const FileBrowserCard: React.FC = () => {
       });
     }
 
-    setUploadStatus(null);
-    setIsUploading(false);
+    // Keep completed state visible for 2.5s so user sees the 100% completion
+    setUploadStatus((prev) => prev ? {
+      ...prev,
+      fileName: `Uploaded ${totalFilesCount} file${totalFilesCount > 1 ? 's' : ''} successfully!`,
+      filePercent: 100,
+      overallPercent: 100,
+    } : null);
+
+    setTimeout(() => {
+      setUploadStatus(null);
+      setIsUploading(false);
+      setUploadProgress(0);
+    }, 2500);
+
     if (fileInputRef.current) fileInputRef.current.value = '';
     loadDirectory(currentPath);
+  };
+
+  const handleUploadFiles = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files) {
+      await processUpload(e.target.files);
+    }
+  };
+
+  const handleDragEnter = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current += 1;
+    if (e.dataTransfer.items && e.dataTransfer.items.length > 0) {
+      setIsDraggingOver(true);
+    }
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    dragCounter.current -= 1;
+    if (dragCounter.current <= 0) {
+      setIsDraggingOver(false);
+      dragCounter.current = 0;
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+  };
+
+  const handleDrop = async (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDraggingOver(false);
+    dragCounter.current = 0;
+
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      await processUpload(e.dataTransfer.files);
+    }
   };
 
   const formatFileSize = (bytes: number): string => {
@@ -253,7 +308,26 @@ export const FileBrowserCard: React.FC = () => {
   const pathParts = currentPath ? currentPath.split('/').filter(Boolean) : [];
 
   return (
-    <div className="space-y-4">
+    <div
+      onDragEnter={handleDragEnter}
+      onDragLeave={handleDragLeave}
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      className="space-y-4 relative min-h-[500px]"
+    >
+      {/* Full-Screen Drag & Drop Overlay */}
+      {isDraggingOver && (
+        <div className="absolute inset-0 z-50 rounded-2xl bg-blue-950/85 backdrop-blur-md border-2 border-dashed border-blue-400 flex flex-col items-center justify-center pointer-events-none animate-in fade-in zoom-in-95 duration-150 shadow-2xl">
+          <div className="w-16 h-16 rounded-2xl bg-blue-500/20 border border-blue-400/50 flex items-center justify-center text-blue-300 mb-3 shadow-lg shadow-blue-500/30">
+            <Upload className="w-8 h-8 animate-bounce" />
+          </div>
+          <h3 className="text-lg font-bold text-white tracking-wide">Drop files anywhere to upload</h3>
+          <p className="text-xs text-blue-300 mt-1 font-mono">
+            Destination: {currentPath ? `/${currentPath}` : 'Root Storage'}
+          </p>
+        </div>
+      )}
+
       {/* Top Header Card */}
       <div className="glass-card rounded-2xl p-4 sm:p-5 border border-slate-800 bg-slate-900/60 backdrop-blur-md">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
@@ -820,6 +894,35 @@ export const FileBrowserCard: React.FC = () => {
               </button>
             </div>
           </form>
+        </div>
+      )}
+
+      {/* Floating Bottom-Right Upload Monitor */}
+      {uploadStatus && (
+        <div className="fixed bottom-6 right-6 z-50 w-80 sm:w-96 glass-card rounded-2xl p-4 border border-blue-500/50 bg-[#0c1222]/95 backdrop-blur-xl shadow-2xl shadow-black/80 animate-in slide-in-from-bottom-4 duration-200">
+          <div className="flex items-center justify-between gap-2 mb-2">
+            <div className="flex items-center gap-2 min-w-0">
+              {uploadStatus.filePercent === 100 ? (
+                <div className="w-6 h-6 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center shrink-0">
+                  <Check className="w-3.5 h-3.5" />
+                </div>
+              ) : (
+                <Loader2 className="w-4 h-4 text-blue-400 animate-spin shrink-0" />
+              )}
+              <span className="text-xs font-semibold text-white truncate">{uploadStatus.fileName}</span>
+            </div>
+            <span className="text-xs font-bold font-mono text-cyan-400 shrink-0">{uploadStatus.filePercent}%</span>
+          </div>
+          <div className="w-full bg-slate-900 h-2 rounded-full overflow-hidden border border-slate-700/60 p-[1px]">
+            <div
+              className="h-full bg-gradient-to-r from-blue-500 via-cyan-400 to-emerald-400 rounded-full transition-all duration-150"
+              style={{ width: `${uploadStatus.filePercent}%` }}
+            />
+          </div>
+          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono mt-2">
+            <span>{formatFileSize(uploadStatus.loadedBytes)} / {formatFileSize(uploadStatus.totalBytes)}</span>
+            <span>File {uploadStatus.currentIndex} of {uploadStatus.totalFiles}</span>
+          </div>
         </div>
       )}
     </div>

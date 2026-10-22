@@ -148,7 +148,7 @@ export class CaddyManager {
       const activeRoutes = routes.filter((r) => r.isActive);
       const localIps = this.getLocalIpv4Addresses();
 
-      logger.info('caddy', `Synchronizing ${activeRoutes.length} service routes, Web API bridge, and Catch-All Server Hub...`);
+      logger.info('caddy', `Synchronizing ${activeRoutes.length} service routes, Web API bridge, and Catch-All Ownbase Server...`);
 
       const caddyRoutes: any[] = [];
 
@@ -289,7 +289,7 @@ export class CaddyManager {
 
       const res = await this.request('POST', '/load', fullConfig);
       if (res.statusCode >= 200 && res.statusCode < 300) {
-        logger.success('caddy', `Caddy routes synchronized: ${activeRoutes.length} services + Web API + Server Hub Dashboard on port 80.`);
+        logger.success('caddy', `Caddy routes synchronized: ${activeRoutes.length} services + Web API + Ownbase Server Dashboard on port 80.`);
         return { success: true, count: activeRoutes.length };
       }
 

@@ -191,7 +191,7 @@ namespace NativeSyncthing
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
-    <title>Syncthing - Native Windows Server Hub</title>
+    <title>Syncthing - Ownbase</title>
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"" rel=""stylesheet"">
@@ -251,7 +251,7 @@ namespace NativeSyncthing
         </div>
         <div style=""display: flex; gap: 10px;"">
             <button class=""btn"" onclick=""alert('Rescan started on all active sync folders.')"">&#8635; Rescan All</button>
-            <a href=""http://localhost:3000"" class=""btn btn-subtle"">&larr; Server Hub</a>
+            <a href=""http://localhost:3000"" class=""btn btn-subtle"">&larr; Ownbase</a>
         </div>
     </header>
 

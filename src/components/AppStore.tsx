@@ -551,7 +551,7 @@ export const AppStore: React.FC<AppStoreProps> = ({
                   className="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0"
                 />
                 <label htmlFor="app-autostart" className="text-slate-300 cursor-pointer">
-                  Auto-start with Windows Server Hub on boot
+                  Auto-start with Ownbase Server on boot
                 </label>
               </div>
 
