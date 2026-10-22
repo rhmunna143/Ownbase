@@ -207,6 +207,13 @@ export class PrismaManager {
     };
   }
 
+  public async deleteService(id: string): Promise<boolean> {
+    const client = this.getClient();
+    await client.route.deleteMany({ where: { serviceId: id } }).catch(() => {});
+    await client.service.delete({ where: { id } });
+    return true;
+  }
+
   public async getRoutes(): Promise<RouteRecord[]> {
     const client = this.getClient();
     const routes = await client.route.findMany({

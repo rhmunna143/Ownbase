@@ -26,6 +26,13 @@ import {
   Zap,
   Globe,
   Database,
+  HardDrive,
+  Flame,
+  Code2,
+  Boxes,
+  Workflow,
+  Trash2,
+  Search,
 } from 'lucide-react';
 import { ServiceRecord, ProcessStatus, LogEntry } from '@/shared/types';
 
@@ -43,9 +50,237 @@ interface ServicesTableProps {
   onStartService: (serviceId: string) => Promise<void>;
   onStopService: (serviceId: string) => Promise<void>;
   onRestartService: (serviceId: string) => Promise<void>;
+  onDeleteService?: (serviceId: string) => Promise<void>;
   getServiceLogs: (serviceId: string) => Promise<LogEntry[]>;
   isLoading: boolean;
 }
+
+interface ServiceVisualTheme {
+  icon: React.ReactNode;
+  bgClass: string;
+  borderClass: string;
+  badgeLabel: string;
+  badgeClass: string;
+}
+
+export const getServiceVisualTheme = (service: ServiceRecord): ServiceVisualTheme => {
+  const t = (service.type || '').toLowerCase();
+  const n = (service.name || '').toLowerCase();
+  const e = (service.executable || '').toLowerCase();
+  const tmpl = ((service as any).templateId || '').toLowerCase();
+  const haystack = `${t} ${n} ${e} ${tmpl}`;
+
+  // 1. MinIO / S3 Object Storage
+  if (haystack.includes('minio') || haystack.includes('s3') || haystack.includes('bucket')) {
+    return {
+      icon: <HardDrive className="w-5 h-5 text-amber-400" />,
+      bgClass: 'bg-amber-500/10',
+      borderClass: 'border-amber-500/30 group-hover:border-amber-500/50',
+      badgeLabel: 'Object Storage',
+      badgeClass: 'bg-amber-950/60 text-amber-300 border-amber-800/40',
+    };
+  }
+
+  // 2. PostgreSQL / Relational DB
+  if (
+    haystack.includes('postgres') ||
+    haystack.includes('psql') ||
+    haystack.includes('mysql') ||
+    haystack.includes('mariadb') ||
+    haystack.includes('sqlite') ||
+    haystack.includes('database')
+  ) {
+    return {
+      icon: <Database className="w-5 h-5 text-cyan-400" />,
+      bgClass: 'bg-cyan-500/10',
+      borderClass: 'border-cyan-500/30 group-hover:border-cyan-500/50',
+      badgeLabel: 'Database',
+      badgeClass: 'bg-cyan-950/60 text-cyan-300 border-cyan-800/40',
+    };
+  }
+
+  // 3. Redis / In-memory Cache
+  if (
+    haystack.includes('redis') ||
+    haystack.includes('keydb') ||
+    haystack.includes('valkey') ||
+    haystack.includes('memcached') ||
+    haystack.includes('cache')
+  ) {
+    return {
+      icon: <Flame className="w-5 h-5 text-rose-400" />,
+      bgClass: 'bg-rose-500/10',
+      borderClass: 'border-rose-500/30 group-hover:border-rose-500/50',
+      badgeLabel: 'Cache',
+      badgeClass: 'bg-rose-950/60 text-rose-300 border-rose-800/40',
+    };
+  }
+
+  // 4. FileBrowser / Storage UI
+  if (haystack.includes('filebrowser') || haystack.includes('file') || haystack.includes('explorer')) {
+    return {
+      icon: <FolderTree className="w-5 h-5 text-emerald-400" />,
+      bgClass: 'bg-emerald-500/10',
+      borderClass: 'border-emerald-500/30 group-hover:border-emerald-500/50',
+      badgeLabel: 'File Manager',
+      badgeClass: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40',
+    };
+  }
+
+  // 5. Caddy / Reverse Proxy
+  if (
+    haystack.includes('caddy') ||
+    haystack.includes('nginx') ||
+    haystack.includes('proxy') ||
+    haystack.includes('gateway') ||
+    haystack.includes('traefik')
+  ) {
+    return {
+      icon: <Server className="w-5 h-5 text-blue-400" />,
+      bgClass: 'bg-blue-500/10',
+      borderClass: 'border-blue-500/30 group-hover:border-blue-500/50',
+      badgeLabel: 'Reverse Proxy',
+      badgeClass: 'bg-blue-950/60 text-blue-300 border-blue-800/40',
+    };
+  }
+
+  // 6. Ollama / AI / LLM
+  if (
+    haystack.includes('ollama') ||
+    haystack.includes('ai') ||
+    haystack.includes('llm') ||
+    haystack.includes('vllm') ||
+    haystack.includes('whisper')
+  ) {
+    return {
+      icon: <Bot className="w-5 h-5 text-purple-400" />,
+      bgClass: 'bg-purple-500/10',
+      borderClass: 'border-purple-500/30 group-hover:border-purple-500/50',
+      badgeLabel: 'AI / LLM',
+      badgeClass: 'bg-purple-950/60 text-purple-300 border-purple-800/40',
+    };
+  }
+
+  // 7. Node.js / JavaScript / TypeScript runtime
+  if (
+    haystack.includes('node') ||
+    haystack.includes('express') ||
+    haystack.includes('fastify') ||
+    haystack.includes('bun') ||
+    haystack.includes('deno') ||
+    haystack.includes('next')
+  ) {
+    return {
+      icon: <Zap className="w-5 h-5 text-green-400" />,
+      bgClass: 'bg-green-500/10',
+      borderClass: 'border-green-500/30 group-hover:border-green-500/50',
+      badgeLabel: 'Node.js',
+      badgeClass: 'bg-green-950/60 text-green-300 border-green-800/40',
+    };
+  }
+
+  // 8. Python runtime / FastAPI / Flask
+  if (
+    haystack.includes('python') ||
+    haystack.includes('fastapi') ||
+    haystack.includes('flask') ||
+    haystack.includes('django') ||
+    haystack.includes('uvicorn')
+  ) {
+    return {
+      icon: <Code2 className="w-5 h-5 text-sky-400" />,
+      bgClass: 'bg-sky-500/10',
+      borderClass: 'border-sky-500/30 group-hover:border-sky-500/50',
+      badgeLabel: 'Python',
+      badgeClass: 'bg-sky-950/60 text-sky-300 border-sky-800/40',
+    };
+  }
+
+  // 9. Pipeline / Build / Release / Test services
+  if (
+    haystack.includes('pipeline') ||
+    haystack.includes('release') ||
+    haystack.includes('rollback') ||
+    haystack.includes('test')
+  ) {
+    return {
+      icon: <Workflow className="w-5 h-5 text-pink-400" />,
+      bgClass: 'bg-pink-500/10',
+      borderClass: 'border-pink-500/30 group-hover:border-pink-500/50',
+      badgeLabel: 'Pipeline App',
+      badgeClass: 'bg-pink-950/60 text-pink-300 border-pink-800/40',
+    };
+  }
+
+  // 10. Web / Frontend / HTTP
+  if (
+    haystack.includes('web') ||
+    haystack.includes('frontend') ||
+    haystack.includes('site') ||
+    haystack.includes('ui') ||
+    haystack.includes('html')
+  ) {
+    return {
+      icon: <Globe className="w-5 h-5 text-violet-400" />,
+      bgClass: 'bg-violet-500/10',
+      borderClass: 'border-violet-500/30 group-hover:border-violet-500/50',
+      badgeLabel: 'Web Service',
+      badgeClass: 'bg-violet-950/60 text-violet-300 border-violet-800/40',
+    };
+  }
+
+  // 11. Generic binary / Go / Rust
+  if (haystack.includes('binary') || haystack.includes('go') || haystack.includes('rust')) {
+    return {
+      icon: <Boxes className="w-5 h-5 text-indigo-400" />,
+      bgClass: 'bg-indigo-500/10',
+      borderClass: 'border-indigo-500/30 group-hover:border-indigo-500/50',
+      badgeLabel: 'Native App',
+      badgeClass: 'bg-indigo-950/60 text-indigo-300 border-indigo-800/40',
+    };
+  }
+
+  // Fallback: Deterministic palette based on string hash so custom services don't all look identical
+  const hash = service.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+  const palettes = [
+    {
+      icon: <Cpu className="w-5 h-5 text-teal-400" />,
+      bg: 'bg-teal-500/10',
+      border: 'border-teal-500/30',
+      badge: 'Service',
+      bclass: 'bg-teal-950/60 text-teal-300 border-teal-800/40',
+    },
+    {
+      icon: <Boxes className="w-5 h-5 text-amber-400" />,
+      bg: 'bg-amber-500/10',
+      border: 'border-amber-500/30',
+      badge: 'Worker',
+      bclass: 'bg-amber-950/60 text-amber-300 border-amber-800/40',
+    },
+    {
+      icon: <Layers className="w-5 h-5 text-fuchsia-400" />,
+      bg: 'bg-fuchsia-500/10',
+      border: 'border-fuchsia-500/30',
+      badge: 'Process',
+      bclass: 'bg-fuchsia-950/60 text-fuchsia-300 border-fuchsia-800/40',
+    },
+    {
+      icon: <Terminal className="w-5 h-5 text-slate-300" />,
+      bg: 'bg-slate-500/10',
+      border: 'border-slate-500/30',
+      badge: 'Daemon',
+      bclass: 'bg-slate-800 text-slate-300 border-slate-700',
+    },
+  ];
+  const p = palettes[hash % palettes.length];
+  return {
+    icon: p.icon,
+    bgClass: p.bg,
+    borderClass: p.border,
+    badgeLabel: p.badge,
+    badgeClass: p.bclass,
+  };
+};
 
 export const ServicesTable: React.FC<ServicesTableProps> = ({
   services,
@@ -54,6 +289,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
   onStartService,
   onStopService,
   onRestartService,
+  onDeleteService,
   getServiceLogs,
   isLoading,
 }) => {
@@ -64,6 +300,14 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
   const [serviceLogs, setServiceLogs] = useState<LogEntry[]>([]);
   const [isLoadingLogs, setIsLoadingLogs] = useState(false);
   const [copiedKey, setCopiedKey] = useState<string | null>(null);
+
+  // Search & Filter
+  const [searchQuery, setSearchQuery] = useState('');
+
+  // Delete Confirmation Modal State
+  const [deleteConfirmService, setDeleteConfirmService] = useState<ServiceRecord | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   // Form fields
   const [name, setName] = useState('');
@@ -156,23 +400,6 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
     }
   };
 
-  const getServiceIcon = (service: ServiceRecord) => {
-    switch (service.type) {
-      case 'filebrowser':
-        return <FolderTree className="w-5 h-5 text-emerald-400" />;
-      case 'ollama':
-        return <Bot className="w-5 h-5 text-purple-400" />;
-      case 'caddy':
-        return <Server className="w-5 h-5 text-blue-400" />;
-      case 'nodejs':
-        return <Zap className="w-5 h-5 text-green-400" />;
-      case 'python':
-        return <Globe className="w-5 h-5 text-indigo-400" />;
-      default:
-        return <Terminal className="w-5 h-5 text-amber-400" />;
-    }
-  };
-
   const getServiceUrl = (service: ServiceRecord) => {
     if (service.routes && service.routes.length > 0) {
       const r = service.routes[0];
@@ -183,6 +410,18 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
     }
     return null;
   };
+
+  // Filter services by user query
+  const filteredServices = services.filter((s) => {
+    if (!searchQuery.trim()) return true;
+    const q = searchQuery.toLowerCase();
+    return (
+      s.name.toLowerCase().includes(q) ||
+      (s.type || '').toLowerCase().includes(q) ||
+      s.executable.toLowerCase().includes(q) ||
+      (s.port && s.port.toString().includes(q))
+    );
+  });
 
   return (
     <div className="space-y-4">
@@ -196,19 +435,31 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
             <h2 className="text-sm font-semibold text-white flex items-center gap-2">
               Installed Native Services
               <span className="text-[11px] font-mono px-2 py-0.5 rounded-full bg-slate-800 text-slate-300 border border-slate-700">
-                {services.length} services
+                {services.length} registered
               </span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-emerald-950/60 text-emerald-300 border border-emerald-800/40">
                 Job Object Sandboxed
               </span>
             </h2>
             <p className="text-xs text-slate-400 mt-0.5">
-              Trusted workloads enclosed in Win32 Job Objects with memory limits, CPU quotas, and automatic crash recovery.
+              Workloads enclosed in Win32 Job Objects with memory caps, CPU quotas, and crash recovery.
             </p>
           </div>
         </div>
 
         <div className="flex items-center space-x-2">
+          {/* Quick Search */}
+          <div className="relative">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Filter services..."
+              className="pl-8 pr-3 py-1.5 text-xs bg-slate-900/80 border border-slate-800 rounded-lg text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 w-36 sm:w-48 transition-all"
+            />
+          </div>
+
           {/* View Toggle */}
           <div className="bg-slate-900 border border-slate-800 rounded-lg p-0.5 flex items-center">
             <button
@@ -218,7 +469,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                   ? 'bg-emerald-600 text-white shadow-sm'
                   : 'text-slate-400 hover:text-white'
               }`}
-              title="Card Grid View (1Panel style)"
+              title="Card Grid View"
             >
               <LayoutGrid className="w-4 h-4" />
             </button>
@@ -245,33 +496,55 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
         </div>
       </div>
 
+      {filteredServices.length === 0 && (
+        <div className="glass-card rounded-2xl p-8 border border-slate-800 bg-slate-900/30 text-center">
+          <div className="w-12 h-12 rounded-2xl bg-slate-800/80 border border-slate-700/60 mx-auto flex items-center justify-center mb-3">
+            <Search className="w-5 h-5 text-slate-500" />
+          </div>
+          <p className="text-sm font-medium text-slate-300">No services match your filter</p>
+          <p className="text-xs text-slate-500 mt-1">
+            Try adjusting your search query or add a new native service.
+          </p>
+        </div>
+      )}
+
       {/* Grid View (1Panel Style) */}
-      {viewMode === 'grid' && (
+      {viewMode === 'grid' && filteredServices.length > 0 && (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-          {services.map((service) => {
+          {filteredServices.map((service) => {
             const proc = processStatuses[service.id];
             const currentStatus = proc ? proc.status : service.status;
             const currentPid = proc?.pid || service.pid;
             const operating = operatingIds[service.id];
             const isRunning = currentStatus === 'running';
             const url = getServiceUrl(service);
+            const theme = getServiceVisualTheme(service);
 
             return (
               <div
                 key={service.id}
-                className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 hover:border-slate-700/80 transition-all flex flex-col justify-between"
+                className="group glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 hover:border-slate-700/80 transition-all flex flex-col justify-between"
               >
                 <div>
                   {/* Card Header */}
                   <div className="flex items-start justify-between mb-3">
                     <div className="flex items-center space-x-3">
-                      <div className="w-10 h-10 rounded-xl bg-slate-800/90 border border-slate-700/70 flex items-center justify-center">
-                        {getServiceIcon(service)}
+                      <div
+                        className={`w-10 h-10 rounded-xl ${theme.bgClass} border ${theme.borderClass} flex items-center justify-center transition-all shadow-inner`}
+                      >
+                        {theme.icon}
                       </div>
                       <div>
-                        <h3 className="text-sm font-semibold text-white tracking-tight">{service.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="text-sm font-semibold text-white tracking-tight">{service.name}</h3>
+                          <span
+                            className={`text-[9px] font-mono px-1.5 py-0.5 rounded-full border ${theme.badgeClass}`}
+                          >
+                            {theme.badgeLabel}
+                          </span>
+                        </div>
                         <div className="text-[11px] font-mono text-slate-400 mt-0.5 flex items-center gap-1.5">
-                          <span>{service.executable}</span>
+                          <span className="truncate max-w-[140px]">{service.executable}</span>
                           {service.port && <span className="text-blue-400">:{service.port}</span>}
                         </div>
                       </div>
@@ -393,6 +666,18 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                         <ExternalLink className="w-3 h-3" />
                       </a>
                     )}
+
+                    {/* Delete Service */}
+                    {onDeleteService && (
+                      <button
+                        onClick={() => setDeleteConfirmService(service)}
+                        disabled={!!operating || isDeleting}
+                        className="p-1.5 rounded-lg border border-slate-800 bg-slate-900/60 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 hover:border-rose-800/50 transition-colors disabled:opacity-50"
+                        title={`Delete ${service.name}`}
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    )}
                   </div>
 
                   {/* Lifecycle Buttons */}
@@ -443,7 +728,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       )}
 
       {/* Table View */}
-      {viewMode === 'table' && (
+      {viewMode === 'table' && filteredServices.length > 0 && (
         <div className="glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 overflow-x-auto">
           <table className="w-full text-left text-xs">
             <thead>
@@ -459,22 +744,39 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60">
-              {services.map((service) => {
+              {filteredServices.map((service) => {
                 const proc = processStatuses[service.id];
                 const currentStatus = proc ? proc.status : service.status;
                 const currentPid = proc?.pid || service.pid;
                 const operating = operatingIds[service.id];
                 const isRunning = currentStatus === 'running';
+                const theme = getServiceVisualTheme(service);
 
                 return (
                   <tr key={service.id} className="hover:bg-slate-800/30 transition-colors">
                     <td className="py-3 px-3">
-                      <div className="font-semibold text-slate-200">{service.name}</div>
-                      {service.type === 'filebrowser' && (
-                        <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
-                          Configured in Setup
+                      <div className="flex items-center space-x-2.5">
+                        <div
+                          className={`w-8 h-8 rounded-lg ${theme.bgClass} border ${theme.borderClass} flex items-center justify-center shrink-0`}
+                        >
+                          {React.cloneElement(theme.icon as React.ReactElement, { className: 'w-4 h-4' })}
                         </div>
-                      )}
+                        <div>
+                          <div className="font-semibold text-slate-200 flex items-center gap-1.5">
+                            <span>{service.name}</span>
+                            <span
+                              className={`text-[9px] font-mono px-1.5 py-0.2 rounded-full border ${theme.badgeClass}`}
+                            >
+                              {theme.badgeLabel}
+                            </span>
+                          </div>
+                          {service.type === 'filebrowser' && (
+                            <div className="text-[10px] text-emerald-400 font-medium mt-0.5">
+                              Configured in Setup
+                            </div>
+                          )}
+                        </div>
+                      </div>
                     </td>
                     <td className="py-3 px-3">
                       <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 uppercase">
@@ -541,6 +843,16 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                             Start
                           </button>
                         )}
+                        {onDeleteService && (
+                          <button
+                            onClick={() => setDeleteConfirmService(service)}
+                            disabled={!!operating || isDeleting}
+                            className="p-1.5 rounded-lg border border-slate-800 bg-slate-900 text-slate-400 hover:text-rose-400 hover:bg-rose-950/40 hover:border-rose-800/50 transition-colors"
+                            title={`Delete ${service.name}`}
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
                       </div>
                     </td>
                   </tr>
@@ -548,6 +860,89 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
               })}
             </tbody>
           </table>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal */}
+      {deleteConfirmService && (
+        <div className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="glass-card rounded-2xl p-6 border border-rose-500/30 max-w-md w-full shadow-2xl bg-[#0d121f]">
+            <div className="flex items-center space-x-3 mb-4">
+              <div className="w-10 h-10 rounded-xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-rose-400" />
+              </div>
+              <div>
+                <h3 className="text-sm font-semibold text-white">Delete Native Service</h3>
+                <p className="text-xs text-slate-400">Permanently unregister and clean up service</p>
+              </div>
+            </div>
+
+            <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800/80 mb-4 space-y-1.5">
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Name:</span>
+                <span className="text-white font-medium">{deleteConfirmService.name}</span>
+              </div>
+              <div className="flex justify-between text-xs">
+                <span className="text-slate-400">Executable:</span>
+                <span className="text-slate-300 font-mono text-[11px] truncate max-w-[220px]">
+                  {deleteConfirmService.executable}
+                </span>
+              </div>
+              {deleteConfirmService.port && (
+                <div className="flex justify-between text-xs">
+                  <span className="text-slate-400">Port:</span>
+                  <span className="text-blue-400 font-mono text-[11px]">:{deleteConfirmService.port}</span>
+                </div>
+              )}
+            </div>
+
+            <p className="text-xs text-slate-300 leading-relaxed mb-4">
+              Are you sure you want to delete <span className="text-rose-300 font-semibold">{deleteConfirmService.name}</span>?
+              If this service is running, its process will be immediately stopped and all mapped reverse proxy routes will be deleted.
+            </p>
+
+            {deleteError && (
+              <div className="mb-4 p-2.5 rounded-lg bg-rose-950/50 border border-rose-800/50 text-rose-300 text-xs flex items-center gap-2">
+                <AlertTriangle className="w-4 h-4 shrink-0" />
+                <span>{deleteError}</span>
+              </div>
+            )}
+
+            <div className="flex items-center justify-end space-x-2 pt-3 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeleteConfirmService(null);
+                  setDeleteError(null);
+                }}
+                disabled={isDeleting}
+                className="px-3.5 py-1.5 rounded-lg border border-slate-700 bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 text-xs transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={async () => {
+                  if (!onDeleteService || !deleteConfirmService) return;
+                  setIsDeleting(true);
+                  setDeleteError(null);
+                  try {
+                    await onDeleteService(deleteConfirmService.id);
+                    setDeleteConfirmService(null);
+                  } catch (err: any) {
+                    setDeleteError(err.message || 'Failed to delete service');
+                  } finally {
+                    setIsDeleting(false);
+                  }
+                }}
+                disabled={isDeleting}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold shadow-md shadow-rose-600/30 transition-all disabled:opacity-50"
+              >
+                {isDeleting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Trash2 className="w-3.5 h-3.5" />}
+                <span>{isDeleting ? 'Deleting...' : 'Delete Service'}</span>
+              </button>
+            </div>
+          </div>
         </div>
       )}
 

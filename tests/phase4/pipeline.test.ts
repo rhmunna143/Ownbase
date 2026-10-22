@@ -36,6 +36,7 @@ describe('Phase 4 - Item 4.7 & A2: Deployment Pipeline Orchestrator', () => {
         if (app?.activeReleaseId) {
           await releaseManager.stopReleaseProcess(app.activeReleaseId);
         }
+        await client.service.deleteMany({ where: { name: { startsWith: 'Pipeline Test App' } } }).catch(() => {});
         await client.app.delete({ where: { id: appId } }).catch(() => {});
       }
     } catch {}

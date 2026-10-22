@@ -14,6 +14,7 @@ export class PostgresManager {
   private dataDir: string = '';
   private status: PostgresStatus;
   private onStatusChangeCallback?: (status: PostgresStatus) => void;
+  private isReady: boolean = false;
 
   constructor(customPort = 5432) {
     this.port = customPort;
@@ -267,6 +268,7 @@ export class PostgresManager {
   }
 
   private startEngine(): Promise<void> {
+    this.isReady = false;
     return new Promise((resolve) => {
       const postgresExe = path.join(this.binDir, 'postgres.exe');
       const args = [
@@ -298,7 +300,11 @@ export class PostgresManager {
         const lines = data.toString().split(/\r?\n/).filter(Boolean);
         for (const line of lines) {
           if (line.includes('database system is ready to accept connections')) {
+            this.isReady = true;
             logger.success('postgres', line);
+          } else if (line.includes('the database system is starting up')) {
+            // Expected transient startup message while replaying WAL or checking cluster
+            logger.info('postgres', line);
           } else if (line.includes('FATAL') || line.includes('PANIC')) {
             logger.error('postgres', line);
           } else {
@@ -361,12 +367,34 @@ export class PostgresManager {
     });
   }
 
+  public async probeReady(port: number): Promise<boolean> {
+    if (this.isReady) return true;
+
+    const pgIsReadyExe = path.join(this.binDir, 'pg_isready.exe');
+    if (fs.existsSync(pgIsReadyExe)) {
+      return new Promise<boolean>((resolve) => {
+        execFile(pgIsReadyExe, ['-h', '127.0.0.1', '-p', port.toString(), '-t', '1'], { windowsHide: true }, (err) => {
+          if (!err) {
+            this.isReady = true;
+            return resolve(true);
+          }
+          resolve(false);
+        });
+      });
+    }
+
+    return true;
+  }
+
   public async waitForPort(port: number, maxWaitMs = 30000): Promise<boolean> {
     const startTime = Date.now();
     while (Date.now() - startTime < maxWaitMs) {
       const listening = await this.probePort(port, 500);
       if (listening) {
-        return true;
+        const ready = await this.probeReady(port);
+        if (ready) {
+          return true;
+        }
       }
       await new Promise((r) => setTimeout(r, 400));
     }

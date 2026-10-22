@@ -35,6 +35,7 @@ describe('Phase 4 - Item 4.6 & A4: Release & Instant Rollback Engine', () => {
     try {
       const client = prismaManager.getClient();
       if (appId) {
+        await client.service.deleteMany({ where: { name: { startsWith: 'Rollback Test App' } } }).catch(() => {});
         await client.app.delete({ where: { id: appId } }).catch(() => {});
       }
     } catch {}

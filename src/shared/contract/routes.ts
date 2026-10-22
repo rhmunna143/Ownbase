@@ -182,6 +182,14 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     minRole: 'READ_ONLY',
     summary: 'Get service log history',
   },
+  {
+    method: 'DELETE',
+    path: '/api/v1/services/:id',
+    auth: 'user',
+    minRole: 'ADMIN',
+    summary: 'Delete and unregister a managed service',
+    audit: true,
+  },
 
   // ==========================================
   // Routing & Caddy Edge Ingress

@@ -3,7 +3,7 @@
 **Document Version:** 1.0.0  
 **OpenAPI Specification:** 3.0.3  
 **Base URL:** `http://127.0.0.1:3001` (Direct Gateway) or `http://localhost` (Caddy Ingress Port 80)  
-**Total Endpoints:** 92
+**Total Endpoints:** 93
 
 ---
 
@@ -44,7 +44,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | **Lifecycle & Power Management** | 3 | Authenticated (Bearer / API Key) |
 | **Observability & Alerting** | 4 | Authenticated (Bearer / API Key) |
 | **Photos & Media Indexer** | 4 | Authenticated (Bearer / API Key) |
-| **Process Supervisor & App Catalog** | 9 | Authenticated (Bearer / API Key) |
+| **Process Supervisor & App Catalog** | 10 | Authenticated (Bearer / API Key) |
 | **Security Audit Stream** | 1 | Authenticated (Bearer / API Key) |
 | **Storage Volumes & Contained File Streaming** | 14 | Authenticated (Bearer / API Key) |
 | **System & Health Telemetry** | 6 | Mixed (Public / Authenticated) |
@@ -174,6 +174,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | `POST` | `/api/v1/services/:id/stop` | `OPERATOR` | ✅ Yes | Stop managed service process |
 | `POST` | `/api/v1/services/:id/restart` | `OPERATOR` | ✅ Yes | Restart managed service process |
 | `GET` | `/api/v1/services/:id/logs` | `READ_ONLY` | — | Get service log history |
+| `DELETE` | `/api/v1/services/:id` | `ADMIN` | ✅ Yes | Delete and unregister a managed service |
 | `GET` | `/api/v1/catalog` | `READ_ONLY` | — | List declarative app catalog recipes |
 | `POST` | `/api/v1/catalog/install` | `OPERATOR` | ✅ Yes | One-click install from catalog recipe |
 

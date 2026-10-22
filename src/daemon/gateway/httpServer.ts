@@ -601,6 +601,26 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/services/:id' && req.method === 'DELETE') {
+            try {
+              await this.supervisor.stopService(params.id).catch(() => {});
+              await this.prismaManager.deleteService(params.id);
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'service.delete',
+                entity: 'service',
+                entityId: params.id,
+                ipAddress: clientIp,
+                status: 'success',
+              });
+              this.sendJson(res, { success: true, id: params.id });
+            } catch (err: any) {
+              this.sendJson(res, { error: `Failed to delete service: ${err.message}` }, 400);
+            }
+            return;
+          }
+
           // --- ROUTING & CADDY EDGE INGRESS ---
           if (route.path === '/api/v1/routes' && req.method === 'GET') {
             this.sendJson(res, await this.prismaManager.getRoutes());

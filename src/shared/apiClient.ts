@@ -31,6 +31,9 @@ export const authStore = {
     }
     return null;
   },
+  getAccessToken: (): string | null => {
+    return authStore.getToken();
+  },
   setToken: (token: string | null) => {
     inMemoryAccessToken = token;
     if (typeof window !== 'undefined') {
@@ -350,6 +353,11 @@ export const serverApi = {
   restartService: async (serviceId: string): Promise<{ success: boolean; pid?: number; error?: string }> => {
     const res = await fetchWithAuth(`/api/v1/services/${serviceId}/restart`, { method: 'POST' }).catch(() => null);
     return res && res.ok ? await res.json() : { success: false, error: 'Failed to connect to server API' };
+  },
+
+  deleteService: async (serviceId: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await fetchWithAuth(`/api/v1/services/${serviceId}`, { method: 'DELETE' }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, error: 'Failed to delete service' };
   },
 
   getServiceLogs: async (serviceId: string): Promise<LogEntry[]> => {

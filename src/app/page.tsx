@@ -273,6 +273,11 @@ export default function DashboardPage() {
     return await serverApi.getServiceLogs(serviceId);
   };
 
+  const handleDeleteService = async (serviceId: string) => {
+    await serverApi.deleteService(serviceId);
+    fetchAllData();
+  };
+
   const handleCreateRoute = async (data: {
     serviceId: string;
     subdomain: string;
@@ -984,6 +989,7 @@ export default function DashboardPage() {
               onStartService={handleStartService}
               onStopService={handleStopService}
               onRestartService={handleRestartService}
+              onDeleteService={handleDeleteService}
               getServiceLogs={handleGetServiceLogs}
               isLoading={isRefreshing}
             />
