@@ -134,6 +134,21 @@ export class ProcessSupervisor {
         const syncthingDir = path.join(appData, 'syncthing');
         if (!fs.existsSync(syncthingDir)) fs.mkdirSync(syncthingDir, { recursive: true });
         args = ['-home', syncthingDir, '-gui-address', `127.0.0.1:${service.port || 8384}`, '-no-browser', '-no-restart'];
+      } else if (service.type === 'terminal') {
+        args = ['--port', (service.port || 7681).toString()];
+      } else if (service.type === 'pocketbase') {
+        const appData = (app && typeof app.getPath === 'function')
+          ? app.getPath('userData')
+          : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
+        const pbDir = path.join(appData, 'pocketbase');
+        if (!fs.existsSync(pbDir)) fs.mkdirSync(pbDir, { recursive: true });
+        args = ['serve', '--dir', pbDir, '--http', `0.0.0.0:${service.port || 8090}`];
+      } else if (service.type === 'postgres') {
+        const appData = (app && typeof app.getPath === 'function')
+          ? app.getPath('userData')
+          : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
+        const pgData = path.join(appData, 'postgres');
+        args = ['-D', pgData, '-p', (service.port || 5432).toString(), '-h', '0.0.0.0'];
       }
     }
 

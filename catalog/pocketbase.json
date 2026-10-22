@@ -1,0 +1,21 @@
+{
+  "id": "pocketbase",
+  "name": "PocketBase Realtime Backend & DB",
+  "version": "0.22.4",
+  "category": "Database",
+  "description": "All-in-one embedded SQLite database, realtime subscriptions, authentication, and file storage for web applications.",
+  "icon": "Database",
+  "runtime": "native",
+  "spec": {
+    "command": "pocketbase.exe",
+    "args": ["serve", "--http", "0.0.0.0:8090"],
+    "healthPath": "/api/health",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 8090,
+  "defaultSubdomain": "pocketbase",
+  "env": {},
+  "badge": "Realtime DB",
+  "isPackaged": false,
+  "docs": "Single-binary SQLite database and web API backend accessible at http://pocketbase.localhost."
+}

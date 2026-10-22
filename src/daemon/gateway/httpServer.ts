@@ -1573,6 +1573,156 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/services/upload-binary' && req.method === 'POST') {
+            const rawFilename = (req.headers['x-filename'] as string) ||
+              new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).searchParams.get('filename') ||
+              `app_${Date.now()}.exe`;
+            const baseName = path.basename(rawFilename).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+            const cleanFilename = baseName.toLowerCase().endsWith('.exe') || baseName.toLowerCase().endsWith('.bat') || baseName.toLowerCase().endsWith('.cmd')
+              ? baseName
+              : `${baseName}.exe`;
+
+            const binDir = path.join(paths.extraResourcesDir, 'bin');
+            if (!fs.existsSync(binDir)) {
+              try { fs.mkdirSync(binDir, { recursive: true }); } catch {}
+            }
+
+            try {
+              const uploadRes = await uploadEngine.handleUpload(req, {
+                targetDirectory: binDir,
+                filename: cleanFilename,
+              });
+              logger.info('supervisor', `Uploaded executable binary "${cleanFilename}" to ${binDir}`);
+              this.sendJson(res, {
+                success: true,
+                filename: cleanFilename,
+                path: path.join(binDir, cleanFilename),
+                sizeBytes: uploadRes.bytesWritten,
+              }, 201);
+            } catch (uploadErr: any) {
+              this.sendJson(res, { error: uploadErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/system/drives' && req.method === 'GET') {
+            const volumes = await volumeManager.discoverVolumes(false);
+            const serialized = volumes.map((v) => {
+              const total = v.totalBytes;
+              const free = v.freeBytes;
+              const freePct = total > 0n ? Number((free * 100n) / total) : 0;
+              return {
+                driveLetter: v.driveLetter,
+                label: v.label || (v.isSystemDrive ? 'System Drive' : 'Local Disk'),
+                fileSystem: v.fileSystem || 'NTFS',
+                totalBytes: total.toString(),
+                freeBytes: free.toString(),
+                isSystemDrive: v.isSystemDrive,
+                freePercentage: freePct,
+              };
+            });
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'GET') {
+            const cfg = this.configManager ? this.configManager.getConfig() : null;
+            const currentAlloc = (cfg as any)?.storageAllocation || {};
+            const systemDrive = process.env.SystemDrive || 'C:';
+            this.sendJson(res, {
+              selectedDrive: currentAlloc.selectedDrive || systemDrive,
+              storageRoot: currentAlloc.storageRoot || paths.storageDir,
+              mediaRoot: currentAlloc.mediaRoot || path.join(paths.storageDir, 'Photos'),
+              backupsRoot: currentAlloc.backupsRoot || paths.backupsDir,
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const selectedDrive = body.selectedDrive ? `${body.selectedDrive.replace(':', '')}:` : (process.env.SystemDrive || 'C:');
+            const storageRoot = body.storageRoot || paths.storageDir;
+            const mediaRoot = body.mediaRoot || path.join(storageRoot, 'Photos');
+            const backupsRoot = body.backupsRoot || paths.backupsDir;
+
+            for (const d of [storageRoot, mediaRoot, backupsRoot]) {
+              if (d && !fs.existsSync(d)) {
+                try { fs.mkdirSync(d, { recursive: true }); } catch {}
+              }
+            }
+
+            if (this.configManager) {
+              this.configManager.updateConfig({
+                storageAllocation: {
+                  selectedDrive,
+                  storageRoot,
+                  mediaRoot,
+                  backupsRoot,
+                },
+              } as any);
+            }
+
+            this.sendJson(res, {
+              success: true,
+              storageAllocation: {
+                selectedDrive,
+                storageRoot,
+                mediaRoot,
+                backupsRoot,
+              },
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-status' && req.method === 'GET') {
+            let isInstalled = false;
+            let isRunning = false;
+            try {
+              const { execSync } = require('child_process');
+              const statusOut = execSync('powershell.exe -NoProfile -Command "(Get-Service sshd -ErrorAction SilentlyContinue).Status"', { encoding: 'utf-8', timeout: 3000 }).trim();
+              if (statusOut) {
+                isInstalled = true;
+                isRunning = statusOut.toLowerCase() === 'running';
+              }
+            } catch {}
+            this.sendJson(res, {
+              installed: isInstalled,
+              running: isRunning,
+              port: 22,
+              host: this.systemInfoProvider ? (this.systemInfoProvider.getSystemInfo().localIp || '127.0.0.1') : '127.0.0.1',
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-toggle' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const enable = body.enable !== false;
+            try {
+              const { execSync } = require('child_process');
+              if (enable) {
+                execSync('powershell.exe -NoProfile -Command "Start-Service sshd -ErrorAction SilentlyContinue; Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue"', { timeout: 8000 });
+              } else {
+                execSync('powershell.exe -NoProfile -Command "Stop-Service sshd -ErrorAction SilentlyContinue"', { timeout: 8000 });
+              }
+              this.sendJson(res, { success: true, running: enable });
+            } catch (err: any) {
+              this.sendJson(res, { success: false, error: err.message }, 500);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/system/firewall-rules' && req.method === 'POST') {
+            try {
+              const { execSync } = require('child_process');
+              const cmd = `powershell.exe -NoProfile -Command "New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue"`;
+              execSync(cmd, { timeout: 8000 });
+              this.sendJson(res, { success: true, message: 'Windows Firewall inbound rule applied for Ownbase server ports' });
+            } catch (err: any) {
+              this.sendJson(res, { success: false, error: err.message }, 500);
+            }
+            return;
+          }
+
           if (route.path === '/api/v1/files/stream' && req.method === 'GET') {
             const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
             const filePathParam = parsedUrl.searchParams.get('path');

@@ -236,6 +236,62 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
       },
     };
   },
+
+  terminal: (service) => {
+    const port = service.port || 7681;
+    return {
+      templateId: 'terminal',
+      appType: 'native',
+      executable: 'terminal.exe',
+      args: ['--port', port.toString()],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 4000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 256,
+        cpuLimitPct: 50,
+      },
+    };
+  },
+
+  pocketbase: (service) => {
+    const port = service.port || 8090;
+    const dataDir = path.join(paths.dataDir, 'pocketbase');
+    if (!fs.existsSync(dataDir)) {
+      try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+    }
+    return {
+      templateId: 'pocketbase',
+      appType: 'native',
+      executable: 'pocketbase.exe',
+      args: ['serve', '--dir', dataDir, '--http', `0.0.0.0:${port}`],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/api/health',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 4000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 512,
+        cpuLimitPct: 50,
+      },
+    };
+  },
 };
 
 /**

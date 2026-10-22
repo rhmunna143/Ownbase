@@ -20,6 +20,7 @@ import { SecurityAdminCard } from '@/components/SecurityAdminCard';
 import { Terminal as WebTerminal } from '@/components/Terminal';
 import { ObservabilityCard } from '@/components/ObservabilityCard';
 import { BackupsCard } from '@/components/BackupsCard';
+import { StorageAllocationCard } from '@/components/StorageAllocationCard';
 import { serverApi, authStore } from '@/shared/apiClient';
 import {
   SystemInfo,
@@ -359,7 +360,7 @@ export default function DashboardPage() {
   };
 
   const handleQuitApp = async () => {
-    if (confirm('Are you sure you want to stop all server processes and exit Native Windows Server Hub?')) {
+    if (confirm('Are you sure you want to stop all server processes and exit Ownbase?')) {
       await serverApi.quitApp();
     }
   };
@@ -385,7 +386,7 @@ export default function DashboardPage() {
       {/* ======================================================== */}
       {/* 1. DESKTOP 1PANEL SIDEBAR (Hidden on mobile < md) */}
       {/* ======================================================== */}
-      <aside className="hidden md:flex w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex-col justify-between shrink-0 select-none z-20 h-full">
+      <aside className="hidden md:flex w-64 bg-[#0a0f1b] border-r border-slate-800/80 flex-col justify-between shrink-0 select-none z-20 h-screen sticky top-0">
         <div className="overflow-y-auto flex-1 min-h-0">
           {/* Brand Header */}
           <div className="p-5 border-b border-slate-800/80 flex items-center space-x-3 shrink-0">
@@ -396,9 +397,9 @@ export default function DashboardPage() {
             </div>
             <div>
               <div className="text-sm font-bold text-white tracking-tight flex items-center gap-1.5">
-                Windows Hub
-                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-blue-500/10 text-blue-400 border border-blue-500/30">
-                  1Panel
+                Ownbase
+                <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
+                  PaaS
                 </span>
               </div>
               <div className="text-[10px] text-slate-400 flex items-center gap-1 mt-0.5">
@@ -637,7 +638,7 @@ export default function DashboardPage() {
             >
               <div className="flex items-center space-x-2.5">
                 <Settings className="w-4 h-4" />
-                <span>Settings &amp; Power</span>
+                <span>Settings &amp; Storage</span>
               </div>
               <ChevronRight className="w-3.5 h-3.5 opacity-60" />
             </button>
@@ -708,8 +709,8 @@ export default function DashboardPage() {
             <div className="overflow-y-auto flex-1 space-y-4">
               <div className="flex items-center justify-between pb-3 border-b border-slate-800">
                 <div className="flex items-center gap-2">
-                  <Server className="w-5 h-5 text-blue-400" />
-                  <span className="font-bold text-white text-sm">Native Windows Hub</span>
+                  <Server className="w-5 h-5 text-indigo-400" />
+                  <span className="font-bold text-white text-sm">Ownbase</span>
                 </div>
                 <button
                   onClick={() => setIsMobileMenuOpen(false)}
@@ -817,7 +818,7 @@ export default function DashboardPage() {
                   }`}
                 >
                   <Settings className="w-4 h-4 text-slate-300" />
-                  <span>Settings &amp; Power</span>
+                  <span>Settings &amp; Storage</span>
                 </button>
 
                 <button
@@ -848,7 +849,7 @@ export default function DashboardPage() {
       {/* ======================================================== */}
       {/* 3. MAIN CONTENT AREA */}
       {/* ======================================================== */}
-      <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+      <div className="flex-1 flex flex-col min-w-0 h-screen overflow-hidden">
         <Header
           systemInfo={systemInfo}
           onRefresh={fetchAllData}
@@ -1078,16 +1079,19 @@ export default function DashboardPage() {
           {/* TAB: BACKUPS & DISASTER RECOVERY (PRD Phase 7) */}
           {activeTab === 'backups' && <BackupsCard />}
 
-          {/* TAB 9: SETTINGS & 24/7 POWER */}
+          {/* TAB 9: SETTINGS, STORAGE ALLOCATION & 24/7 POWER */}
           {activeTab === 'settings' && (
-            <LifecycleCard
-              lifecycleStatus={lifecycleStatus}
-              onToggleAutoStart={handleToggleAutoStart}
-              onTogglePowerBlocker={handleTogglePowerBlocker}
-              onMinimizeToTray={handleMinimizeToTray}
-              onQuitApp={handleQuitApp}
-              isLoading={isRefreshing}
-            />
+            <div className="space-y-6">
+              <StorageAllocationCard />
+              <LifecycleCard
+                lifecycleStatus={lifecycleStatus}
+                onToggleAutoStart={handleToggleAutoStart}
+                onTogglePowerBlocker={handleTogglePowerBlocker}
+                onMinimizeToTray={handleMinimizeToTray}
+                onQuitApp={handleQuitApp}
+                isLoading={isRefreshing}
+              />
+            </div>
           )}
 
           {/* TAB 10: LOGS */}

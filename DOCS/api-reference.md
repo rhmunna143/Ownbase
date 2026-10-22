@@ -3,7 +3,7 @@
 **Document Version:** 1.0.0  
 **OpenAPI Specification:** 3.0.3  
 **Base URL:** `http://127.0.0.1:3001` (Direct Gateway) or `http://localhost` (Caddy Ingress Port 80)  
-**Total Endpoints:** 93
+**Total Endpoints:** 100
 
 ---
 
@@ -44,10 +44,10 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | **Lifecycle & Power Management** | 3 | Authenticated (Bearer / API Key) |
 | **Observability & Alerting** | 4 | Authenticated (Bearer / API Key) |
 | **Photos & Media Indexer** | 4 | Authenticated (Bearer / API Key) |
-| **Process Supervisor & App Catalog** | 10 | Authenticated (Bearer / API Key) |
+| **Process Supervisor & App Catalog** | 11 | Authenticated (Bearer / API Key) |
 | **Security Audit Stream** | 1 | Authenticated (Bearer / API Key) |
 | **Storage Volumes & Contained File Streaming** | 14 | Authenticated (Bearer / API Key) |
-| **System & Health Telemetry** | 6 | Mixed (Public / Authenticated) |
+| **System & Health Telemetry** | 12 | Mixed (Public / Authenticated) |
 | **Tailscale Mesh Networking** | 3 | Authenticated (Bearer / API Key) |
 
 ---
@@ -175,6 +175,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | `POST` | `/api/v1/services/:id/restart` | `OPERATOR` | ✅ Yes | Restart managed service process |
 | `GET` | `/api/v1/services/:id/logs` | `READ_ONLY` | — | Get service log history |
 | `DELETE` | `/api/v1/services/:id` | `ADMIN` | ✅ Yes | Delete and unregister a managed service |
+| `POST` | `/api/v1/services/upload-binary` | `ADMIN` | ✅ Yes | Upload an executable binary (.exe) to the server bin directory |
 | `GET` | `/api/v1/catalog` | `READ_ONLY` | — | List declarative app catalog recipes |
 | `POST` | `/api/v1/catalog/install` | `OPERATOR` | ✅ Yes | One-click install from catalog recipe |
 
@@ -211,6 +212,12 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | `GET` | `/api/v1/system-info` | `READ_ONLY` | — | Host hardware and network interfaces telemetry |
 | `GET` | `/api/v1/bootstrap-steps` | `READ_ONLY` | — | Retrieve initial server bootstrapping progress steps |
 | `POST` | `/api/v1/ping-database` | `READ_ONLY` | — | Test database connectivity roundtrip latency |
+| `GET` | `/api/v1/system/drives` | `READ_ONLY` | — | List physical system storage drives and capacities |
+| `GET` | `/api/v1/system/storage-allocation` | `READ_ONLY` | — | Get allocated storage drives and custom folder directories |
+| `POST` | `/api/v1/system/storage-allocation` | `ADMIN` | ✅ Yes | Update storage drive and folder allocations |
+| `GET` | `/api/v1/system/ssh-status` | `READ_ONLY` | — | Get Windows OpenSSH server status |
+| `POST` | `/api/v1/system/ssh-toggle` | `ADMIN` | ✅ Yes | Enable or disable Windows OpenSSH server |
+| `POST` | `/api/v1/system/firewall-rules` | `ADMIN` | ✅ Yes | Apply Windows Firewall rules for LAN/Wi-Fi access |
 | `GET` | `/api/v1/system/health` | `Public` | — | Deep per-component system health report |
 | `GET` | `/api/v1/system/metrics` | `READ_ONLY` | — | Real-time and historical CPU, memory, and disk metrics |
 

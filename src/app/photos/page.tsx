@@ -59,7 +59,7 @@ export default function PhotosStandalonePage() {
       {/* Mobile Friendly Footer */}
       <footer className="border-t border-slate-800/80 bg-[#0a0f1d] px-4 py-3 text-center text-xs text-slate-500">
         <div className="flex items-center justify-center gap-2">
-          <span>Native Windows Server Hub</span>
+          <span>Ownbase</span>
           <span>•</span>
           <span className="text-amber-400 font-medium">Google Photos & Memories Engine</span>
           <span>•</span>

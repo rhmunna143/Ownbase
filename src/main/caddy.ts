@@ -354,7 +354,7 @@ export class CaddyManager {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Caddy Gateway - Native Windows Server Hub</title>
+    <title>Caddy Gateway - Ownbase</title>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; }
         body { background: #080c14; color: #f1f5f9; padding: 40px 20px; display: flex; justify-content: center; min-height: 100vh; }
@@ -390,7 +390,7 @@ export class CaddyManager {
                 <div class="logo">🌐</div>
                 <div>
                     <h1>Caddy Dynamic Gateway <span class="badge">v2.8.4</span></h1>
-                    <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Native Windows Dynamic Reverse Proxy & Mesh Gateway</div>
+                    <div style="color: #64748b; font-size: 11px; margin-top: 2px;">Ownbase Dynamic Reverse Proxy & Mesh Gateway</div>
                 </div>
             </div>
             <div class="status-pill">
@@ -445,11 +445,11 @@ export class CaddyManager {
         </div>
 
         <div style="text-align: center;">
-            <a href="http://localhost:3000" style="color: #38bdf8; text-decoration: none; font-size: 12px; font-weight: 500;">← Return to Native Windows Server Hub Dashboard</a>
+            <a href="http://localhost:3000" style="color: #38bdf8; text-decoration: none; font-size: 12px; font-weight: 500;">← Return to Ownbase Dashboard</a>
         </div>
 
         <footer>
-            Native Windows Server Hub • Dynamic Reverse Proxy Engine
+            Ownbase • Dynamic Reverse Proxy Engine
         </footer>
     </div>
 </body>

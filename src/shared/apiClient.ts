@@ -646,6 +646,103 @@ export const serverApi = {
     });
   },
 
+  uploadBinary: (
+    file: File,
+    onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
+  ): Promise<{ success: boolean; filename: string; path?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const url = `/api/v1/services/upload-binary?filename=${encodeURIComponent(file.name)}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.withCredentials = true;
+
+      const token = authStore.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.setRequestHeader('x-filename', file.name);
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            resolve({ success: true, filename: file.name });
+          }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            resolve({ success: false, filename: file.name, error: err.error });
+          } catch {
+            resolve({ success: false, filename: file.name, error: `Upload failed (status ${xhr.status})` });
+          }
+        }
+      };
+
+      xhr.onerror = () => resolve({ success: false, filename: file.name, error: 'Network error during upload' });
+      xhr.ontimeout = () => resolve({ success: false, filename: file.name, error: 'Upload timed out' });
+
+      xhr.send(file);
+    });
+  },
+
+  getSystemDrives: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/system/drives').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getStorageAllocation: async (): Promise<{ selectedDrive: string; storageRoot: string; mediaRoot: string; backupsRoot: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/storage-allocation').catch(() => null);
+    return res && res.ok ? await res.json() : {
+      selectedDrive: 'C:',
+      storageRoot: 'C:\\ProgramData\\Ownbase\\storage',
+      mediaRoot: 'C:\\ProgramData\\Ownbase\\storage\\Photos',
+      backupsRoot: 'C:\\ProgramData\\Ownbase\\backups',
+    };
+  },
+
+  updateStorageAllocation: async (data: { selectedDrive: string; storageRoot: string; mediaRoot: string; backupsRoot: string }): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/system/storage-allocation', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  getSshStatus: async (): Promise<{ installed: boolean; running: boolean; port: number; host: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/ssh-status').catch(() => null);
+    return res && res.ok ? await res.json() : { installed: false, running: false, port: 22, host: '127.0.0.1' };
+  },
+
+  toggleSsh: async (enable: boolean): Promise<{ success: boolean; running: boolean }> => {
+    const res = await fetchWithAuth('/api/v1/system/ssh-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enable }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, running: false };
+  },
+
+  applyFirewallRules: async (): Promise<{ success: boolean; message: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/firewall-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, message: 'Failed to apply rules' };
+  },
+
   // Google Photos & Memories operations
   getPhotosTimeline: async (favoritesOnly = false, type = 'all'): Promise<any> => {
     const res = await fetchWithAuth(`/api/v1/photos/timeline?favoritesOnly=${favoritesOnly}&type=${type}`).catch(() => null);

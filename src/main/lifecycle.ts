@@ -94,7 +94,7 @@ export class LifecycleManager {
         if (this.tray && process.platform === 'win32' && electron) {
           try {
             (this.tray as any).displayBalloon({
-              title: 'Native Windows Server Hub',
+              title: 'Ownbase',
               content: 'The server is still actively running in the background.',
               iconType: 'info',
             });
@@ -135,7 +135,7 @@ export class LifecycleManager {
     }
 
     const trayInstance = new electron.Tray(icon);
-    trayInstance.setToolTip('Native Windows Server Hub (24/7 Persistent Server)');
+    trayInstance.setToolTip('Ownbase (24/7 Persistent Server)');
 
     // Toggle window on tray click
     trayInstance.on('click', () => {
@@ -163,7 +163,7 @@ export class LifecycleManager {
 
     const contextMenu = electron.Menu.buildFromTemplate([
       {
-        label: 'Native Windows Server Hub',
+        label: 'Ownbase Server',
         enabled: false,
       },
       { type: 'separator' },

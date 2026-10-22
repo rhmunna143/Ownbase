@@ -33,8 +33,10 @@ import {
   Workflow,
   Trash2,
   Search,
+  Upload,
 } from 'lucide-react';
 import { ServiceRecord, ProcessStatus, LogEntry } from '@/shared/types';
+import { serverApi } from '@/shared/apiClient';
 
 interface ServicesTableProps {
   services: ServiceRecord[];
@@ -251,6 +253,39 @@ export const getServiceVisualTheme = (service: ServiceRecord): ServiceVisualThem
     };
   }
 
+  // 12. Terminal & PowerShell Shell
+  if (haystack.includes('terminal') || haystack.includes('powershell') || haystack.includes('ttyd')) {
+    return {
+      icon: <Terminal className="w-5 h-5 text-amber-400" />,
+      bgClass: 'bg-amber-500/10',
+      borderClass: 'border-amber-500/30 group-hover:border-amber-500/50',
+      badgeLabel: 'Web Terminal',
+      badgeClass: 'bg-amber-950/60 text-amber-300 border-amber-800/40',
+    };
+  }
+
+  // 13. OpenSSH Server
+  if (haystack.includes('ssh') || haystack.includes('sshd') || haystack.includes('openssh')) {
+    return {
+      icon: <Terminal className="w-5 h-5 text-purple-400" />,
+      bgClass: 'bg-purple-500/10',
+      borderClass: 'border-purple-500/30 group-hover:border-purple-500/50',
+      badgeLabel: 'SSH Server',
+      badgeClass: 'bg-purple-950/60 text-purple-300 border-purple-800/40',
+    };
+  }
+
+  // 14. PocketBase / Embedded SQLite
+  if (haystack.includes('pocketbase') || haystack.includes('pb') || haystack.includes('sqlite')) {
+    return {
+      icon: <Database className="w-5 h-5 text-emerald-400" />,
+      bgClass: 'bg-emerald-500/10',
+      borderClass: 'border-emerald-500/30 group-hover:border-emerald-500/50',
+      badgeLabel: 'SQLite / PB',
+      badgeClass: 'bg-emerald-950/60 text-emerald-300 border-emerald-800/40',
+    };
+  }
+
   // Fallback: Deterministic palette based on string hash so custom services don't all look identical
   const hash = service.name.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
   const palettes = [
@@ -328,6 +363,31 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
   const [description, setDescription] = useState('');
   const [autoStart, setAutoStart] = useState(true);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isUploadingExe, setIsUploadingExe] = useState(false);
+  const [uploadExeProgress, setUploadExeProgress] = useState(0);
+  const [uploadedExeName, setUploadedExeName] = useState<string | null>(null);
+
+  const handleBinaryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingExe(true);
+    setUploadExeProgress(0);
+    try {
+      const res = await serverApi.uploadBinary(file, (p) => {
+        setUploadExeProgress(p.percent);
+      });
+      if (res.success && res.filename) {
+        setExecutable(res.filename);
+        setUploadedExeName(res.filename);
+      } else {
+        alert(res.error || 'Binary upload failed');
+      }
+    } catch (err: any) {
+      alert(`Upload error: ${err.message}`);
+    } finally {
+      setIsUploadingExe(false);
+    }
+  };
 
   const handleStart = async (serviceId: string) => {
     setOperatingIds((prev) => ({ ...prev, [serviceId]: 'starting' }));
@@ -999,15 +1059,39 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">Executable Path or Binary Name</label>
-                <input
-                  type="text"
-                  required
-                  value={executable}
-                  onChange={(e) => setExecutable(e.target.value)}
-                  placeholder="e.g. node.exe, caddy.exe, or C:\Path\app.exe"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-300 font-medium">Executable Path or Binary Name</label>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-2 py-0.5 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[11px] font-semibold transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{isUploadingExe ? `Uploading ${uploadExeProgress}%...` : 'Upload .exe'}</span>
+                    <input
+                      type="file"
+                      accept=".exe,.bat,.cmd,.ps1"
+                      className="hidden"
+                      disabled={isUploadingExe}
+                      onChange={handleBinaryUpload}
+                    />
+                  </label>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={executable}
+                    onChange={(e) => {
+                      setExecutable(e.target.value);
+                      setUploadedExeName(null);
+                    }}
+                    placeholder="e.g. node.exe, caddy.exe, or C:\Path\app.exe"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-emerald-500 pr-24"
+                  />
+                  {uploadedExeName && (
+                    <div className="absolute right-2 top-2 flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px]">
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span>Uploaded</span>
+                    </div>
+                  )}
+                </div>
               </div>
 
               <div>
@@ -1040,7 +1124,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                   className="rounded border-slate-700 bg-slate-900 text-emerald-600 focus:ring-0"
                 />
                 <label htmlFor="modal-autostart" className="text-slate-300 cursor-pointer">
-                  Auto-start on Windows Hub launch
+                  Auto-start on Ownbase launch
                 </label>
               </div>
 

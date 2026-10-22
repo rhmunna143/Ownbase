@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Native Windows Server Hub",
+  title: "Ownbase - Native Windows Server Platform",
   description: "Native Windows server orchestration platform without Docker or WSL2",
 };
 

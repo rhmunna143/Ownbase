@@ -711,6 +711,160 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/services/upload-binary') {
+            const rawFilename = (req.headers['x-filename'] as string) ||
+              parsedUrl.searchParams.get('filename') ||
+              `app_${Date.now()}.exe`;
+            const baseName = path.basename(rawFilename).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+            const cleanFilename = baseName.toLowerCase().endsWith('.exe') || baseName.toLowerCase().endsWith('.bat') || baseName.toLowerCase().endsWith('.cmd')
+              ? baseName
+              : `${baseName}.exe`;
+
+            const binDir = path.join(process.cwd(), 'extraResources', 'bin');
+            if (!fs.existsSync(binDir)) {
+              try { fs.mkdirSync(binDir, { recursive: true }); } catch {}
+            }
+
+            const buffer = await this.readRawBody(req);
+            const targetFilePath = path.join(binDir, cleanFilename);
+            fs.writeFileSync(targetFilePath, buffer);
+            logger.info('supervisor', `Uploaded custom binary "${cleanFilename}" to ${binDir}`);
+            this.sendJson(res, {
+              success: true,
+              filename: cleanFilename,
+              path: targetFilePath,
+              sizeBytes: buffer.length,
+            }, 201);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/drives') {
+            let drives: any[] = [];
+            try {
+              const { execSync } = require('child_process');
+              const psCmd = `powershell.exe -NoProfile -Command "Get-Volume | Where-Object { $_.DriveLetter -ne $null } | Select-Object DriveLetter, FileSystemLabel, FileSystem, Size, SizeRemaining | ConvertTo-Json -Compress"`;
+              const out = execSync(psCmd, { encoding: 'utf-8', timeout: 5000 }).trim();
+              if (out) {
+                let parsed = JSON.parse(out);
+                if (!Array.isArray(parsed)) parsed = [parsed];
+                drives = parsed.map((item: any) => {
+                  const size = Number(item.Size || 0);
+                  const remaining = Number(item.SizeRemaining || 0);
+                  return {
+                    driveLetter: `${item.DriveLetter}:`,
+                    label: item.FileSystemLabel || 'Local Disk',
+                    fileSystem: item.FileSystem || 'NTFS',
+                    totalBytes: String(item.Size || 0),
+                    freeBytes: String(item.SizeRemaining || 0),
+                    isSystemDrive: item.DriveLetter.toUpperCase() === (process.env.SystemDrive || 'C:').replace(':', '').toUpperCase(),
+                    freePercentage: size > 0 ? Math.round((remaining * 100) / size) : 0,
+                  };
+                });
+              }
+            } catch {}
+            if (drives.length === 0) {
+              drives = [{
+                driveLetter: 'C:',
+                label: 'Windows OS',
+                fileSystem: 'NTFS',
+                totalBytes: '107374182400',
+                freeBytes: '53687091200',
+                isSystemDrive: true,
+                freePercentage: 50,
+              }];
+            }
+            this.sendJson(res, drives);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'GET') {
+            const appData = (app && typeof app.getPath === 'function')
+              ? app.getPath('userData')
+              : path.join(process.env.APPDATA || '.', 'native-windows-server-hub');
+            const systemDrive = process.env.SystemDrive || 'C:';
+            this.sendJson(res, {
+              selectedDrive: systemDrive,
+              storageRoot: path.join(appData, 'storage'),
+              mediaRoot: path.join(appData, 'storage', 'Photos'),
+              backupsRoot: path.join(appData, 'backups'),
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const selectedDrive = body.selectedDrive ? `${body.selectedDrive.replace(':', '')}:` : (process.env.SystemDrive || 'C:');
+            const storageRoot = body.storageRoot || path.join(process.cwd(), 'data', 'storage');
+            const mediaRoot = body.mediaRoot || path.join(storageRoot, 'Photos');
+            const backupsRoot = body.backupsRoot || path.join(process.cwd(), 'data', 'backups');
+
+            for (const d of [storageRoot, mediaRoot, backupsRoot]) {
+              if (d && !fs.existsSync(d)) {
+                try { fs.mkdirSync(d, { recursive: true }); } catch {}
+              }
+            }
+
+            this.sendJson(res, {
+              success: true,
+              storageAllocation: {
+                selectedDrive,
+                storageRoot,
+                mediaRoot,
+                backupsRoot,
+              },
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-status') {
+            let isInstalled = false;
+            let isRunning = false;
+            try {
+              const { execSync } = require('child_process');
+              const statusOut = execSync('powershell.exe -NoProfile -Command "(Get-Service sshd -ErrorAction SilentlyContinue).Status"', { encoding: 'utf-8', timeout: 3000 }).trim();
+              if (statusOut) {
+                isInstalled = true;
+                isRunning = statusOut.toLowerCase() === 'running';
+              }
+            } catch {}
+            this.sendJson(res, {
+              installed: isInstalled,
+              running: isRunning,
+              port: 22,
+              host: '127.0.0.1',
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-toggle' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const enable = body.enable !== false;
+            try {
+              const { execSync } = require('child_process');
+              if (enable) {
+                execSync('powershell.exe -NoProfile -Command "Start-Service sshd -ErrorAction SilentlyContinue; Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue"', { timeout: 8000 });
+              } else {
+                execSync('powershell.exe -NoProfile -Command "Stop-Service sshd -ErrorAction SilentlyContinue"', { timeout: 8000 });
+              }
+              this.sendJson(res, { success: true, running: enable });
+            } catch (err: any) {
+              this.sendJson(res, { success: false, error: err.message }, 500);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/system/firewall-rules' && req.method === 'POST') {
+            try {
+              const { execSync } = require('child_process');
+              const cmd = `powershell.exe -NoProfile -Command "New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue"`;
+              execSync(cmd, { timeout: 8000 });
+              this.sendJson(res, { success: true, message: 'Windows Firewall inbound rule applied for Ownbase server ports' });
+            } catch (err: any) {
+              this.sendJson(res, { success: false, error: err.message }, 500);
+            }
+            return;
+          }
+
           // --- PHOTOS GALLERY ---
           if (route.path === '/api/v1/photos/timeline') {
             const favoritesOnly = parsedUrl.searchParams.get('favoritesOnly') === 'true';
@@ -918,7 +1072,7 @@ export class WebApiServer {
       });
 
       this.server.listen(this.port, '0.0.0.0', () => {
-        logger.success('web-api', `Native Windows Server Web API listening on http://0.0.0.0:${this.port}`);
+        logger.success('web-api', `Ownbase Web API listening on http://0.0.0.0:${this.port}`);
         resolve(true);
       });
 

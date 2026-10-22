@@ -20,6 +20,7 @@ import {
   Camera,
 } from 'lucide-react';
 import { TailscaleStatus, SystemInfo } from '@/shared/types';
+import { serverApi } from '@/shared/apiClient';
 
 interface NetworkAccessProps {
   systemInfo: SystemInfo | null;
@@ -43,7 +44,27 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
   const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.'));
   const hasTailscale = !!tailscaleIp || !!tailscaleStatus?.connected;
 
-  const firewallCmd = `New-NetFirewallRule -DisplayName "Windows Server Hub" -Direction Inbound -LocalPort 80,443,2019,3000,3001,8080,9000,11434,5432 -Protocol TCP -Action Allow`;
+  const [isApplyingFw, setIsApplyingFw] = useState(false);
+  const [fwMessage, setFwMessage] = useState<string | null>(null);
+
+  const firewallCmd = `New-NetFirewallRule -DisplayName "Ownbase Server" -Direction Inbound -LocalPort 80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow`;
+
+  const handleApplyFw = async () => {
+    setIsApplyingFw(true);
+    setFwMessage(null);
+    try {
+      const res = await serverApi.applyFirewallRules();
+      if (res.success) {
+        setFwMessage('Firewall inbound rules applied successfully!');
+      } else {
+        setFwMessage('Run PowerShell as Administrator to apply firewall rules.');
+      }
+    } catch {
+      setFwMessage('Run PowerShell as Administrator to apply firewall rules.');
+    } finally {
+      setIsApplyingFw(false);
+    }
+  };
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -259,19 +280,34 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
             <div className="flex items-center justify-between text-amber-300 font-semibold mb-1">
               <span className="flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                Windows Firewall Status
+                Windows Firewall &amp; Multi-User Wi-Fi Inbound Rules
               </span>
-              <button
-                onClick={() => copyToClipboard(firewallCmd, 'fw-cmd')}
-                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-900/40 hover:bg-amber-800/60 text-amber-200 border border-amber-700/50"
-              >
-                {copiedKey === 'fw-cmd' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                <span>Copy Inbound Rule</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleApplyFw}
+                  disabled={isApplyingFw}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  {isApplyingFw ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  <span>Apply Rule</span>
+                </button>
+                <button
+                  onClick={() => copyToClipboard(firewallCmd, 'fw-cmd')}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-900/40 hover:bg-amber-800/60 text-amber-200 border border-amber-700/50"
+                >
+                  {copiedKey === 'fw-cmd' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>Copy PowerShell</span>
+                </button>
+              </div>
             </div>
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              Inbound ports 80, 8080, 9000, 11434, 3000 are unblocked. Devices on your Wi-Fi can directly reach port 80.
+              Allows multiple Wi-Fi users to connect to Caddy and services without Windows dropping packets (ERR_CONNECTION_REFUSED).
             </p>
+            {fwMessage && (
+              <div className="mt-1 text-[10px] text-amber-300 font-mono">
+                {fwMessage}
+              </div>
+            )}
           </div>
         </div>
       </div>

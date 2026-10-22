@@ -18,6 +18,8 @@ import {
   RotateCw,
   ExternalLink,
   Loader2,
+  Upload,
+  Check,
 } from 'lucide-react';
 import { ServiceRecord } from '@/shared/types';
 import { serverApi } from '@/shared/apiClient';
@@ -64,6 +66,31 @@ export const AppStore: React.FC<AppStoreProps> = ({
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeCategory, setActiveCategory] = useState<string>('all');
   const [catalogItems, setCatalogItems] = useState<Template[]>([]);
+  const [isUploadingExe, setIsUploadingExe] = useState(false);
+  const [uploadExeProgress, setUploadExeProgress] = useState(0);
+  const [uploadedExeName, setUploadedExeName] = useState<string | null>(null);
+
+  const handleBinaryUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setIsUploadingExe(true);
+    setUploadExeProgress(0);
+    try {
+      const res = await serverApi.uploadBinary(file, (p) => {
+        setUploadExeProgress(p.percent);
+      });
+      if (res.success && res.filename) {
+        setExecutable(res.filename);
+        setUploadedExeName(res.filename);
+      } else {
+        alert(res.error || 'Binary upload failed');
+      }
+    } catch (err: any) {
+      alert(`Upload error: ${err.message}`);
+    } finally {
+      setIsUploadingExe(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
@@ -185,6 +212,54 @@ export const AppStore: React.FC<AppStoreProps> = ({
       defaultSubdomain: 'syncthing',
       badge: 'P2P Backup Engine',
       isPackaged: false,
+    },
+    {
+      id: 'postgres',
+      name: 'PostgreSQL 16 Database Server',
+      category: 'Database',
+      description: 'Enterprise-grade SQL database for web services, microservices, and apps with ACID compliance and full JSONB support.',
+      icon: <Database className="w-6 h-6 text-cyan-400" />,
+      defaultExecutable: 'postgres.exe',
+      defaultPort: 5432,
+      defaultSubdomain: 'postgres',
+      badge: 'Relational DB',
+      isPackaged: true,
+    },
+    {
+      id: 'pocketbase',
+      name: 'PocketBase Realtime Backend & DB',
+      category: 'Database',
+      description: 'All-in-one embedded SQLite database, realtime subscriptions, authentication, and file storage for web applications.',
+      icon: <Database className="w-6 h-6 text-emerald-400" />,
+      defaultExecutable: 'pocketbase.exe',
+      defaultPort: 8090,
+      defaultSubdomain: 'pocketbase',
+      badge: 'Realtime DB',
+      isPackaged: false,
+    },
+    {
+      id: 'terminal',
+      name: 'Web Terminal & PowerShell Console',
+      category: 'Tools',
+      description: 'Full interactive browser-based terminal with PowerShell and CMD access, accessible from any device at terminal.localhost.',
+      icon: <Terminal className="w-6 h-6 text-amber-400" />,
+      defaultExecutable: 'terminal.exe',
+      defaultPort: 7681,
+      defaultSubdomain: 'terminal',
+      badge: 'Browser Terminal',
+      isPackaged: false,
+    },
+    {
+      id: 'ssh',
+      name: 'OpenSSH Server Service',
+      category: 'Tools',
+      description: 'Native Windows OpenSSH server for remote command-line terminal management, SFTP, and secure developer access.',
+      icon: <Terminal className="w-6 h-6 text-purple-400" />,
+      defaultExecutable: 'sshd.exe',
+      defaultPort: 22,
+      defaultSubdomain: 'ssh',
+      badge: 'Secure Shell',
+      isPackaged: true,
     },
     {
       id: 'custom',
@@ -377,17 +452,41 @@ export const AppStore: React.FC<AppStoreProps> = ({
               </div>
 
               <div>
-                <label className="block text-slate-300 mb-1 font-medium">
-                  Executable Binary (.exe) or Command
-                </label>
-                <input
-                  type="text"
-                  required
-                  value={executable}
-                  onChange={(e) => setExecutable(e.target.value)}
-                  placeholder="e.g. node.exe, python.exe, or C:\Apps\service.exe"
-                  className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500"
-                />
+                <div className="flex items-center justify-between mb-1">
+                  <label className="block text-slate-300 font-medium">
+                    Executable Binary (.exe) or Command
+                  </label>
+                  <label className="cursor-pointer inline-flex items-center gap-1.5 px-2.5 py-1 rounded bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 border border-indigo-500/40 text-[11px] font-semibold transition-colors">
+                    <Upload className="w-3.5 h-3.5" />
+                    <span>{isUploadingExe ? `Uploading ${uploadExeProgress}%...` : 'Upload .exe'}</span>
+                    <input
+                      type="file"
+                      accept=".exe,.bat,.cmd,.ps1"
+                      className="hidden"
+                      disabled={isUploadingExe}
+                      onChange={handleBinaryUpload}
+                    />
+                  </label>
+                </div>
+                <div className="relative">
+                  <input
+                    type="text"
+                    required
+                    value={executable}
+                    onChange={(e) => {
+                      setExecutable(e.target.value);
+                      setUploadedExeName(null);
+                    }}
+                    placeholder="e.g. syncthing.exe, node.exe, or C:\Apps\service.exe"
+                    className="w-full bg-slate-900 border border-slate-700 rounded-lg px-3 py-2 text-white font-mono focus:outline-none focus:border-indigo-500 pr-24"
+                  />
+                  {uploadedExeName && (
+                    <div className="absolute right-2 top-2 flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px]">
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span>Uploaded</span>
+                    </div>
+                  )}
+                </div>
                 <div className="mt-2 p-3 rounded-lg bg-slate-900/80 border border-slate-800 text-[11px] text-slate-400 space-y-1.5 leading-relaxed">
                   <div className="font-semibold text-slate-200 flex items-center gap-1.5">
                     <Terminal className="w-3.5 h-3.5 text-indigo-400" />

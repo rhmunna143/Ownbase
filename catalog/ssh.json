@@ -1,0 +1,21 @@
+{
+  "id": "ssh",
+  "name": "OpenSSH Server Service",
+  "version": "1.0.0",
+  "category": "Tools",
+  "description": "Native Windows OpenSSH server for remote command-line terminal management, SFTP, and secure developer access.",
+  "icon": "Terminal",
+  "runtime": "native",
+  "spec": {
+    "command": "sshd.exe",
+    "args": ["-D", "-p", "22"],
+    "healthPath": "/",
+    "maxMemoryMb": 128
+  },
+  "defaultPort": 22,
+  "defaultSubdomain": "ssh",
+  "env": {},
+  "badge": "Secure Shell",
+  "isPackaged": true,
+  "docs": "Windows OpenSSH service listening on port 22. Connect via 'ssh username@<LAN-IP>'."
+}

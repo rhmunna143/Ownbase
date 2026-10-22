@@ -72,7 +72,7 @@ async function createWindow() {
     height: 840,
     minWidth: 1000,
     minHeight: 700,
-    title: 'Native Windows Server Hub',
+    title: 'Ownbase',
     backgroundColor: '#090d16',
     icon: iconPath,
     webPreferences: {
@@ -116,7 +116,7 @@ async function createWindow() {
 
 async function startBootstrap() {
   updateStep('electron-init', 'running');
-  logger.info('electron', 'Native Windows Server Hub starting up...');
+  logger.info('electron', 'Ownbase starting up...');
   updateStep('electron-init', 'success', 'Electron shell active');
 
   // Step 2 & 3 & 4 & 5: Postgres

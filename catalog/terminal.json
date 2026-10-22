@@ -1,0 +1,21 @@
+{
+  "id": "terminal",
+  "name": "Web Terminal & PowerShell Console",
+  "version": "1.0.0",
+  "category": "Tools",
+  "description": "Full interactive browser-based terminal with PowerShell and CMD access, accessible from any device at terminal.localhost.",
+  "icon": "Terminal",
+  "runtime": "native",
+  "spec": {
+    "command": "terminal.exe",
+    "args": ["--port", "7681"],
+    "healthPath": "/",
+    "maxMemoryMb": 256
+  },
+  "defaultPort": 7681,
+  "defaultSubdomain": "terminal",
+  "env": {},
+  "badge": "Browser Terminal",
+  "isPackaged": false,
+  "docs": "Web-based interactive shell console hosted at http://terminal.localhost and http://terminal.<LAN-IP>.nip.io."
+}
