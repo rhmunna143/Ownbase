@@ -145,7 +145,9 @@ namespace NativeCaddy
 
                 // PRD Acceptance Criterion A3: ai.* and files.* require valid Ownbase session on LAN
                 string hostLower = host.ToLowerInvariant();
-                bool isProtectedService = targetPort == 11434 || targetPort == 8080 || hostLower.StartsWith("ai.") || hostLower.StartsWith("files.");
+                bool isProtectedService = targetPort == 11434 || targetPort == 8080 || targetPort == 9000 ||
+                                          hostLower.StartsWith("ai.") || hostLower.StartsWith("files.") ||
+                                          hostLower.StartsWith("s3.") || hostLower.StartsWith("minio.");
                 bool isLanHost = hostLower.Contains(".nip.io") || (!hostLower.StartsWith("localhost") && !hostLower.StartsWith("127.0.0.1") && !hostLower.EndsWith(".localhost"));
 
                 if (isProtectedService && isLanHost)

@@ -160,7 +160,7 @@ export class CaddyManager {
         tlsEnabled: r.tlsEnabled ?? true,
       };
 
-      const isProtected = ['ai', 'files'].includes(r.subdomain) || r.requiresAuth;
+      const isProtected = ['ai', 'files', 's3', 'minio'].includes(r.subdomain) || r.requiresAuth;
       const built = hostBuilder.build(intent);
 
       if (built.caddyMatchers.length > 0) {
