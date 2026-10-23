@@ -1729,11 +1729,17 @@ export class WebApiServer {
                 }
               }
             }
+            let currentUser = 'Munna';
+            try {
+              currentUser = os.userInfo().username || process.env.USERNAME || 'Munna';
+            } catch {}
+
             this.sendJson(res, {
               installed: isInstalled,
               running: isRunning,
               port: 22,
               host: hostIp,
+              username: currentUser,
             });
             return;
           }
@@ -1784,13 +1790,18 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/system/firewall-rules' && req.method === 'POST') {
+            const firewallCmd = `New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 22,80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow`;
             try {
               const { execSync } = require('child_process');
-              const cmd = `powershell.exe -NoProfile -Command "New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow -ErrorAction SilentlyContinue"`;
+              const cmd = `powershell.exe -NoProfile -Command "${firewallCmd} -ErrorAction SilentlyContinue"`;
               execSync(cmd, { timeout: 8000 });
               this.sendJson(res, { success: true, message: 'Windows Firewall inbound rule applied for Ownbase server ports' });
             } catch (err: any) {
-              this.sendJson(res, { success: false, error: err.message }, 500);
+              this.sendJson(res, {
+                success: false,
+                message: 'Administrator rights required to configure Windows Firewall. Run the command in PowerShell as Administrator.',
+                command: firewallCmd,
+              }, 200);
             }
             return;
           }

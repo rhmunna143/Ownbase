@@ -725,9 +725,9 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { success: false };
   },
 
-  getSshStatus: async (): Promise<{ installed: boolean; running: boolean; port: number; host: string }> => {
+  getSshStatus: async (): Promise<{ installed: boolean; running: boolean; port: number; host: string; username?: string }> => {
     const res = await fetchWithAuth('/api/v1/system/ssh-status').catch(() => null);
-    return res && res.ok ? await res.json() : { installed: false, running: false, port: 22, host: '127.0.0.1' };
+    return res && res.ok ? await res.json() : { installed: false, running: false, port: 22, host: '127.0.0.1', username: 'Munna' };
   },
 
   toggleSsh: async (enable: boolean): Promise<{ success: boolean; running: boolean; error?: string; command?: string }> => {
@@ -739,7 +739,7 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { success: false, running: false, error: 'Failed to communicate with SSH toggle service' };
   },
 
-  applyFirewallRules: async (): Promise<{ success: boolean; message: string }> => {
+  applyFirewallRules: async (): Promise<{ success: boolean; message: string; command?: string }> => {
     const res = await fetchWithAuth('/api/v1/system/firewall-rules', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

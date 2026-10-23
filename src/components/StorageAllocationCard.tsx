@@ -50,7 +50,7 @@ export const StorageAllocationCard: React.FC = () => {
   const [saveSuccess, setSaveSuccess] = useState(false);
 
   // SSH State
-  const [sshStatus, setSshStatus] = useState<{ installed: boolean; running: boolean; port: number; host: string } | null>(null);
+  const [sshStatus, setSshStatus] = useState<{ installed: boolean; running: boolean; port: number; host: string; username?: string } | null>(null);
   const [isTogglingSsh, setIsTogglingSsh] = useState(false);
   const [copiedSsh, setCopiedSsh] = useState(false);
   const [sshError, setSshError] = useState<string | null>(null);
@@ -60,6 +60,8 @@ export const StorageAllocationCard: React.FC = () => {
   // Firewall State
   const [isApplyingFirewall, setIsApplyingFirewall] = useState(false);
   const [firewallMessage, setFirewallMessage] = useState<string | null>(null);
+  const [firewallCmd, setFirewallCmd] = useState<string | null>(null);
+  const [copiedFirewallCmd, setCopiedFirewallCmd] = useState(false);
 
   const fetchData = async () => {
     setIsLoading(true);
@@ -137,15 +139,19 @@ export const StorageAllocationCard: React.FC = () => {
   const handleApplyFirewall = async () => {
     setIsApplyingFirewall(true);
     setFirewallMessage(null);
+    setFirewallCmd(null);
     try {
       const res = await serverApi.applyFirewallRules();
       if (res.success) {
         setFirewallMessage('Inbound firewall rules for all Ownbase server ports successfully applied!');
+        setFirewallCmd(null);
       } else {
-        setFirewallMessage('Notice: Elevated administrator rights required to update Windows Firewall automatically. Run PowerShell as Administrator.');
+        setFirewallMessage(res.message || 'Notice: Elevated administrator rights required to update Windows Firewall automatically.');
+        setFirewallCmd(res.command || "New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 22,80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow");
       }
     } catch {
-      setFirewallMessage('Notice: Elevated administrator rights required. You can also run the copyable PowerShell script.');
+      setFirewallMessage('Notice: Elevated administrator rights required. Run the command below in PowerShell as Administrator:');
+      setFirewallCmd("New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 22,80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow");
     } finally {
       setIsApplyingFirewall(false);
     }
@@ -367,15 +373,15 @@ export const StorageAllocationCard: React.FC = () => {
                 {sshAdminCommand && (
                   <div className="pt-1">
                     <div className="text-[10px] text-slate-400 font-mono mb-1">Run in PowerShell as Administrator:</div>
-                    <div className="flex items-center justify-between bg-black/60 px-2.5 py-1.5 rounded border border-amber-500/40 font-mono text-[11px] text-amber-300">
-                      <span className="truncate max-w-[280px] sm:max-w-md">{sshAdminCommand}</span>
+                    <div className="flex items-start justify-between bg-black/60 px-2.5 py-2 rounded border border-amber-500/40 font-mono text-[11px] text-amber-300 gap-2">
+                      <span className="break-all select-all leading-relaxed">{sshAdminCommand}</span>
                       <button
                         onClick={() => {
                           navigator.clipboard.writeText(sshAdminCommand);
                           setCopiedAdminCmd(true);
                           setTimeout(() => setCopiedAdminCmd(false), 2000);
                         }}
-                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0 ml-2"
+                        className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0 mt-0.5"
                         title="Copy command"
                       >
                         {copiedAdminCmd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
@@ -390,10 +396,10 @@ export const StorageAllocationCard: React.FC = () => {
               <div className="p-3 rounded-xl bg-slate-950/60 border border-slate-800 space-y-1.5">
                 <div className="text-slate-400 text-[11px]">SSH Terminal Command:</div>
                 <div className="flex items-center justify-between bg-slate-900 px-3 py-2 rounded-lg border border-slate-700 font-mono text-emerald-300 text-xs">
-                  <span>ssh {process.env.USERNAME || 'user'}@{sshStatus?.host || '192.168.1.X'}</span>
+                  <span className="select-all">ssh {sshStatus?.username || 'Munna'}@{sshStatus?.host || '192.168.0.101'}</span>
                   <button
                     onClick={() => {
-                      navigator.clipboard.writeText(`ssh ${process.env.USERNAME || 'user'}@${sshStatus?.host || 'localhost'}`);
+                      navigator.clipboard.writeText(`ssh ${sshStatus?.username || 'Munna'}@${sshStatus?.host || '192.168.0.101'}`);
                       setCopiedSsh(true);
                       setTimeout(() => setCopiedSsh(false), 2000);
                     }}
@@ -405,7 +411,7 @@ export const StorageAllocationCard: React.FC = () => {
                 </div>
               </div>
               <p className="text-[11px] text-slate-500 leading-relaxed">
-                Uses native Windows OpenSSH service. Authorized keys can be placed in <code>~/.ssh/authorized_keys</code> for passwordless developer logins.
+                Uses native Windows OpenSSH service. Log in with your Windows account (<strong>{sshStatus?.username || 'Munna'}</strong>) password.
               </p>
             </div>
           </div>
@@ -447,8 +453,27 @@ export const StorageAllocationCard: React.FC = () => {
                 Ports: 80, 443, 2019, 3000, 3001, 5432, 6379, 7681, 8080, 8090, 8384, 9000, 11434
               </div>
               {firewallMessage && (
-                <div className="p-2.5 rounded-lg bg-blue-950/40 border border-blue-500/30 text-blue-300 text-xs mt-2">
-                  {firewallMessage}
+                <div className="p-2.5 rounded-lg bg-blue-950/40 border border-blue-500/30 text-blue-300 text-xs mt-2 space-y-2">
+                  <p>{firewallMessage}</p>
+                  {firewallCmd && (
+                    <div className="pt-1">
+                      <div className="text-[10px] text-slate-400 font-mono mb-1">Run in PowerShell as Administrator:</div>
+                      <div className="flex items-start justify-between bg-black/60 px-2.5 py-2 rounded border border-blue-500/40 font-mono text-[11px] text-cyan-300 gap-2">
+                        <span className="break-all select-all leading-relaxed">{firewallCmd}</span>
+                        <button
+                          onClick={() => {
+                            navigator.clipboard.writeText(firewallCmd);
+                            setCopiedFirewallCmd(true);
+                            setTimeout(() => setCopiedFirewallCmd(false), 2000);
+                          }}
+                          className="p-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 shrink-0 mt-0.5"
+                          title="Copy firewall command"
+                        >
+                          {copiedFirewallCmd ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
             </div>
