@@ -28,7 +28,7 @@ import {
 import { AuthService } from './auth/authService';
 import { AuditService } from './auth/audit';
 import { SetupService } from './auth/setup';
-import { AuthGuard } from './auth/guard';
+import { AuthGuard, parseCookies } from './auth/guard';
 import { loginThrottle } from './auth/throttle';
 import { TableBrowser } from './db/browser';
 
@@ -270,7 +270,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookies(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -297,7 +297,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookies(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -723,6 +723,36 @@ export class WebApiServer {
           if (route.path === '/api/v1/files/rename') {
             const body = await this.parseJsonBody(req);
             const ok = this.fileManager.renameItem(body.oldPath, body.newName);
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/copy') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.copyItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.copy',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/move') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.moveItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.move',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
             this.sendJson(res, { success: ok });
             return;
           }

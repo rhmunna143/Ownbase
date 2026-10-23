@@ -158,6 +158,13 @@ namespace NativeMinio
                 bool isXmlRequest = !isBrowser && (accept.Contains("xml") || req.QueryString["format"] == "xml" || (isS3Client && !accept.Contains("json")));
                 bool isJsonRequest = accept.Contains("application/json") || req.QueryString["format"] == "json";
 
+                // Favicon
+                if (lowerPath == "/favicon.ico" || lowerPath == "/favicon.svg")
+                {
+                    SendFavicon(res, lowerPath, isHead);
+                    return;
+                }
+
                 if (lowerPath == "/" || lowerPath == "")
                 {
                     if (isXmlRequest)
@@ -289,6 +296,32 @@ namespace NativeMinio
             res.Close();
         }
 
+        private static void SendFavicon(HttpListenerResponse res, string path, bool isHead)
+        {
+            const string svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 64 64"">
+  <defs>
+    <linearGradient id=""minioGrad"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#fb7185""/>
+      <stop offset=""100%"" stop-color=""#e11d48""/>
+    </linearGradient>
+  </defs>
+  <rect width=""64"" height=""64"" rx=""16"" fill=""#14060b""/>
+  <rect x=""2"" y=""2"" width=""60"" height=""60"" rx=""14"" fill=""none"" stroke=""#38101a"" stroke-width=""1.5""/>
+  <path d=""M12,44 L22,20 L32,34 L42,20 L52,44 L42,44 L37,32 L32,39 L27,32 L22,44 Z"" fill=""url(#minioGrad)""/>
+  <circle cx=""22"" cy=""20"" r=""3.5"" fill=""#f43f5e""/>
+  <circle cx=""42"" cy=""20"" r=""3.5"" fill=""#f43f5e""/>
+</svg>";
+            byte[] bytes = Encoding.UTF8.GetBytes(svg);
+            res.ContentType = (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) ? "image/x-icon" : "image/svg+xml";
+            res.ContentLength64 = bytes.Length;
+            res.StatusCode = 200;
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            res.Close();
+        }
+
         private static void SendHtml(HttpListenerResponse res, string html, bool isHead)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(html);
@@ -317,6 +350,8 @@ namespace NativeMinio
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     <title>Ownbase S3 Storage Console</title>
+    <link rel=""icon"" type=""image/svg+xml"" href=""/favicon.svg"">
+    <link rel=""alternate icon"" href=""/favicon.ico"">
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"" rel=""stylesheet"">

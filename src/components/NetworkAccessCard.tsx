@@ -21,6 +21,7 @@ import {
 } from 'lucide-react';
 import { TailscaleStatus, SystemInfo } from '@/shared/types';
 import { serverApi } from '@/shared/apiClient';
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
 
 interface NetworkAccessProps {
   systemInfo: SystemInfo | null;
@@ -43,6 +44,16 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
   const localIp = systemInfo?.localIp || '192.168.0.108';
   const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.'));
   const hasTailscale = !!tailscaleIp || !!tailscaleStatus?.connected;
+
+  const filesLocalUrl = getAccessibleServiceUrl('files', 8080);
+  const photosLocalUrl = getAccessibleServiceUrl('photos', 3001);
+  const aiLocalUrl = getAccessibleServiceUrl('ai', 11434);
+  const s3LocalUrl = getAccessibleServiceUrl('s3', 9000);
+
+  const filesTsUrl = tailscaleIp ? getAccessibleServiceUrl('files', 8080, null, tailscaleIp) : '';
+  const photosTsUrl = tailscaleIp ? getAccessibleServiceUrl('photos', 3001, null, tailscaleIp) : '';
+  const aiTsUrl = tailscaleIp ? getAccessibleServiceUrl('ai', 11434, null, tailscaleIp) : '';
+  const s3TsUrl = tailscaleIp ? getAccessibleServiceUrl('s3', 9000, null, tailscaleIp) : '';
 
   const [isApplyingFw, setIsApplyingFw] = useState(false);
   const [fwMessage, setFwMessage] = useState<string | null>(null);
@@ -160,14 +171,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://files.${localIp}.nip.io`, 'files-local')}
+                  onClick={() => copyToClipboard(filesLocalUrl, 'files-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'files-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://files.${localIp}.nip.io`}
+                  href={filesLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
@@ -192,14 +203,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://photos.${localIp}.nip.io`, 'photos-local')}
+                  onClick={() => copyToClipboard(photosLocalUrl, 'photos-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'photos-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://photos.${localIp}.nip.io`}
+                  href={photosLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
@@ -223,14 +234,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://ai.${localIp}.nip.io`, 'ai-local')}
+                  onClick={() => copyToClipboard(aiLocalUrl, 'ai-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'ai-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://ai.${localIp}.nip.io`}
+                  href={aiLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30"
@@ -254,14 +265,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://s3.${localIp}.nip.io`, 's3-local')}
+                  onClick={() => copyToClipboard(s3LocalUrl, 's3-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 's3-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://s3.${localIp}.nip.io`}
+                  href={s3LocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 border border-rose-500/30"
@@ -394,14 +405,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://files.${tailscaleIp}.nip.io`, 'files-ts')}
+                    onClick={() => copyToClipboard(filesTsUrl, 'files-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'files-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://files.${tailscaleIp}.nip.io`}
+                    href={filesTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
@@ -425,14 +436,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://photos.${tailscaleIp}.nip.io`, 'photos-ts')}
+                    onClick={() => copyToClipboard(photosTsUrl, 'photos-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'photos-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://photos.${tailscaleIp}.nip.io`}
+                    href={photosTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
@@ -456,14 +467,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://ai.${tailscaleIp}.nip.io`, 'ai-ts')}
+                    onClick={() => copyToClipboard(aiTsUrl, 'ai-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'ai-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://ai.${tailscaleIp}.nip.io`}
+                    href={aiTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30"
@@ -487,14 +498,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://s3.${tailscaleIp}.nip.io`, 's3-ts')}
+                    onClick={() => copyToClipboard(s3TsUrl, 's3-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 's3-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://s3.${tailscaleIp}.nip.io`}
+                    href={s3TsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 border border-rose-500/30"

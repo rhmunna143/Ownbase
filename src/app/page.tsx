@@ -121,6 +121,31 @@ export default function DashboardPage() {
   const [exeUploadSuccess, setExeUploadSuccess] = useState<boolean>(false);
   const [isDeployingExe, setIsDeployingExe] = useState<boolean>(false);
 
+  const checkRedirect = (token?: string | null): boolean => {
+    if (typeof window === 'undefined') return false;
+    const effectiveToken = token || authStore.getToken();
+    if (!effectiveToken) return false;
+    const params = new URLSearchParams(window.location.search);
+    const redirectTarget = params.get('redirect');
+    if (redirectTarget) {
+      try {
+        const targetUrl = new URL(redirectTarget, window.location.origin);
+        targetUrl.searchParams.set('token', effectiveToken);
+        window.location.replace(targetUrl.toString());
+        return true;
+      } catch (err) {
+        console.error('[Hub] Redirect failed:', err);
+      }
+    }
+    return false;
+  };
+
+  useEffect(() => {
+    if (currentUser) {
+      checkRedirect();
+    }
+  }, [currentUser]);
+
   const handleInlineLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError(null);
@@ -128,6 +153,7 @@ export default function DashboardPage() {
     try {
       const res = await serverApi.login(loginUsername, loginPassword);
       if (res.ok && res.user) {
+        if (checkRedirect(res.accessToken)) return;
         setCurrentUser(res.user);
         fetchAllData();
       } else {
@@ -283,6 +309,8 @@ export default function DashboardPage() {
     const initialUser = authStore.getUser();
     const initialToken = authStore.getToken();
 
+    if (initialToken && checkRedirect(initialToken)) return;
+
     if (initialUser && initialToken) {
       setCurrentUser(initialUser);
       setAuthChecked(true);
@@ -290,6 +318,7 @@ export default function DashboardPage() {
     } else {
       serverApi.restoreSession().then((restoredUser) => {
         if (restoredUser) {
+          if (checkRedirect()) return;
           setCurrentUser(restoredUser);
         } else {
           setCurrentUser(null);
@@ -1520,6 +1549,7 @@ export default function DashboardPage() {
       <SetupWizardModal
         isOpen={isSetupWizardOpen}
         onSetupComplete={() => {
+          if (checkRedirect()) return;
           setIsSetupWizardOpen(false);
           setCurrentUser(authStore.getUser());
           fetchAllData();
@@ -1529,6 +1559,7 @@ export default function DashboardPage() {
       <LoginModal
         isOpen={isLoginModalOpen}
         onLoginSuccess={(user) => {
+          if (checkRedirect()) return;
           setCurrentUser(user);
           setIsLoginModalOpen(false);
           fetchAllData();

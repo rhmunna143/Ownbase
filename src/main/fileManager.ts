@@ -321,6 +321,83 @@ export class FileManager {
     return true;
   }
 
+  public copyItem(sourceSubPath: string, destinationDir: string, newName?: string): boolean {
+    if (!sourceSubPath || sourceSubPath.trim() === '' || sourceSubPath.trim() === '.') {
+      throw new Error('Cannot copy storage root directory');
+    }
+    const sourcePath = this.safeResolve(sourceSubPath);
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error('Source item to copy does not exist');
+    }
+    const destDir = this.safeResolve(destinationDir);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    const itemName = newName && newName.trim() ? newName.trim() : path.basename(sourcePath);
+    const cleanName = itemName.replace(/[\/\\:*?"<>|]/g, '_').trim();
+    let targetPath = path.join(destDir, cleanName);
+
+    // If target already exists, generate a copy name
+    if (fs.existsSync(targetPath)) {
+      const ext = path.extname(cleanName);
+      const nameWithoutExt = path.basename(cleanName, ext);
+      let counter = 1;
+      while (fs.existsSync(targetPath)) {
+        targetPath = path.join(destDir, `${nameWithoutExt} (Copy${counter > 1 ? ` ${counter}` : ''})${ext}`);
+        counter++;
+      }
+    }
+
+    // Circular prevention: cannot copy a directory into itself
+    if (fs.statSync(sourcePath).isDirectory()) {
+      const rel = path.relative(sourcePath, targetPath);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+        throw new Error('Cannot copy a folder into itself or its subfolder');
+      }
+    }
+
+    fs.cpSync(sourcePath, targetPath, { recursive: true });
+    return true;
+  }
+
+  public moveItem(sourceSubPath: string, destinationDir: string, newName?: string): boolean {
+    if (!sourceSubPath || sourceSubPath.trim() === '' || sourceSubPath.trim() === '.') {
+      throw new Error('Cannot move storage root directory');
+    }
+    const sourcePath = this.safeResolve(sourceSubPath);
+    if (!fs.existsSync(sourcePath)) {
+      throw new Error('Source item to move does not exist');
+    }
+    const destDir = this.safeResolve(destinationDir);
+    if (!fs.existsSync(destDir)) {
+      fs.mkdirSync(destDir, { recursive: true });
+    }
+    const itemName = newName && newName.trim() ? newName.trim() : path.basename(sourcePath);
+    const cleanName = itemName.replace(/[\/\\:*?"<>|]/g, '_').trim();
+    const targetPath = path.join(destDir, cleanName);
+
+    if (path.resolve(sourcePath) === path.resolve(targetPath)) {
+      return true; // Same location
+    }
+
+    // Circular prevention: cannot move a directory into itself
+    if (fs.statSync(sourcePath).isDirectory()) {
+      const rel = path.relative(sourcePath, targetPath);
+      if (!rel.startsWith('..') && !path.isAbsolute(rel)) {
+        throw new Error('Cannot move a folder into itself or its subfolder');
+      }
+    }
+
+    try {
+      fs.renameSync(sourcePath, targetPath);
+    } catch {
+      // Fallback for cross-device moves
+      fs.cpSync(sourcePath, targetPath, { recursive: true });
+      fs.rmSync(sourcePath, { recursive: true, force: true });
+    }
+    return true;
+  }
+
   public deleteItem(subPath: string): boolean {
     const itemPath = this.safeResolve(subPath);
     if (!fs.existsSync(itemPath)) {

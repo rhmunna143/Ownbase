@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { ShieldAlert, KeyRound, CheckCircle2, AlertCircle, Loader2, Lock, User } from 'lucide-react';
-import { serverApi } from '@/shared/apiClient';
+import { serverApi, authStore } from '@/shared/apiClient';
 
 interface SetupWizardModalProps {
   isOpen: boolean;
@@ -45,7 +45,20 @@ export const SetupWizardModal: React.FC<SetupWizardModalProps> = ({ isOpen, onSe
       if (res.success) {
         setSuccess(true);
         // Attempt automatic login
-        await serverApi.login(username, password).catch(() => {});
+        const loginRes = await serverApi.login(username, password).catch(() => null);
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const redirectTarget = params.get('redirect');
+          const token = (loginRes && loginRes.accessToken) || authStore.getToken();
+          if (redirectTarget && token) {
+            try {
+              const targetUrl = new URL(redirectTarget, window.location.origin);
+              targetUrl.searchParams.set('token', token);
+              window.location.replace(targetUrl.toString());
+              return;
+            } catch {}
+          }
+        }
         setTimeout(() => {
           onSetupComplete();
         }, 1500);

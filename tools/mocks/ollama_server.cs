@@ -79,6 +79,12 @@ namespace NativeAiHub
 
             try
             {
+                if (path == "/favicon.ico" || path == "/favicon.svg")
+                {
+                    SendFavicon(res, path, isHead);
+                    return;
+                }
+
                 if (path == "/" || path == "/index.html")
                 {
                     if (accept.Contains("application/json") || req.QueryString["format"] == "json")
@@ -457,6 +463,37 @@ namespace NativeAiHub
                     .Replace("\\t", "\t");
         }
 
+        private static void SendFavicon(HttpListenerResponse res, string path, bool isHead)
+        {
+            const string svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 64 64"">
+  <defs>
+    <linearGradient id=""aiGrad"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#c084fc""/>
+      <stop offset=""50%"" stop-color=""#a855f7""/>
+      <stop offset=""100%"" stop-color=""#6366f1""/>
+    </linearGradient>
+    <filter id=""aiGlow"" x=""-20%"" y=""-20%"" width=""140%"" height=""140%"">
+      <feGaussianBlur stdDeviation=""2.5"" result=""blur""/>
+      <feComposite in=""SourceGraphic"" in2=""blur"" operator=""over""/>
+    </filter>
+  </defs>
+  <rect width=""64"" height=""64"" rx=""16"" fill=""#0d0818""/>
+  <rect x=""2"" y=""2"" width=""60"" height=""60"" rx=""14"" fill=""none"" stroke=""#2e1065"" stroke-width=""1.5""/>
+  <path d=""M32,12 C32,24 24,32 12,32 C24,32 32,40 32,52 C32,40 40,32 52,32 C40,32 32,24 32,12 Z"" fill=""url(#aiGrad)"" filter=""url(#aiGlow)""/>
+  <path d=""M46,14 C46,18 43,21 39,21 C43,21 46,24 46,28 C46,24 49,21 53,21 C49,21 46,18 46,14 Z"" fill=""#e879f9""/>
+  <circle cx=""32"" cy=""32"" r=""4.5"" fill=""#ffffff""/>
+</svg>";
+            byte[] bytes = Encoding.UTF8.GetBytes(svg);
+            res.ContentType = (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) ? "image/x-icon" : "image/svg+xml";
+            res.ContentLength64 = bytes.Length;
+            res.StatusCode = 200;
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            res.Close();
+        }
+
         private static string GetChatWebUi()
         {
             return @"<!DOCTYPE html>
@@ -465,6 +502,8 @@ namespace NativeAiHub
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     <title>AI Hub - Hermes 3 | Native Windows Server</title>
+    <link rel=""icon"" type=""image/svg+xml"" href=""/favicon.svg"">
+    <link rel=""alternate icon"" href=""/favicon.ico"">
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"" rel=""stylesheet"">

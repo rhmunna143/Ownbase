@@ -27,6 +27,15 @@ export const authStore = {
           inMemoryAccessToken = saved;
           return inMemoryAccessToken;
         }
+        if (typeof document !== 'undefined' && document.cookie) {
+          const match = document.cookie.match(/(?:^|;\s*)ownbase_access_token=([^;]+)/);
+          if (match && match[1]) {
+            const token = decodeURIComponent(match[1]);
+            inMemoryAccessToken = token;
+            try { localStorage.setItem('ownbase_access_token', token); } catch {}
+            return token;
+          }
+        }
       } catch {}
     }
     return null;
@@ -118,6 +127,10 @@ async function refreshAccessToken(): Promise<string | null> {
   activeRefreshPromise = (async () => {
     try {
       const refreshToken = authStore.getRefreshToken();
+      if (!refreshToken && typeof document !== 'undefined' && !document.cookie.includes('ownbase_refresh')) {
+        return authStore.getToken();
+      }
+
       const res = await fetch('/api/v1/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -135,8 +148,10 @@ async function refreshAccessToken(): Promise<string | null> {
         }
       }
 
-      // If refresh failed with 401/400, clear invalid session
-      authStore.clear();
+      // If refresh failed with 401/400 and we had an explicit refresh token, clear invalid session
+      if (refreshToken) {
+        authStore.clear();
+      }
       return null;
     } catch {
       return null;
@@ -583,6 +598,24 @@ export const serverApi = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ oldPath, newName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  copyItem: async (sourcePath: string, destinationDir: string, newName?: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth('/api/v1/files/copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationDir, newName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  moveItem: async (sourcePath: string, destinationDir: string, newName?: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth('/api/v1/files/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationDir, newName }),
     }).catch(() => null);
     return res && res.ok ? await res.json() : { success: false };
   },

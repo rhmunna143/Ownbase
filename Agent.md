@@ -237,6 +237,30 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
 
 ## 10. Verification Commands
 
+### 11. Cross-Subdomain SSO & Forward-Auth Architecture (Fix for "Service Access Restricted" when Authenticated)
+- **Problem**: Users authenticated on Ownbase Hub experienced 401 "Service Access Restricted" when navigating to service subdomains (`files.*`, `photos.*`, `ai.*`, `s3.*`).
+- **Root Causes**:
+  1. RFC 6265 prevents browser cookies from raw IP addresses (e.g. `192.168.0.101`) or Public Suffix List domains from automatically scoping to isolated subdomains.
+  2. Subdomain links in dashboard cards (`NetworkAccessCard.tsx`, `RoutesTable.tsx`, `ServicesTable.tsx`) were bare URLs lacking token query params.
+  3. Edge proxy (`tools/mocks/caddy_server.cs`) passed requests with `?token=` to upstream services but never injected `Set-Cookie` on the upstream response, causing all concurrent and subsequent asset requests (`/static/css/...`, API calls, folder clicks) to arrive cookie-less and trigger 401.
+  4. In `src/app/photos/page.tsx`, `initAuth` called `refreshAccessToken()` without a refresh token, causing `authStore.clear()` to wipe the valid access token.
+  5. The 401 page redirected to Hub with `?redirect=...`, but Hub (`src/app/page.tsx`) lacked redirect handling, leaving authenticated users stranded.
+  6. In Caddy, IP address hosts caused `hubHost` string slicing to generate malformed hostnames (e.g., `hub.168.0.101`).
+- **Fixes Applied**:
+  1. **Caddy Edge Proxy (`tools/mocks/caddy_server.cs`)**:
+     - `isHub` explicitly includes raw IP addresses and target port 3001.
+     - `CopyUpstreamToClient` performs byte-accurate `Set-Cookie: ownbase_access_token=<token>; Path=/; SameSite=Lax; Max-Age=86400` injection on both host and parent domain upon token requests.
+     - `ResolveHubHost` correctly preserves IP addresses and maps `files.*` to `hub.*`.
+     - 401 Restricted page checks local storage to auto-reload if token exists.
+  2. **FileBrowser Mock (`tools/mocks/filebrowser_server.cs`)**:
+     - Plants `Set-Cookie: ownbase_access_token=<token>` directly on HTTP response when `?token=` or `?access_token=` is provided.
+  3. **Ownbase Hub (`src/app/page.tsx`)**:
+     - Automatically bounces authenticated users to `${redirectTarget}?token=${token}` on load and after inline login.
+  4. **Photos Standalone (`src/app/photos/page.tsx`)**:
+     - Verifies incoming query tokens via `/api/v1/auth/me` without triggering refresh token wipes.
+  5. **Dashboard Cards (`NetworkAccessCard.tsx`, `RoutesTable.tsx`, `ServicesTable.tsx`)**:
+     - All service URLs invoke `getAccessibleServiceUrl` to append `?token=${token}` when the user is authenticated.
+
 Always run these before completing any phase or major task:
 ```powershell
 # 1. Full Vitest test suite (All 58 suites must pass)

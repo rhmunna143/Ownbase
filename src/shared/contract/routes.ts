@@ -397,6 +397,22 @@ export const ROUTE_TABLE: RouteDefinition[] = [
     audit: true,
   },
   {
+    method: 'POST',
+    path: '/api/v1/files/copy',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Copy a file or directory in storage',
+    audit: true,
+  },
+  {
+    method: 'POST',
+    path: '/api/v1/files/move',
+    auth: 'user',
+    minRole: 'OPERATOR',
+    summary: 'Move or rename/cut-paste a file or directory in storage',
+    audit: true,
+  },
+  {
     method: 'DELETE',
     path: '/api/v1/files/delete',
     auth: 'user',

@@ -354,7 +354,7 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
                   tailscaleStatus?.ip
                 );
                 const meshUrl = tailscaleStatus?.ip
-                  ? `http://${route.subdomain}.${tailscaleStatus.ip}.nip.io`
+                  ? getAccessibleServiceUrl(route.subdomain, route.targetPort, null, tailscaleStatus.ip)
                   : null;
                 const isTesting = testingHost === host || (route.customDomain && testingHost === route.customDomain);
                 const testRes = testResults[host] || (route.customDomain ? testResults[route.customDomain] : undefined);

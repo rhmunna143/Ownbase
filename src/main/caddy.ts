@@ -152,27 +152,33 @@ export class CaddyManager {
 
       const caddyRoutes: any[] = [];
 
+      const restrictedHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Ownbase • Access Restricted</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#070b12;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{background:#0d1322;border:1px solid #1e293b;border-radius:20px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)}.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px}h2{font-size:18px;font-weight:700;color:#fff;margin-bottom:8px}p{font-size:13px;color:#94a3b8;line-height:1.5;margin-bottom:24px}.btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:12px 20px;background:linear-gradient(135deg,#2563eb,#4f46e5);color:#fff;border-radius:12px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(37,99,235,0.3);transition:opacity 0.2s}.btn:hover{opacity:0.9}.note{margin-top:14px;font-size:11px;color:#64748b}</style></head><body><div class="card"><div class="badge">🔒 Authentication Required</div><h2>Access Restricted</h2><p>Sign in to your Ownbase server to access this service on your local network or remote connection.</p><a id="loginBtn" href="/" class="btn">Sign In to Ownbase Hub</a><div class="note">Subdomain access requires an active Ownbase session</div></div><script>(function(){var h=window.location.hostname;var p=h.split('.');var hubUrl='/';if(p.length>=3){p[0]='hub';hubUrl=window.location.protocol+'//'+p.join('.')+(window.location.port?':'+window.location.port:'')+'/'}var target=hubUrl+'?redirect='+encodeURIComponent(window.location.href);document.getElementById('loginBtn').href=target;})();</script></body></html>`;
+
       // 1. Service subdomains (e.g. files, ai, s3)
       for (const route of activeRoutes) {
         if (route.subdomain === 'proxy') continue; // Handled by Catch-All Hub and API bridge
 
-        const hosts = [
+        const localHosts = [
           `${route.subdomain}.localhost`,
+        ];
+
+        const lanHosts: string[] = [
           `${route.subdomain}.local`,
         ];
 
         for (const ip of localIps) {
-          hosts.push(`${route.subdomain}.${ip}.nip.io`);
-          hosts.push(`${route.subdomain}.${ip}.sslip.io`);
+          lanHosts.push(`${route.subdomain}.${ip}.nip.io`);
+          lanHosts.push(`${route.subdomain}.${ip}.sslip.io`);
         }
 
         if (route.customDomain) {
-          hosts.push(route.customDomain);
+          lanHosts.push(route.customDomain);
         }
 
+        // Loopback local route (no forward-auth needed)
         caddyRoutes.push({
-          '@id': `route-${route.id}`,
-          match: [{ host: hosts }],
+          '@id': `route-${route.id}-local`,
+          match: [{ host: localHosts }],
           handle: [
             {
               handler: 'reverse_proxy',
@@ -192,6 +198,95 @@ export class CaddyManager {
           ],
           terminal: true,
         });
+
+        // LAN / remote route with forward_auth protection
+        const isProtected = route.subdomain !== 'hub' && (route as any).requiresAuth !== false;
+        if (isProtected) {
+          caddyRoutes.push({
+            '@id': `route-${route.id}-lan-protected`,
+            match: [{ host: lanHosts }],
+            handle: [
+              {
+                handler: 'reverse_proxy',
+                upstreams: [{ dial: '127.0.0.1:3001' }],
+                rewrite: {
+                  method: 'GET',
+                  uri: '/api/v1/auth/verify',
+                },
+                headers: {
+                  request: {
+                    set: {
+                      'X-Forwarded-Host': ['{http.request.host}'],
+                      'X-Forwarded-Uri': ['{http.request.uri}'],
+                      'X-Forwarded-Method': ['{http.request.method}'],
+                    },
+                  },
+                },
+                handle_response: [
+                  {
+                    match: { status_code: [200, 201, 204] },
+                    routes: [
+                      {
+                        handle: [
+                          {
+                            handler: 'reverse_proxy',
+                            headers: {
+                              request: {
+                                set: {
+                                  Host: ['{http.reverse_proxy.upstream.hostport}'],
+                                },
+                              },
+                            },
+                            upstreams: [{ dial: `${route.targetHost}:${route.targetPort}` }],
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                  {
+                    match: { status_code: [401, 403] },
+                    routes: [
+                      {
+                        handle: [
+                          {
+                            handler: 'static_response',
+                            status_code: 401,
+                            headers: { 'Content-Type': ['text/html; charset=utf-8'] },
+                            body: restrictedHtml,
+                          },
+                        ],
+                      },
+                    ],
+                  },
+                ],
+              },
+            ],
+            terminal: true,
+          });
+        } else {
+          caddyRoutes.push({
+            '@id': `route-${route.id}-lan`,
+            match: [{ host: lanHosts }],
+            handle: [
+              {
+                handler: 'reverse_proxy',
+                headers: {
+                  request: {
+                    set: {
+                      Host: ['{http.reverse_proxy.upstream.hostport}'],
+                    },
+                  },
+                },
+                upstreams: [
+                  {
+                    dial: `${route.targetHost}:${route.targetPort}`,
+                  },
+                ],
+              },
+            ],
+            terminal: true,
+          });
+        }
       }
 
       // 2. Web API Bridge Route (/api/* -> 127.0.0.1:3001)
@@ -222,15 +317,9 @@ export class CaddyManager {
       const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
       const hubDial = isDev ? '127.0.0.1:3000' : '127.0.0.1:3001';
 
-      const photoHosts = ['photos.localhost', 'photos.local'];
-      for (const ip of localIps) {
-        photoHosts.push(`photos.${ip}.nip.io`);
-        photoHosts.push(`photos.${ip}.sslip.io`);
-      }
-
       caddyRoutes.push({
-        '@id': 'route-photos-hub',
-        match: [{ host: photoHosts }],
+        '@id': 'route-photos-hub-local',
+        match: [{ host: ['photos.localhost', 'photos.local'] }],
         handle: [
           {
             handler: 'reverse_proxy',
@@ -241,9 +330,71 @@ export class CaddyManager {
                 },
               },
             },
-            upstreams: [
+            upstreams: [{ dial: hubDial }],
+          },
+        ],
+        terminal: true,
+      });
+
+      const photoLanHosts: string[] = [];
+      for (const ip of localIps) {
+        photoLanHosts.push(`photos.${ip}.nip.io`);
+        photoLanHosts.push(`photos.${ip}.sslip.io`);
+      }
+
+      caddyRoutes.push({
+        '@id': 'route-photos-hub-lan-protected',
+        match: [{ host: photoLanHosts }],
+        handle: [
+          {
+            handler: 'reverse_proxy',
+            upstreams: [{ dial: '127.0.0.1:3001' }],
+            rewrite: {
+              method: 'GET',
+              uri: '/api/v1/auth/verify',
+            },
+            headers: {
+              request: {
+                set: {
+                  'X-Forwarded-Host': ['{http.request.host}'],
+                  'X-Forwarded-Uri': ['{http.request.uri}'],
+                  'X-Forwarded-Method': ['{http.request.method}'],
+                },
+              },
+            },
+            handle_response: [
               {
-                dial: hubDial,
+                match: { status_code: [200, 201, 204] },
+                routes: [
+                  {
+                    handle: [
+                      {
+                        handler: 'reverse_proxy',
+                        headers: {
+                          request: {
+                            set: { Host: [hubDial] },
+                          },
+                        },
+                        upstreams: [{ dial: hubDial }],
+                      },
+                    ],
+                  },
+                ],
+              },
+              {
+                match: { status_code: [401, 403] },
+                routes: [
+                  {
+                    handle: [
+                      {
+                        handler: 'static_response',
+                        status_code: 401,
+                        headers: { 'Content-Type': ['text/html; charset=utf-8'] },
+                        body: restrictedHtml,
+                      },
+                    ],
+                  },
+                ],
               },
             ],
           },

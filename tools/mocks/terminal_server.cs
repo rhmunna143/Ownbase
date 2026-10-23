@@ -54,6 +54,32 @@ namespace OwnbaseMocks
             try
             {
                 string path = ctx.Request.Url.AbsolutePath;
+                if (path == "/favicon.ico" || path == "/favicon.svg")
+                {
+                    const string svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 64 64"">
+  <defs>
+    <linearGradient id=""termGrad"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#10b981""/>
+      <stop offset=""100%"" stop-color=""#059669""/>
+    </linearGradient>
+  </defs>
+  <rect width=""64"" height=""64"" rx=""16"" fill=""#050a12""/>
+  <rect x=""2"" y=""2"" width=""60"" height=""60"" rx=""14"" fill=""none"" stroke=""#1e293b"" stroke-width=""1.5""/>
+  <rect x=""8"" y=""10"" width=""48"" height=""44"" rx=""8"" fill=""#0a101f"" stroke=""#1e293b"" stroke-width=""1.5""/>
+  <circle cx=""16"" cy=""17"" r=""2.5"" fill=""#ef4444""/>
+  <circle cx=""23"" cy=""17"" r=""2.5"" fill=""#f59e0b""/>
+  <circle cx=""30"" cy=""17"" r=""2.5"" fill=""#10b981""/>
+  <line x1=""8"" y1=""23"" x2=""56"" y2=""23"" stroke=""#1e293b"" stroke-width=""1""/>
+  <path d=""M16,30 L26,37 L16,44"" fill=""none"" stroke=""url(#termGrad)"" stroke-width=""3.5"" stroke-linecap=""round"" stroke-linejoin=""round""/>
+  <line x1=""30"" y1=""44"" x2=""44"" y2=""44"" stroke=""#38bdf8"" stroke-width=""3.5"" stroke-linecap=""round""/>
+</svg>";
+                    byte[] bytesFav = Encoding.UTF8.GetBytes(svg);
+                    ctx.Response.ContentType = (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) ? "image/x-icon" : "image/svg+xml";
+                    ctx.Response.OutputStream.Write(bytesFav, 0, bytesFav.Length);
+                    ctx.Response.Close();
+                    return;
+                }
+
                 if (path == "/api/exec" && ctx.Request.HttpMethod == "POST")
                 {
                     string command = "";
@@ -76,6 +102,8 @@ namespace OwnbaseMocks
 <head>
     <meta charset=""UTF-8"">
     <title>Ownbase Web Terminal</title>
+    <link rel=""icon"" type=""image/svg+xml"" href=""/favicon.svg"">
+    <link rel=""alternate icon"" href=""/favicon.ico"">
     <style>
         body { margin: 0; background: #070b14; color: #38bdf8; font-family: Consolas, monospace; display: flex; flex-direction: column; height: 100vh; }
         header { background: #0c1322; padding: 12px 18px; border-bottom: 1px solid #1e293b; display: flex; justify-content: space-between; align-items: center; }

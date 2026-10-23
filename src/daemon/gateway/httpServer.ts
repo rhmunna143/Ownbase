@@ -38,7 +38,7 @@ import {
 import { AuthService } from '../auth/authService';
 import { AuditService } from '../auth/audit';
 import { SetupService } from '../auth/setup';
-import { AuthGuard } from '../auth/guard';
+import { AuthGuard, parseCookies } from '../auth/guard';
 import { loginThrottle } from '../auth/throttle';
 import { TableBrowser } from '../db/browser';
 import { EventStreamGateway } from './events';
@@ -380,10 +380,37 @@ export class WebApiServer {
               const accessToken = await this.authService.generateAccessToken(authUser);
               const { token: refreshToken } = await this.authService.generateRefreshToken(user.id);
 
-              res.setHeader('Set-Cookie', [
+              const reqHost = ((req.headers['x-forwarded-host'] as string) || req.headers.host || '').split(':')[0].toLowerCase();
+              let cookieDomain = '';
+              if (reqHost.endsWith('.nip.io') || reqHost.endsWith('.sslip.io')) {
+                const parts = reqHost.split('.');
+                if (parts.length >= 6) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                } else if (parts.length === 5) {
+                  cookieDomain = '; Domain=.' + reqHost;
+                }
+              } else if (reqHost.endsWith('.ts.net')) {
+                const parts = reqHost.split('.');
+                if (parts.length >= 4) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                } else if (parts.length === 3) {
+                  cookieDomain = '; Domain=.' + reqHost;
+                }
+              } else if (reqHost.includes('.') && !/^(\d{1,3}\.){3}\d{1,3}$/.test(reqHost) && reqHost !== 'localhost') {
+                const parts = reqHost.split('.');
+                if (parts.length >= 3) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                }
+              }
+
+              const cookiesToSet = [
                 `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`,
                 `ownbase_access_token=${accessToken}; Path=/; SameSite=Lax; Max-Age=${24 * 3600}`,
-              ]);
+              ];
+              if (cookieDomain) {
+                cookiesToSet.push(`ownbase_access_token=${accessToken}; Path=/; SameSite=Lax; Max-Age=${24 * 3600}${cookieDomain}`);
+              }
+              res.setHeader('Set-Cookie', cookiesToSet);
 
               await this.auditService.record({
                 actorId: user.id,
@@ -431,7 +458,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookies(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -918,6 +945,36 @@ export class WebApiServer {
           if (route.path === '/api/v1/files/rename') {
             const body = await this.parseJsonBody(req);
             const ok = this.fileManager.renameItem(body.oldPath, body.newName);
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/copy') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.copyItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.copy',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/move') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.moveItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.move',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
             this.sendJson(res, { success: ok });
             return;
           }
@@ -1884,8 +1941,10 @@ export class WebApiServer {
             const clientIp = this.getClientIp(req);
 
             let user: AuthenticatedUser | null = null;
+            let verifiedToken = '';
             if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-              user = await this.authService.verifyAccessToken(authHeader.slice(7).trim());
+              verifiedToken = authHeader.slice(7).trim();
+              user = await this.authService.verifyAccessToken(verifiedToken);
             } else if (typeof apiKeyHeader === 'string') {
               user = await this.authService.verifyApiKey(apiKeyHeader);
             } else if (req.headers.cookie) {
@@ -1894,8 +1953,23 @@ export class WebApiServer {
                 const token = parsedCookies.ownbase_access_token || parsedCookies.ownbase_session;
                 if (token) {
                   user = await this.authService.verifyAccessToken(token);
+                  if (user) verifiedToken = token;
                 }
               } catch {}
+            }
+
+            if (!user) {
+              const forwardedUri = (req.headers['x-forwarded-uri'] as string) || req.url || '';
+              if (forwardedUri.includes('token=')) {
+                try {
+                  const parsedUrl = new URL(forwardedUri, 'http://127.0.0.1');
+                  const queryToken = parsedUrl.searchParams.get('token') || parsedUrl.searchParams.get('access_token');
+                  if (queryToken) {
+                    user = await this.authService.verifyAccessToken(queryToken);
+                    if (user) verifiedToken = queryToken;
+                  }
+                } catch {}
+              }
             }
 
             // Determine if target host is a LAN host requiring authentication (PRD Criterion A3)
@@ -1918,6 +1992,9 @@ export class WebApiServer {
             if (user) {
               res.setHeader('X-Forwarded-User', user.username);
               res.setHeader('X-Forwarded-Role', user.role);
+              if (verifiedToken) {
+                res.setHeader('Set-Cookie', `ownbase_access_token=${verifiedToken}; Path=/; SameSite=Lax; Max-Age=86400`);
+              }
               this.sendJson(res, { verified: true, user });
             } else {
               this.sendJson(res, { verified: true, access: 'loopback' });
@@ -2196,7 +2273,11 @@ export class WebApiServer {
 
     let relPath = pathname.replace(/^\/+/, '');
     const host = (req.headers.host || '').toLowerCase();
-    if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
+    if (relPath === 'favicon.ico' || relPath === 'favicon.svg') {
+      if (host.startsWith('photos.')) {
+        relPath = relPath === 'favicon.svg' ? 'photos-favicon.svg' : 'photos-favicon.ico';
+      }
+    } else if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
       if (fs.existsSync(path.join(outDir, 'photos', 'index.html'))) {
         relPath = 'photos/index.html';
       } else if (fs.existsSync(path.join(outDir, 'photos.html'))) {

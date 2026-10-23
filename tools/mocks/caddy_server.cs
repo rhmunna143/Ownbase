@@ -143,26 +143,101 @@ namespace NativeCaddy
                 string host = ExtractHost(initialText);
                 int targetPort = ResolveTargetPort(host);
 
-                // PRD Acceptance Criterion A3: ai.* and files.* require valid Ownbase session on LAN
-                string hostLower = host.ToLowerInvariant();
-                bool isProtectedService = targetPort == 11434 || targetPort == 8080 || targetPort == 9000 ||
-                                          hostLower.StartsWith("ai.") || hostLower.StartsWith("files.") ||
-                                          hostLower.StartsWith("s3.") || hostLower.StartsWith("minio.");
-                bool isLanHost = hostLower.Contains(".nip.io") || (!hostLower.StartsWith("localhost") && !hostLower.StartsWith("127.0.0.1") && !hostLower.EndsWith(".localhost"));
+                // Extract any authentication present in headers, cookies, or query string
+                string queryToken = ExtractQueryToken(initialText);
+                string cookieToken = ExtractCookieToken(initialText);
+                string activeToken = queryToken ?? cookieToken;
 
-                if (isProtectedService && isLanHost)
+                // PRD Acceptance Criterion A3: All services require valid Ownbase session on LAN/remote
+                // Hub is ALWAYS public so unauthenticated users can sign in
+                string hostLower = host.ToLowerInvariant();
+                IPAddress parsedIp;
+                bool isIpAddress = IPAddress.TryParse(hostLower, out parsedIp);
+                bool isHub = (targetPort == 3001 && !hostLower.StartsWith("photos.")) ||
+                             hostLower.StartsWith("hub.") || hostLower == "hub" ||
+                             hostLower == "localhost" || hostLower == "127.0.0.1" ||
+                             isIpAddress;
+
+                bool isProtectedService = !isHub && (
+                    hostLower.StartsWith("files.") || hostLower.StartsWith("photos.") ||
+                    hostLower.StartsWith("ai.") || hostLower.StartsWith("s3.") ||
+                    hostLower.StartsWith("minio.") || hostLower.StartsWith("terminal.") ||
+                    hostLower.StartsWith("syncthing.") ||
+                    targetPort == 11434 || targetPort == 8080 || targetPort == 9000 ||
+                    targetPort == 7681 || targetPort == 8384
+                );
+                bool isLanHost = hostLower.Contains(".nip.io") || hostLower.Contains(".sslip.io") ||
+                                 (!hostLower.StartsWith("localhost") && !hostLower.StartsWith("127.0.0.1") && !hostLower.EndsWith(".localhost"));
+
+                bool isFavicon = initialText.IndexOf(" /favicon.", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                 initialText.IndexOf(" /apple-touch-icon", StringComparison.OrdinalIgnoreCase) >= 0;
+
+                if (isProtectedService && isLanHost && !isFavicon)
                 {
-                    bool hasAuth = initialText.IndexOf("Authorization: Bearer", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    bool hasAuth = !string.IsNullOrEmpty(activeToken) ||
+                                   initialText.IndexOf("Authorization: Bearer", StringComparison.OrdinalIgnoreCase) >= 0 ||
                                    initialText.IndexOf("ownbase_access_token=", StringComparison.OrdinalIgnoreCase) >= 0 ||
                                    initialText.IndexOf("x-api-key:", StringComparison.OrdinalIgnoreCase) >= 0;
 
                     if (!hasAuth)
                     {
+                        bool isHtmlRequest = initialText.IndexOf("Accept: text/html", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                                             initialText.StartsWith("GET / HTTP", StringComparison.OrdinalIgnoreCase) ||
+                                             initialText.StartsWith("GET /?", StringComparison.OrdinalIgnoreCase);
+
+                        if (isHtmlRequest)
+                        {
+                            string safeHost = HtmlEncode(host);
+                            string hubHost = ResolveHubHost(host);
+                            string redirectUrl = "http://" + hubHost + "/?redirect=" + Uri.EscapeDataString("http://" + host + "/");
+
+                            string htmlBody = "<!DOCTYPE html><html lang='en'><head><meta charset='utf-8'><meta name='viewport' content='width=device-width,initial-scale=1'><title>401 Access Restricted | Ownbase</title><link rel='icon' type='image/svg+xml' href='/favicon.svg'><link rel='alternate icon' href='/favicon.ico'>"
+                                + "<style>"
+                                + "* { box-sizing: border-box; margin: 0; padding: 0; }"
+                                + "body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #070b14; color: #f1f5f9; display: flex; align-items: center; justify-content: center; min-height: 100vh; padding: 1.5rem; }"
+                                + ".card { background: #0f172a; border: 1px solid #1e293b; border-radius: 1.25rem; padding: 2.25rem 2rem; max-width: 480px; width: 100%; text-align: center; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }"
+                                + ".badge { display: inline-flex; align-items: center; gap: 0.375rem; background: rgba(239, 68, 68, 0.15); border: 1px solid rgba(239, 68, 68, 0.3); color: #f87171; font-size: 0.75rem; font-weight: 600; padding: 0.25rem 0.75rem; border-radius: 9999px; margin-bottom: 1.25rem; font-family: monospace; }"
+                                + "h1 { font-size: 1.375rem; font-weight: 700; color: #ffffff; margin-bottom: 0.5rem; }"
+                                + "p { font-size: 0.875rem; color: #94a3b8; line-height: 1.5; margin-bottom: 1.5rem; }"
+                                + ".btn { display: inline-flex; align-items: center; justify-content: center; gap: 0.5rem; width: 100%; background: #2563eb; color: #ffffff; font-size: 0.875rem; font-weight: 600; padding: 0.75rem 1.25rem; border-radius: 0.75rem; text-decoration: none; transition: background 0.15s; }"
+                                + ".btn:hover { background: #1d4ed8; }"
+                                + ".target { font-family: monospace; font-size: 0.75rem; color: #64748b; margin-top: 1.25rem; word-break: break-all; }"
+                                + "</style></head><body>"
+                                + "<div class='card'>"
+                                + "<div class='badge'>🔒 401 UNAUTHORIZED</div>"
+                                + "<h1>Service Access Restricted</h1>"
+                                + "<p>To access this service from mobile or local network devices, you must sign in to your Ownbase Hub account first.</p>"
+                                + "<a href='" + redirectUrl + "' class='btn'>Sign In to Ownbase Hub &rarr;</a>"
+                                + "<div class='target'>" + safeHost + "</div>"
+                                + "</div>"
+                                + "<script>"
+                                + "(function(){try{var t=localStorage.getItem('ownbase_access_token');if(t){window.location.replace(window.location.pathname+'?token='+encodeURIComponent(t));}}catch(e){}})();"
+                                + "</script>"
+                                + "</body></html>";
+
+                            byte[] bodyBytes = Encoding.UTF8.GetBytes(htmlBody);
+                            string header = "HTTP/1.1 401 Unauthorized\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: " + bodyBytes.Length + "\r\nConnection: close\r\n\r\n";
+                            byte[] headerBytes = Encoding.ASCII.GetBytes(header);
+                            try
+                            {
+                                clientStream.Write(headerBytes, 0, headerBytes.Length);
+                                clientStream.Write(bodyBytes, 0, bodyBytes.Length);
+                                clientStream.Flush();
+                            }
+                            catch { }
+                            try { client.Close(); } catch { }
+                            return;
+                        }
+
                         string authErr = "HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{\"error\":\"Authentication required to access service on LAN\",\"requiresAuth\":true}\r\n";
                         byte[] errBytes = Encoding.UTF8.GetBytes(authErr);
-                        clientStream.Write(errBytes, 0, errBytes.Length);
-                        clientStream.Flush();
-                        client.Close();
+                        try
+                        {
+                            clientStream.Write(errBytes, 0, errBytes.Length);
+                            clientStream.Flush();
+                        }
+                        catch { }
+                        try { client.Close(); } catch { }
                         return;
                     }
                 }
@@ -203,11 +278,36 @@ namespace NativeCaddy
                     return;
                 }
 
+                // Forward request headers and body to upstream without corrupting binary payload
+                int headerEnd = IndexOfHeaderEnd(buffer, bytesRead);
                 NetworkStream upstreamStream = upstream.GetStream();
-                upstreamStream.Write(buffer, 0, bytesRead);
 
+                if (headerEnd >= 0)
+                {
+                    int headerLen = headerEnd + 4;
+                    string headerText = Encoding.ASCII.GetString(buffer, 0, headerLen);
+                    string sendHeaderText = Regex.Replace(headerText, @"Connection:\s*keep-alive", "Connection: close", RegexOptions.IgnoreCase);
+                    byte[] sendHeaderBytes = Encoding.ASCII.GetBytes(sendHeaderText);
+
+                    upstreamStream.Write(sendHeaderBytes, 0, sendHeaderBytes.Length);
+
+                    int remainingBody = bytesRead - headerLen;
+                    if (remainingBody > 0)
+                    {
+                        upstreamStream.Write(buffer, headerLen, remainingBody);
+                    }
+                    upstreamStream.Flush();
+                }
+                else
+                {
+                    upstreamStream.Write(buffer, 0, bytesRead);
+                    upstreamStream.Flush();
+                }
+
+                // Pipe upstream response to client, planting session cookies if auth token was in request
+                string tokenToPlant = queryToken ?? activeToken;
                 ThreadPool.QueueUserWorkItem(_ => CopyStream(clientStream, upstreamStream, client, upstream));
-                ThreadPool.QueueUserWorkItem(_ => CopyStream(upstreamStream, clientStream, upstream, client));
+                ThreadPool.QueueUserWorkItem(_ => CopyUpstreamToClient(upstreamStream, clientStream, upstream, client, tokenToPlant, host));
             }
             catch (Exception)
             {
@@ -233,6 +333,141 @@ namespace NativeCaddy
                 try { c1.Close(); } catch { }
                 try { c2.Close(); } catch { }
             }
+        }
+
+        private static int IndexOfHeaderEnd(byte[] buf, int len)
+        {
+            for (int i = 0; i <= len - 4; i++)
+            {
+                if (buf[i] == 13 && buf[i + 1] == 10 && buf[i + 2] == 13 && buf[i + 3] == 10)
+                {
+                    return i;
+                }
+            }
+            return -1;
+        }
+
+        private static void CopyUpstreamToClient(Stream input, Stream output, TcpClient c1, TcpClient c2, string cookieToken, string host)
+        {
+            byte[] buf = new byte[16384];
+            bool firstChunk = true;
+            try
+            {
+                int r;
+                while ((r = input.Read(buf, 0, buf.Length)) > 0)
+                {
+                    if (firstChunk && !string.IsNullOrEmpty(cookieToken))
+                    {
+                        firstChunk = false;
+                        int headerEnd = IndexOfHeaderEnd(buf, r);
+                        if (headerEnd >= 0)
+                        {
+                            string cookieHeader = "Set-Cookie: ownbase_access_token=" + cookieToken + "; Path=/; SameSite=Lax; Max-Age=86400\r\n";
+                            string parent = GetParentDomain(host);
+                            if (!string.IsNullOrEmpty(parent))
+                            {
+                                cookieHeader += "Set-Cookie: ownbase_access_token=" + cookieToken + "; Domain=." + parent + "; Path=/; SameSite=Lax; Max-Age=86400\r\n";
+                            }
+                            byte[] cookieBytes = Encoding.ASCII.GetBytes(cookieHeader);
+
+                            // Write headers up to last header line ending (\r\n)
+                            output.Write(buf, 0, headerEnd + 2);
+                            // Write injected Set-Cookie header(s)
+                            output.Write(cookieBytes, 0, cookieBytes.Length);
+                            // Write final header delimiter (\r\n)
+                            output.Write(new byte[] { 13, 10 }, 0, 2);
+                            // Write any body bytes already present in this first buffer chunk
+                            int remainingBody = r - (headerEnd + 4);
+                            if (remainingBody > 0)
+                            {
+                                output.Write(buf, headerEnd + 4, remainingBody);
+                            }
+                            output.Flush();
+                            continue;
+                        }
+                    }
+                    firstChunk = false;
+                    output.Write(buf, 0, r);
+                    output.Flush();
+                }
+            }
+            catch { }
+            finally
+            {
+                try { c1.Close(); } catch { }
+                try { c2.Close(); } catch { }
+            }
+        }
+
+        private static string ExtractQueryToken(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            Match m = Regex.Match(text, @"[?&](?:token|access_token)=([a-zA-Z0-9_\-\.]+)", RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                return m.Groups[1].Value;
+            }
+            return null;
+        }
+
+        private static string ExtractCookieToken(string text)
+        {
+            if (string.IsNullOrEmpty(text)) return null;
+            Match m = Regex.Match(text, @"ownbase_access_token=([a-zA-Z0-9_\-\.]+)", RegexOptions.IgnoreCase);
+            if (m.Success)
+            {
+                return m.Groups[1].Value;
+            }
+            return null;
+        }
+
+        private static string GetParentDomain(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return null;
+            int colon = host.IndexOf(':');
+            if (colon >= 0) host = host.Substring(0, colon);
+
+            IPAddress dummyIp;
+            if (IPAddress.TryParse(host, out dummyIp)) return null;
+            if (host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || host == "localhost") return null;
+
+            int dot = host.IndexOf('.');
+            if (dot >= 0 && dot < host.Length - 1)
+            {
+                string parent = host.Substring(dot + 1);
+                if (parent.Contains("."))
+                {
+                    return parent;
+                }
+            }
+            return null;
+        }
+
+        private static string ResolveHubHost(string host)
+        {
+            if (string.IsNullOrEmpty(host)) return "localhost";
+            int colon = host.IndexOf(':');
+            if (colon >= 0) host = host.Substring(0, colon);
+
+            IPAddress dummyIp;
+            if (IPAddress.TryParse(host, out dummyIp))
+            {
+                return host;
+            }
+
+            if (host.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) || host == "localhost")
+            {
+                return "localhost";
+            }
+
+            string[] parts = host.Split('.');
+            if (parts.Length >= 3)
+            {
+                parts[0] = "hub";
+                return string.Join(".", parts);
+            }
+
+            return host;
         }
 
         private static string ExtractHost(string text)
@@ -277,6 +512,10 @@ namespace NativeCaddy
                 return 9000;
             if (lower.StartsWith("photos.") || lower.Contains(".photos."))
                 return 3001;
+            if (lower.StartsWith("terminal.") || lower.Contains(".terminal."))
+                return 7681;
+            if (lower.StartsWith("syncthing.") || lower.Contains(".syncthing."))
+                return 8384;
 
             // Default to daemon gateway / web frontend
             return 3001;

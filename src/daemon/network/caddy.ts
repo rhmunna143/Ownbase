@@ -114,7 +114,23 @@ export class CaddyManager {
     const caddyRoutes: any[] = [];
 
     // 1. User & Service Routes (Evaluated first with terminal: true)
-    for (const r of routes) {
+    const allRoutes = [...routes];
+    if (!allRoutes.some((r) => r.subdomain === 'photos')) {
+      const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+      allRoutes.push({
+        subdomain: 'photos',
+        targetPort: isDev ? 3000 : 3001,
+        targetHost: '127.0.0.1',
+        exposeLocal: true,
+        exposeLan: true,
+        exposeMesh: true,
+        tlsEnabled: true,
+      });
+    }
+
+    const restrictedHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Ownbase • Access Restricted</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#070b12;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{background:#0d1322;border:1px solid #1e293b;border-radius:20px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)}.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px}h2{font-size:18px;font-weight:700;color:#fff;margin-bottom:8px}p{font-size:13px;color:#94a3b8;line-height:1.5;margin-bottom:24px}.btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:12px 20px;background:linear-gradient(135deg,#2563eb,#4f46e5);color:#fff;border-radius:12px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(37,99,235,0.3);transition:opacity 0.2s}.btn:hover{opacity:0.9}.note{margin-top:14px;font-size:11px;color:#64748b}</style></head><body><div class="card"><div class="badge">🔒 Authentication Required</div><h2>Access Restricted</h2><p>Sign in to your Ownbase server to access this service on your local network or remote connection.</p><a id="loginBtn" href="/" class="btn">Sign In to Ownbase Hub</a><div class="note">Subdomain access requires an active Ownbase session</div></div><script>(function(){var h=window.location.hostname;var p=h.split('.');var hubUrl='/';if(p.length>=3){p[0]='hub';hubUrl=window.location.protocol+'//'+p.join('.')+(window.location.port?':'+window.location.port:'')+'/'}var target=hubUrl+'?redirect='+encodeURIComponent(window.location.href);document.getElementById('loginBtn').href=target;})();</script></body></html>`;
+
+    for (const r of allRoutes) {
       if (r.isActive === false) continue;
 
       const customDomains: string[] = [];
@@ -136,7 +152,8 @@ export class CaddyManager {
         tlsEnabled: r.tlsEnabled ?? true,
       };
 
-      const isProtected = r.requiresAuth === true || r.subdomain === 'ai';
+      // All service subdomains on LAN/remote MUST be protected unless explicitly marked requiresAuth: false or is hub
+      const isProtected = r.subdomain !== 'hub' && r.subdomain !== 'proxy' && r.requiresAuth !== false;
       const built = hostBuilder.build(intent);
 
       if (built.caddyMatchers.length > 0) {
@@ -229,7 +246,7 @@ export class CaddyManager {
                               headers: {
                                 'Content-Type': ['text/html; charset=utf-8'],
                               },
-                              body: '<html><body style="font-family:sans-serif;padding:2rem;background:#0f172a;color:#f8fafc"><h2>Access Restricted</h2><p>Authentication required to access this service on LAN/remote network.</p><a href="/" style="color:#38bdf8">Sign in to Ownbase</a></body></html>',
+                              body: restrictedHtml,
                             },
                           ],
                         },

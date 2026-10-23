@@ -30,6 +30,10 @@ import {
   ExternalLink,
   Volume2,
   Loader2,
+  Copy,
+  Scissors,
+  Clipboard,
+  ClipboardCheck,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
 import { FileItem, FileListResponse } from '@/shared/types';
@@ -62,6 +66,17 @@ export const FileBrowserCard: React.FC = () => {
     filePercent: number;
     overallPercent: number;
   } | null>(null);
+
+  // Clipboard (Copy / Cut / Paste)
+  const [clipboard, setClipboard] = useState<{
+    item: FileItem;
+    operation: 'copy' | 'cut';
+  } | null>(null);
+
+  // Internal Item-to-Folder Drag & Drop
+  const [draggedItem, setDraggedItem] = useState<FileItem | null>(null);
+  const [dragOverFolder, setDragOverFolder] = useState<string | null>(null);
+  const [isProcessingAction, setIsProcessingAction] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -162,6 +177,63 @@ export const FileBrowserCard: React.FC = () => {
       loadDirectory(currentPath);
     } else {
       alert('Failed to rename item.');
+    }
+  };
+
+  const handleCopy = (item: FileItem) => {
+    setClipboard({ item, operation: 'copy' });
+  };
+
+  const handleCut = (item: FileItem) => {
+    setClipboard({ item, operation: 'cut' });
+  };
+
+  const handleCancelClipboard = () => {
+    setClipboard(null);
+  };
+
+  const handlePaste = async () => {
+    if (!clipboard) return;
+    setIsProcessingAction(true);
+    try {
+      if (clipboard.operation === 'copy') {
+        const res = await serverApi.copyItem(clipboard.item.path, currentPath);
+        if (!res.success) {
+          alert('Failed to copy item.');
+        }
+      } else {
+        const res = await serverApi.moveItem(clipboard.item.path, currentPath);
+        if (res.success) {
+          setClipboard(null);
+        } else {
+          alert('Failed to move item.');
+        }
+      }
+      await loadDirectory(currentPath);
+    } catch (err: any) {
+      alert(`Error during ${clipboard.operation}: ${err.message}`);
+    } finally {
+      setIsProcessingAction(false);
+    }
+  };
+
+  const handleMoveToFolder = async (sourceItem: FileItem, targetFolderSubPath: string) => {
+    if (sourceItem.path === targetFolderSubPath) return;
+    setIsProcessingAction(true);
+    try {
+      const res = await serverApi.moveItem(sourceItem.path, targetFolderSubPath);
+      if (res.success) {
+        if (clipboard && clipboard.item.path === sourceItem.path) {
+          setClipboard(null);
+        }
+        await loadDirectory(currentPath);
+      } else {
+        alert('Failed to move item into folder.');
+      }
+    } catch (err: any) {
+      alert(`Error moving item: ${err.message}`);
+    } finally {
+      setIsProcessingAction(false);
     }
   };
 
@@ -524,6 +596,55 @@ export const FileBrowserCard: React.FC = () => {
         </div>
       )}
 
+      {/* Clipboard Banner (Copy / Cut / Paste) */}
+      {clipboard && (
+        <div className="glass-card rounded-2xl p-3 sm:p-4 border border-indigo-500/40 bg-gradient-to-r from-indigo-950/60 via-slate-900/80 to-slate-900/60 backdrop-blur-md shadow-xl shadow-indigo-950/30 flex flex-col sm:flex-row sm:items-center justify-between gap-3 animate-in fade-in slide-in-from-top-2">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-xl bg-indigo-500/20 border border-indigo-500/40 flex items-center justify-center text-indigo-300 shrink-0 shadow-sm shadow-indigo-500/20">
+              {clipboard.operation === 'copy' ? (
+                <Copy className="w-4 h-4" />
+              ) : (
+                <Scissors className="w-4 h-4" />
+              )}
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold uppercase tracking-wider">
+                  {clipboard.operation === 'copy' ? '📋 Copied' : '✂️ Cut'}
+                </span>
+                <span className="text-xs sm:text-sm font-semibold text-white truncate max-w-[200px] sm:max-w-xs md:max-w-md">
+                  {clipboard.item.name}
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1">
+                <span>Destination:</span>
+                <span className="font-mono text-indigo-300 font-semibold truncate max-w-[220px] sm:max-w-sm">
+                  {currentPath ? `/${currentPath}` : 'Root Storage'}
+                </span>
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              onClick={handlePaste}
+              disabled={isProcessingAction}
+              className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white text-xs font-semibold shadow-md shadow-indigo-600/30 transition-all min-h-[38px] disabled:opacity-50 touch-manipulation cursor-pointer"
+            >
+              <ClipboardCheck className="w-4 h-4" />
+              <span>{isProcessingAction ? 'Pasting...' : 'Paste Here'}</span>
+            </button>
+            <button
+              onClick={handleCancelClipboard}
+              className="p-2 rounded-xl bg-slate-800/80 hover:bg-slate-700 text-slate-400 hover:text-white border border-slate-700/80 transition-colors min-h-[38px] min-w-[38px] flex items-center justify-center touch-manipulation"
+              title="Cancel"
+            >
+              <X className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Directory Contents */}
       {isLoading ? (
         <div className="flex flex-col items-center justify-center p-12 glass-card rounded-2xl border border-slate-800">
@@ -535,100 +656,193 @@ export const FileBrowserCard: React.FC = () => {
           <Folder className="w-12 h-12 text-slate-600 mb-3" />
           <h3 className="text-sm font-semibold text-white">This folder is empty</h3>
           <p className="text-xs text-slate-500 max-w-sm mt-1">
-            Tap "Upload File" above to add videos, photos, or documents directly from your phone.
+            Tap "Upload File" above or drag and drop items here to manage server storage.
           </p>
         </div>
       ) : viewMode === 'grid' ? (
         /* GRID VIEW */
-        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-3 sm:gap-4">
-          {/* Back Button if in subfolder */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-2.5 sm:gap-4">
+          {/* Back Button if in subfolder (also serves as Drag & Drop target to move up) */}
           {currentPath !== '' && (
             <div
               onClick={() => {
                 const parent = data?.parentPath !== null && data?.parentPath !== undefined ? data.parentPath : '';
                 loadDirectory(parent);
               }}
-              className="glass-card rounded-2xl p-4 border border-slate-800/80 bg-slate-900/40 hover:bg-slate-850 hover:border-blue-500/40 transition-all cursor-pointer flex flex-col items-center justify-center text-center touch-manipulation group min-h-[140px]"
+              onDragOver={(e) => {
+                if (draggedItem) {
+                  e.preventDefault();
+                  e.dataTransfer.dropEffect = 'move';
+                }
+              }}
+              onDragEnter={(e) => {
+                if (draggedItem) {
+                  e.preventDefault();
+                  setDragOverFolder('__parent__');
+                }
+              }}
+              onDragLeave={(e) => {
+                if (dragOverFolder === '__parent__') setDragOverFolder(null);
+              }}
+              onDrop={async (e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                setDragOverFolder(null);
+                if (draggedItem) {
+                  await handleMoveToFolder(draggedItem, data?.parentPath || '');
+                }
+              }}
+              className={`glass-card rounded-2xl p-4 border transition-all cursor-pointer flex flex-col items-center justify-center text-center touch-manipulation group min-h-[140px] ${
+                dragOverFolder === '__parent__'
+                  ? 'border-blue-400 ring-2 ring-blue-500/50 bg-blue-950/40 scale-[1.02]'
+                  : 'border-slate-800/80 bg-slate-900/40 hover:bg-slate-850 hover:border-blue-500/40'
+              }`}
             >
               <div className="w-12 h-12 rounded-2xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center mb-2 group-hover:scale-105 transition-transform">
                 <ArrowLeft className="w-6 h-6 text-blue-400" />
               </div>
               <span className="text-xs font-semibold text-slate-300">.. (Back)</span>
-              <span className="text-[10px] text-slate-500 mt-0.5">Parent Folder</span>
+              <span className="text-[10px] text-slate-500 mt-0.5">
+                {dragOverFolder === '__parent__' ? 'Drop to move up' : 'Parent Folder'}
+              </span>
             </div>
           )}
 
-          {filteredItems.map((item) => (
-            <div
-              key={item.path}
-              className="glass-card rounded-2xl p-3 sm:p-4 border border-slate-800/80 bg-slate-900/40 hover:bg-slate-850 hover:border-blue-500/40 transition-all flex flex-col justify-between group relative min-h-[150px]"
-            >
-              {/* Media badge for videos/photos */}
-              {item.isVideo && (
-                <div className="absolute top-2.5 left-2.5 px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[9px] font-mono flex items-center gap-1 z-10">
-                  <Play className="w-2.5 h-2.5 fill-current" />
-                  <span>VIDEO</span>
-                </div>
-              )}
+          {filteredItems.map((item) => {
+            const isTarget = dragOverFolder === item.path;
+            const isBeingDragged = draggedItem?.path === item.path;
 
-              {/* Quick Actions Dropdown / Hover Menu */}
-              <div className="absolute top-2.5 right-2.5 flex items-center gap-1 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10">
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDownload(item);
-                  }}
-                  className="p-1 rounded-md bg-slate-800/90 hover:bg-slate-700 text-slate-300"
-                  title="Download"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    setRenamingItem(item);
-                    setNewName(item.name);
-                  }}
-                  className="p-1 rounded-md bg-slate-800/90 hover:bg-slate-700 text-slate-300"
-                  title="Rename"
-                >
-                  <Edit2 className="w-3.5 h-3.5" />
-                </button>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    handleDelete(item);
-                  }}
-                  className="p-1 rounded-md bg-rose-950/80 hover:bg-rose-900 text-rose-400 border border-rose-800/40"
-                  title="Delete"
-                >
-                  <Trash2 className="w-3.5 h-3.5" />
-                </button>
-              </div>
-
-              {/* Main Tap / Click Area */}
+            return (
               <div
-                onClick={() => handleFileClick(item)}
-                className="cursor-pointer flex-1 flex flex-col items-center justify-center text-center touch-manipulation pt-2"
+                key={item.path}
+                draggable={!isUploading}
+                onDragStart={(e) => {
+                  e.dataTransfer.setData('text/plain', item.path);
+                  e.dataTransfer.effectAllowed = 'move';
+                  setDraggedItem(item);
+                }}
+                onDragEnd={() => {
+                  setDraggedItem(null);
+                  setDragOverFolder(null);
+                }}
+                onDragOver={(e) => {
+                  if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                }}
+                onDragEnter={(e) => {
+                  if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                    e.preventDefault();
+                    setDragOverFolder(item.path);
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (dragOverFolder === item.path) setDragOverFolder(null);
+                }}
+                onDrop={async (e) => {
+                  if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setDragOverFolder(null);
+                    await handleMoveToFolder(draggedItem, item.path);
+                  }
+                }}
+                className={`glass-card rounded-2xl p-2.5 sm:p-3.5 border transition-all flex flex-col justify-between group relative min-h-[145px] ${
+                  isBeingDragged
+                    ? 'opacity-40 border-dashed border-blue-400 scale-95'
+                    : isTarget
+                    ? 'border-blue-400 ring-2 ring-blue-500/50 bg-blue-950/40 scale-[1.02]'
+                    : 'border-slate-800/80 bg-slate-900/40 hover:bg-slate-850 hover:border-blue-500/40'
+                }`}
               >
-                <div className="w-12 h-12 sm:w-14 sm:h-14 flex items-center justify-center mb-2 group-hover:scale-110 transition-transform">
-                  {getFileIcon(item)}
+                {/* Media badge for videos/photos */}
+                {item.isVideo && (
+                  <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded-md bg-rose-500/20 text-rose-400 border border-rose-500/30 text-[9px] font-mono flex items-center gap-1 z-10">
+                    <Play className="w-2.5 h-2.5 fill-current" />
+                    <span>VIDEO</span>
+                  </div>
+                )}
+
+                {/* Quick Actions Dropdown / Hover Menu */}
+                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 bg-slate-900/90 p-0.5 rounded-lg border border-slate-750 backdrop-blur-sm">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCopy(item);
+                    }}
+                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                    title="Copy"
+                  >
+                    <Copy className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleCut(item);
+                    }}
+                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-amber-400 transition-colors"
+                    title="Cut"
+                  >
+                    <Scissors className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDownload(item);
+                    }}
+                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                    title="Download"
+                  >
+                    <Download className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setRenamingItem(item);
+                      setNewName(item.name);
+                    }}
+                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                    title="Rename"
+                  >
+                    <Edit2 className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      handleDelete(item);
+                    }}
+                    className="p-1 rounded-md hover:bg-rose-900 text-rose-400 transition-colors"
+                    title="Delete"
+                  >
+                    <Trash2 className="w-3.5 h-3.5" />
+                  </button>
                 </div>
 
-                <div className="w-full">
-                  <h4
-                    className="text-xs font-semibold text-white truncate max-w-full group-hover:text-blue-400 transition-colors"
-                    title={getDisplayName(item.name)}
-                  >
-                    {getDisplayName(item.name)}
-                  </h4>
-                  <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono">
-                    <span>{item.isDirectory ? 'Folder' : formatFileSize(item.size)}</span>
+                {/* Main Tap / Click Area */}
+                <div
+                  onClick={() => handleFileClick(item)}
+                  className="cursor-pointer flex-1 flex flex-col items-center justify-center text-center touch-manipulation pt-2"
+                >
+                  <div className="w-11 h-11 sm:w-13 sm:h-13 flex items-center justify-center mb-1.5 group-hover:scale-105 transition-transform">
+                    {getFileIcon(item)}
+                  </div>
+
+                  <div className="w-full px-1">
+                    <h4
+                      className="text-xs font-semibold text-white truncate max-w-full group-hover:text-blue-400 transition-colors"
+                      title={getDisplayName(item.name)}
+                    >
+                      {getDisplayName(item.name)}
+                    </h4>
+                    <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono">
+                      <span>{item.isDirectory ? 'Folder' : formatFileSize(item.size)}</span>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
       ) : (
         /* LIST VIEW */
@@ -640,63 +854,159 @@ export const FileBrowserCard: React.FC = () => {
                   const parent = data?.parentPath !== null && data?.parentPath !== undefined ? data.parentPath : '';
                   loadDirectory(parent);
                 }}
-                className="p-3.5 hover:bg-slate-800/50 flex items-center gap-3 cursor-pointer transition-colors"
+                onDragOver={(e) => {
+                  if (draggedItem) {
+                    e.preventDefault();
+                    e.dataTransfer.dropEffect = 'move';
+                  }
+                }}
+                onDragEnter={(e) => {
+                  if (draggedItem) {
+                    e.preventDefault();
+                    setDragOverFolder('__parent__');
+                  }
+                }}
+                onDragLeave={(e) => {
+                  if (dragOverFolder === '__parent__') setDragOverFolder(null);
+                }}
+                onDrop={async (e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  setDragOverFolder(null);
+                  if (draggedItem) {
+                    await handleMoveToFolder(draggedItem, data?.parentPath || '');
+                  }
+                }}
+                className={`p-3.5 flex items-center gap-3 cursor-pointer transition-colors ${
+                  dragOverFolder === '__parent__'
+                    ? 'bg-blue-950/60 border-l-4 border-blue-500'
+                    : 'hover:bg-slate-800/50'
+                }`}
               >
                 <ArrowLeft className="w-5 h-5 text-blue-400" />
-                <span className="text-xs font-semibold text-slate-200">.. (Parent Folder)</span>
+                <span className="text-xs font-semibold text-slate-200">
+                  {dragOverFolder === '__parent__' ? '.. Drop here to move to Parent Folder' : '.. (Parent Folder)'}
+                </span>
               </div>
             )}
 
-            {filteredItems.map((item) => (
-              <div
-                key={item.path}
-                onClick={() => handleFileClick(item)}
-                className="p-3 sm:p-3.5 hover:bg-slate-800/50 flex items-center justify-between gap-3 cursor-pointer transition-colors group"
-              >
-                <div className="flex items-center gap-3 min-w-0">
-                  <div className="w-8 h-8 flex items-center justify-center shrink-0">
-                    {getFileIcon(item)}
+            {filteredItems.map((item) => {
+              const isTarget = dragOverFolder === item.path;
+              const isBeingDragged = draggedItem?.path === item.path;
+
+              return (
+                <div
+                  key={item.path}
+                  draggable={!isUploading}
+                  onDragStart={(e) => {
+                    e.dataTransfer.setData('text/plain', item.path);
+                    e.dataTransfer.effectAllowed = 'move';
+                    setDraggedItem(item);
+                  }}
+                  onDragEnd={() => {
+                    setDraggedItem(null);
+                    setDragOverFolder(null);
+                  }}
+                  onDragOver={(e) => {
+                    if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                      e.preventDefault();
+                      e.dataTransfer.dropEffect = 'move';
+                    }
+                  }}
+                  onDragEnter={(e) => {
+                    if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                      e.preventDefault();
+                      setDragOverFolder(item.path);
+                    }
+                  }}
+                  onDragLeave={(e) => {
+                    if (dragOverFolder === item.path) setDragOverFolder(null);
+                  }}
+                  onDrop={async (e) => {
+                    if (item.isDirectory && draggedItem && draggedItem.path !== item.path) {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      setDragOverFolder(null);
+                      await handleMoveToFolder(draggedItem, item.path);
+                    }
+                  }}
+                  onClick={() => handleFileClick(item)}
+                  className={`p-2.5 sm:p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors group ${
+                    isBeingDragged
+                      ? 'opacity-40 border-l-2 border-dashed border-blue-400'
+                      : isTarget
+                      ? 'bg-blue-950/60 border-l-4 border-blue-500'
+                      : 'hover:bg-slate-800/50'
+                  }`}
+                >
+                  <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+                    <div className="w-7 h-7 sm:w-8 sm:h-8 flex items-center justify-center shrink-0">
+                      {getFileIcon(item)}
+                    </div>
+                    <div className="min-w-0">
+                      <h4
+                        className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors"
+                        title={getDisplayName(item.name)}
+                      >
+                        {getDisplayName(item.name)}
+                      </h4>
+                      <p className="text-[10px] text-slate-500 font-mono mt-0.5">
+                        {formatModifiedDate(item.modifiedAt)}
+                      </p>
+                    </div>
                   </div>
-                  <div className="min-w-0">
-                    <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors" title={getDisplayName(item.name)}>
-                      {getDisplayName(item.name)}
-                    </h4>
-                    <p className="text-[10px] text-slate-500 font-mono mt-0.5">
-                      {formatModifiedDate(item.modifiedAt)}
-                    </p>
+
+                  <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+                    <span className="text-xs font-mono text-slate-400 hidden xs:inline">
+                      {item.isDirectory ? 'Folder' : formatFileSize(item.size)}
+                    </span>
+
+                    <div className="flex items-center gap-1">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCopy(item);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="Copy"
+                      >
+                        <Copy className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleCut(item);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-amber-400"
+                        title="Cut"
+                      >
+                        <Scissors className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDownload(item);
+                        }}
+                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white"
+                        title="Download"
+                      >
+                        <Download className="w-3.5 h-3.5" />
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(item);
+                        }}
+                        className="p-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-400 border border-rose-800/40"
+                        title="Delete"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
                   </div>
                 </div>
-
-                <div className="flex items-center gap-3 shrink-0">
-                  <span className="text-xs font-mono text-slate-400">
-                    {item.isDirectory ? 'Folder' : formatFileSize(item.size)}
-                  </span>
-
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDownload(item);
-                      }}
-                      className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300"
-                      title="Download"
-                    >
-                      <Download className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        handleDelete(item);
-                      }}
-                      className="p-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-400 border border-rose-800/40"
-                      title="Delete"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}

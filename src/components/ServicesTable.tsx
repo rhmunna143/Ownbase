@@ -478,6 +478,12 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
       return getAccessibleServiceUrl(r.subdomain, service.port, r.customDomain);
     }
     if (service.port) {
+      const name = ((service.name || '') + ' ' + (service.type || '')).toLowerCase();
+      if (name.includes('file')) return getAccessibleServiceUrl('files', service.port);
+      if (name.includes('photo')) return getAccessibleServiceUrl('photos', service.port);
+      if (name.includes('ai') || name.includes('ollama')) return getAccessibleServiceUrl('ai', service.port);
+      if (name.includes('s3') || name.includes('minio')) return getAccessibleServiceUrl('s3', service.port);
+      if (name.includes('terminal')) return getAccessibleServiceUrl('terminal', service.port);
       return `http://127.0.0.1:${service.port}`;
     }
     return null;
@@ -590,14 +596,15 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
             const operating = operatingIds[service.id];
             const isRunning = currentStatus === 'running';
             const url = getServiceUrl(service);
+            const cleanUrl = url ? url.split('?')[0].replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
             const theme = getServiceVisualTheme(service);
 
             return (
               <div
                 key={service.id}
-                className="group glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 hover:border-slate-700/80 transition-all flex flex-col justify-between"
+                className="group glass-card rounded-2xl p-5 border border-slate-800 bg-slate-900/40 hover:border-slate-700/80 transition-all flex flex-col justify-between min-w-0 overflow-hidden"
               >
-                <div>
+                <div className="min-w-0">
                   {/* Card Header */}
                   <div className="flex flex-wrap sm:flex-nowrap items-start justify-between gap-2 mb-3">
                     <div className="flex items-center space-x-3 min-w-0">
@@ -707,10 +714,17 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                       </span>
                     )}
 
-                    {url && (
-                      <span className="px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800/30 text-blue-300">
-                        {url.replace(/^https?:\/\//, '')}
-                      </span>
+                    {cleanUrl && (
+                      <a
+                        href={url!}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-2 py-0.5 rounded bg-blue-950/50 border border-blue-800/30 text-blue-300 hover:bg-blue-900/60 hover:text-blue-200 transition-colors truncate max-w-full inline-flex items-center gap-1 shrink-0"
+                        title={`Open ${cleanUrl}`}
+                      >
+                        <Globe className="w-2.5 h-2.5 text-blue-400 shrink-0" />
+                        <span className="truncate">{cleanUrl}</span>
+                      </a>
                     )}
                   </div>
                 </div>
@@ -734,7 +748,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                         target="_blank"
                         rel="noopener noreferrer"
                         className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg border border-blue-600/30 bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 transition-colors text-[11px] shrink-0"
-                        title={`Open ${url}`}
+                        title={`Open ${cleanUrl || url}`}
                       >
                         <span>Open</span>
                         <ExternalLink className="w-3 h-3" />
@@ -826,6 +840,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                 const isRunning = currentStatus === 'running';
                 const theme = getServiceVisualTheme(service);
                 const url = getServiceUrl(service);
+                const cleanUrl = url ? url.split('?')[0].replace(/^https?:\/\//, '').replace(/\/$/, '') : '';
 
                 return (
                   <tr key={service.id} className="hover:bg-slate-800/30 transition-colors">
@@ -900,7 +915,7 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
                             target="_blank"
                             rel="noopener noreferrer"
                             className="p-1.5 rounded-lg border border-blue-600/30 bg-blue-600/10 text-blue-400 hover:bg-blue-600/20 transition-colors"
-                            title={`Open ${url}`}
+                            title={`Open ${cleanUrl || url}`}
                           >
                             <ExternalLink className="w-3.5 h-3.5" />
                           </a>

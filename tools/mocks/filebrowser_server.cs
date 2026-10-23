@@ -67,8 +67,13 @@ namespace NativeFileBrowser
             }
 
             // 2. Parse Server Arguments
+            string programData = Environment.GetEnvironmentVariable("ProgramData");
+            if (string.IsNullOrEmpty(programData)) programData = @"C:\ProgramData";
+            string serviceStorage = Path.Combine(programData, "Ownbase", "storage");
             string appData = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "native-windows-server-hub");
-            StorageRoot = Path.Combine(appData, "storage");
+            string appDataStorage = Path.Combine(appData, "storage");
+
+            StorageRoot = Directory.Exists(serviceStorage) ? serviceStorage : appDataStorage;
 
             for (int i = 0; i < args.Length; i++)
             {
@@ -158,6 +163,13 @@ namespace NativeFileBrowser
                 res.Headers.Add("Access-Control-Allow-Headers", "Content-Type, Authorization, Range, X-File-Name, X-Requested-With");
                 res.Headers.Add("Access-Control-Expose-Headers", "Content-Range, Accept-Ranges, Content-Length");
 
+                // Cross-subdomain SSO session cookie planting
+                string reqToken = req.QueryString["token"] ?? req.QueryString["access_token"];
+                if (!string.IsNullOrEmpty(reqToken))
+                {
+                    res.Headers.Add("Set-Cookie", "ownbase_access_token=" + reqToken + "; Path=/; SameSite=Lax; Max-Age=86400");
+                }
+
                 if (req.HttpMethod == "OPTIONS")
                 {
                     res.StatusCode = 200;
@@ -175,6 +187,13 @@ namespace NativeFileBrowser
                     string json = string.Format("{{\"status\":\"ok\",\"service\":\"filebrowser\",\"version\":\"{0}\",\"port\":{1},\"storageRoot\":{2}}}",
                         Version, Port, ToJsonString(StorageRoot));
                     SendJson(res, json, isHead);
+                    return;
+                }
+
+                // Favicon serving
+                if (lowerPath == "/favicon.ico" || lowerPath == "/favicon.svg")
+                {
+                    SendFavicon(res, lowerPath, isHead);
                     return;
                 }
 
@@ -214,6 +233,20 @@ namespace NativeFileBrowser
                 if (lowerPath == "/api/mkdir" && req.HttpMethod == "POST")
                 {
                     HandleMakeDirectory(req, res);
+                    return;
+                }
+
+                // REST API: Copy file/directory
+                if (lowerPath == "/api/copy" && req.HttpMethod == "POST")
+                {
+                    HandleCopyResource(req, res);
+                    return;
+                }
+
+                // REST API: Move file/directory (also used for Cut & Paste and Drag & Drop)
+                if (lowerPath == "/api/move" && req.HttpMethod == "POST")
+                {
+                    HandleMoveResource(req, res);
                     return;
                 }
 
@@ -532,18 +565,19 @@ namespace NativeFileBrowser
 
         private static void HandleMakeDirectory(HttpListenerRequest req, HttpListenerResponse res)
         {
-            string folder = req.QueryString["name"] ?? req.QueryString["path"] ?? "";
+            string folder = req.QueryString["name"] ?? req.QueryString["path"] ?? req.QueryString["folderName"] ?? "";
             if (string.IsNullOrEmpty(folder))
             {
                 using (StreamReader reader = new StreamReader(req.InputStream, Encoding.UTF8))
                 {
                     string body = reader.ReadToEnd();
-                    int idx = body.IndexOf("\"name\":");
-                    if (idx != -1)
+                    folder = ExtractJsonField(body, "name");
+                    if (string.IsNullOrEmpty(folder)) folder = ExtractJsonField(body, "folderName");
+                    if (string.IsNullOrEmpty(folder)) folder = ExtractJsonField(body, "path");
+                    string target = ExtractJsonField(body, "targetPath");
+                    if (!string.IsNullOrEmpty(target) && !string.IsNullOrEmpty(folder))
                     {
-                        int s = body.IndexOf("\"", idx + 7);
-                        int e = body.IndexOf("\"", s + 1);
-                        if (s != -1 && e != -1) folder = body.Substring(s + 1, e - s - 1);
+                        folder = Path.Combine(target, folder);
                     }
                 }
             }
@@ -590,6 +624,188 @@ namespace NativeFileBrowser
 
             res.StatusCode = 404;
             SendJson(res, "{\"error\":\"Item not found\"}", false);
+        }
+
+        private static void HandleCopyResource(HttpListenerRequest req, HttpListenerResponse res)
+        {
+            string source = "";
+            string destination = "";
+
+            using (StreamReader reader = new StreamReader(req.InputStream, Encoding.UTF8))
+            {
+                string body = reader.ReadToEnd();
+                source = ExtractJsonField(body, "source");
+                if (string.IsNullOrEmpty(source)) source = ExtractJsonField(body, "sourcePath");
+                if (string.IsNullOrEmpty(source)) source = ExtractJsonField(body, "from");
+
+                destination = ExtractJsonField(body, "destination");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "destinationDir");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "target");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "to");
+            }
+
+            if (string.IsNullOrEmpty(source)) source = req.QueryString["source"] ?? req.QueryString["sourcePath"] ?? "";
+            if (string.IsNullOrEmpty(destination)) destination = req.QueryString["destination"] ?? req.QueryString["destinationDir"] ?? "";
+
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(destination))
+            {
+                res.StatusCode = 400;
+                SendJson(res, "{\"error\":\"Missing source or destination path\"}", false);
+                return;
+            }
+
+            string srcFull = SafeResolvePath(Uri.UnescapeDataString(source));
+            string dstFull = SafeResolvePath(Uri.UnescapeDataString(destination));
+
+            if (!File.Exists(srcFull) && !Directory.Exists(srcFull))
+            {
+                res.StatusCode = 404;
+                SendJson(res, "{\"error\":\"Source item does not exist\"}", false);
+                return;
+            }
+
+            // If destination is an existing directory, place copy inside it
+            if (Directory.Exists(dstFull))
+            {
+                string itemName = Path.GetFileName(srcFull);
+                dstFull = Path.Combine(dstFull, itemName);
+            }
+
+            try
+            {
+                if (File.Exists(srcFull))
+                {
+                    if (File.Exists(dstFull))
+                    {
+                        string dir = Path.GetDirectoryName(dstFull);
+                        string nameWithoutExt = Path.GetFileNameWithoutExtension(dstFull);
+                        string ext = Path.GetExtension(dstFull);
+                        dstFull = Path.Combine(dir, nameWithoutExt + " - Copy" + ext);
+                    }
+                    File.Copy(srcFull, dstFull, true);
+                }
+                else if (Directory.Exists(srcFull))
+                {
+                    CopyDirectoryRecursively(srcFull, dstFull);
+                }
+
+                SendJson(res, "{\"success\":true,\"message\":\"Item copied successfully\",\"destination\":" + ToJsonString(GetRelativePath(dstFull)) + "}", false);
+            }
+            catch (Exception ex)
+            {
+                res.StatusCode = 500;
+                SendJson(res, "{\"error\":\"Copy operation failed: " + ex.Message.Replace("\"", "'") + "\"}", false);
+            }
+        }
+
+        private static void HandleMoveResource(HttpListenerRequest req, HttpListenerResponse res)
+        {
+            string source = "";
+            string destination = "";
+
+            using (StreamReader reader = new StreamReader(req.InputStream, Encoding.UTF8))
+            {
+                string body = reader.ReadToEnd();
+                source = ExtractJsonField(body, "source");
+                if (string.IsNullOrEmpty(source)) source = ExtractJsonField(body, "sourcePath");
+                if (string.IsNullOrEmpty(source)) source = ExtractJsonField(body, "from");
+
+                destination = ExtractJsonField(body, "destination");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "destinationDir");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "target");
+                if (string.IsNullOrEmpty(destination)) destination = ExtractJsonField(body, "to");
+            }
+
+            if (string.IsNullOrEmpty(source)) source = req.QueryString["source"] ?? req.QueryString["sourcePath"] ?? "";
+            if (string.IsNullOrEmpty(destination)) destination = req.QueryString["destination"] ?? req.QueryString["destinationDir"] ?? "";
+
+            if (string.IsNullOrEmpty(source) || string.IsNullOrEmpty(destination))
+            {
+                res.StatusCode = 400;
+                SendJson(res, "{\"error\":\"Missing source or destination path\"}", false);
+                return;
+            }
+
+            string srcFull = SafeResolvePath(Uri.UnescapeDataString(source));
+            string dstFull = SafeResolvePath(Uri.UnescapeDataString(destination));
+
+            if (!File.Exists(srcFull) && !Directory.Exists(srcFull))
+            {
+                res.StatusCode = 404;
+                SendJson(res, "{\"error\":\"Source item does not exist\"}", false);
+                return;
+            }
+
+            // If destination is an existing directory, move inside it
+            if (Directory.Exists(dstFull))
+            {
+                string itemName = Path.GetFileName(srcFull);
+                dstFull = Path.Combine(dstFull, itemName);
+            }
+
+            if (string.Equals(srcFull, dstFull, StringComparison.OrdinalIgnoreCase))
+            {
+                SendJson(res, "{\"success\":true,\"message\":\"Source and destination are identical\"}", false);
+                return;
+            }
+
+            try
+            {
+                if (File.Exists(srcFull))
+                {
+                    if (File.Exists(dstFull))
+                    {
+                        File.Delete(dstFull);
+                    }
+                    File.Move(srcFull, dstFull);
+                }
+                else if (Directory.Exists(srcFull))
+                {
+                    if (Directory.Exists(dstFull))
+                    {
+                        Directory.Delete(dstFull, true);
+                    }
+                    Directory.Move(srcFull, dstFull);
+                }
+
+                SendJson(res, "{\"success\":true,\"message\":\"Item moved successfully\",\"destination\":" + ToJsonString(GetRelativePath(dstFull)) + "}", false);
+            }
+            catch (Exception ex)
+            {
+                res.StatusCode = 500;
+                SendJson(res, "{\"error\":\"Move operation failed: " + ex.Message.Replace("\"", "'") + "\"}", false);
+            }
+        }
+
+        private static void CopyDirectoryRecursively(string sourceDir, string destinationDir)
+        {
+            if (!Directory.Exists(destinationDir))
+            {
+                Directory.CreateDirectory(destinationDir);
+            }
+            foreach (string file in Directory.GetFiles(sourceDir))
+            {
+                string destFile = Path.Combine(destinationDir, Path.GetFileName(file));
+                File.Copy(file, destFile, true);
+            }
+            foreach (string subDir in Directory.GetDirectories(sourceDir))
+            {
+                string destSubDir = Path.Combine(destinationDir, Path.GetFileName(subDir));
+                CopyDirectoryRecursively(subDir, destSubDir);
+            }
+        }
+
+        private static string ExtractJsonField(string json, string field)
+        {
+            if (string.IsNullOrEmpty(json)) return "";
+            string key = "\"" + field + "\":";
+            int idx = json.IndexOf(key);
+            if (idx == -1) return "";
+            int s = json.IndexOf("\"", idx + key.Length);
+            if (s == -1) return "";
+            int e = json.IndexOf("\"", s + 1);
+            if (e == -1) return "";
+            return json.Substring(s + 1, e - s - 1);
         }
 
         private static string GetMimeType(string path)
@@ -661,6 +877,42 @@ namespace NativeFileBrowser
             res.Close();
         }
 
+        private static void SendFavicon(HttpListenerResponse res, string path, bool isHead)
+        {
+            const string svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 64 64"">
+  <defs>
+    <linearGradient id=""folderBack"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#0284c7""/>
+      <stop offset=""100%"" stop-color=""#0369a1""/>
+    </linearGradient>
+    <linearGradient id=""folderFront"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#38bdf8""/>
+      <stop offset=""100%"" stop-color=""#0284c7""/>
+    </linearGradient>
+    <linearGradient id=""docGrad"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#ffffff""/>
+      <stop offset=""100%"" stop-color=""#e2e8f0""/>
+    </linearGradient>
+  </defs>
+  <rect width=""64"" height=""64"" rx=""16"" fill=""#070e1e""/>
+  <rect x=""2"" y=""2"" width=""60"" height=""60"" rx=""14"" fill=""none"" stroke=""#1e293b"" stroke-width=""1.5""/>
+  <path d=""M12,22 C12,19.8 13.8,18 16,18 L25,18 C27,18 28.5,19.2 29.5,21 L32,25 L48,25 C50.2,25 52,26.8 52,29 L52,46 C52,48.2 50.2,50 48,50 L16,50 C13.8,50 12,48.2 12,46 Z"" fill=""url(#folderBack)""/>
+  <rect x=""20"" y=""14"" width=""24"" height=""24"" rx=""3"" fill=""url(#docGrad)""/>
+  <line x1=""25"" y1=""20"" x2=""39"" y2=""20"" stroke=""#94a3b8"" stroke-width=""2"" stroke-linecap=""round""/>
+  <line x1=""25"" y1=""26"" x2=""35"" y2=""26"" stroke=""#94a3b8"" stroke-width=""2"" stroke-linecap=""round""/>
+  <path d=""M10,29 C10,26.8 11.8,25 14,25 L50,25 C52.2,25 54,26.8 54,29 L51,47 C50.8,49 49,51 47,51 L17,51 C15,51 13.2,49 13,47 Z"" fill=""url(#folderFront)""/>
+</svg>";
+            byte[] bytes = Encoding.UTF8.GetBytes(svg);
+            res.ContentType = (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) ? "image/x-icon" : "image/svg+xml";
+            res.ContentLength64 = bytes.Length;
+            res.StatusCode = 200;
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            res.Close();
+        }
+
         private static void SendHtml(HttpListenerResponse res, string html, bool isHead)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(html);
@@ -681,105 +933,150 @@ namespace NativeFileBrowser
 <head>
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no"">
-    <title>Native File Manager & Streamer</title>
+    <title>Ownbase Native File Manager</title>
+    <link rel=""icon"" type=""image/svg+xml"" href=""/favicon.svg"">
+    <link rel=""alternate icon"" href=""/favicon.ico"">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-        body { background: #090d16; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; min-height: 100vh; padding-bottom: 40px; }
-        header { background: #0d1322; border-bottom: 1px solid #1e293b; padding: 14px 20px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
-        .brand { display: flex; align-items: center; gap: 12px; }
-        .logo { width: 38px; height: 38px; border-radius: 10px; background: linear-gradient(135deg, #0284c7, #0369a1); display: flex; align-items: center; justify-content: center; font-size: 20px; color: #fff; box-shadow: 0 4px 12px rgba(2,132,199,0.3); }
-        .title h1 { font-size: 16px; font-weight: 700; color: #f8fafc; }
-        .title p { font-size: 11px; color: #64748b; }
-        .hub-link { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 8px 14px; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; }
+        body { background: #070b14; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; min-height: 100vh; padding-bottom: 40px; }
+        header { background: #0c1220; border-bottom: 1px solid #1e293b; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; gap: 10px; flex-wrap: wrap; }
+        .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
+        .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #0284c7, #2563eb); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px rgba(2,132,199,0.3); flex-shrink: 0; }
+        .title { overflow: hidden; }
+        .title h1 { font-size: 15px; font-weight: 700; color: #f8fafc; display: flex; align-items: center; gap: 6px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .title p { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .hub-link { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; }
         .hub-link:hover { background: #334155; color: #fff; }
-        .main-container { max-width: 1200px; width: 100%; margin: 20px auto; padding: 0 16px; }
-        .toolbar { display: flex; flex-wrap: wrap; gap: 10px; justify-content: space-between; align-items: center; background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 16px; margin-bottom: 16px; }
-        .breadcrumbs { display: flex; align-items: center; gap: 6px; font-size: 13px; font-weight: 500; overflow-x: auto; white-space: nowrap; max-width: 100%; padding-bottom: 2px; }
-        .crumb { color: #38bdf8; cursor: pointer; text-decoration: none; padding: 4px 6px; border-radius: 4px; }
-        .crumb:hover { background: rgba(56,189,248,0.1); }
+        .main-container { max-width: 1280px; width: 100%; margin: 16px auto; padding: 0 16px; flex: 1; }
+        .toolbar { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 12px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; }
+        .toolbar-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+        .breadcrumbs { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; scrollbar-width: none; }
+        .breadcrumbs::-webkit-scrollbar { display: none; }
+        .crumb { color: #38bdf8; cursor: pointer; text-decoration: none; padding: 4px 8px; border-radius: 6px; transition: background 0.15s; }
+        .crumb:hover { background: rgba(56,189,248,0.12); }
         .crumb-sep { color: #475569; }
-        .actions { display: flex; gap: 8px; align-items: center; }
-        .btn { background: #0284c7; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 40px; }
+        .toolbar-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+        .btn { background: #0284c7; color: #fff; border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; min-height: 38px; transition: all 0.2s; white-space: nowrap; }
         .btn:hover { background: #0369a1; }
         .btn-secondary { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; }
         .btn-secondary:hover { background: #334155; color: #fff; }
-        .search-box { width: 100%; max-width: 280px; position: relative; }
-        .search-box input { width: 100%; background: #0b1120; border: 1px solid #334155; color: #f8fafc; padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none; }
+        .btn-paste { background: #059669; color: #fff; }
+        .btn-paste:hover { background: #047857; }
+        .search-box { flex: 1; min-width: 200px; max-width: 320px; position: relative; }
+        .search-box input { width: 100%; background: #090d16; border: 1px solid #334155; color: #f8fafc; padding: 8px 12px; border-radius: 8px; font-size: 13px; outline: none; transition: border-color 0.2s; }
         .search-box input:focus { border-color: #38bdf8; }
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 12px; }
-        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; }
+        /* Clipboard Bar */
+        .clipboard-bar { background: linear-gradient(135deg, #1e1b4b, #0f172a); border: 1px solid #6366f1; border-radius: 12px; padding: 10px 14px; margin-bottom: 14px; display: flex; align-items: center; justify-content: space-between; gap: 10px; animation: slideDown 0.2s ease-out; flex-wrap: wrap; }
+        .clipboard-info { display: flex; align-items: center; gap: 8px; font-size: 13px; color: #c7d2fe; overflow: hidden; text-overflow: ellipsis; }
+        .clipboard-name { font-weight: 700; color: #fff; }
+        .clipboard-actions { display: flex; align-items: center; gap: 6px; }
+        /* Grid & Cards */
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; user-select: none; }
         .file-card:hover { border-color: #38bdf8; background: #131d35; transform: translateY(-1px); }
-        .file-info { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; }
-        .file-icon { font-size: 26px; flex-shrink: 0; width: 36px; text-align: center; }
-        .file-details { overflow: hidden; flex: 1; }
+        .file-card.dragging { opacity: 0.4; border-style: dashed; }
+        .file-card.drop-target { border-color: #10b981 !important; background: rgba(16,185,129,0.15) !important; transform: scale(1.02); }
+        .file-info { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; min-width: 0; }
+        .file-icon { font-size: 26px; flex-shrink: 0; width: 34px; text-align: center; }
+        .file-details { overflow: hidden; flex: 1; min-width: 0; }
         .file-name { font-size: 13px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
-        .file-actions { display: flex; gap: 6px; margin-left: 8px; }
-        .action-btn { background: #1e293b; border: none; color: #94a3b8; border-radius: 6px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 13px; }
+        .file-actions { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; }
+        .action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; transition: all 0.15s; }
         .action-btn:hover { background: #334155; color: #fff; }
-        .action-delete:hover { background: #dc2626; color: #fff; }
+        .action-delete:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
         /* Player Modal */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
         .modal.open { display: flex; }
         .modal-content { background: #0f172a; border: 1px solid #1e293b; border-radius: 16px; max-width: 900px; width: 100%; overflow: hidden; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); }
-        .modal-header { padding: 14px 18px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; }
+        .modal-header { padding: 12px 16px; border-bottom: 1px solid #1e293b; display: flex; align-items: center; justify-content: space-between; }
         .modal-header h3 { font-size: 14px; font-weight: 600; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 80%; }
-        .modal-body { padding: 16px; display: flex; align-items: center; justify-content: center; background: #000; min-height: 300px; max-height: 75vh; }
+        .modal-body { padding: 12px; display: flex; align-items: center; justify-content: center; background: #000; min-height: 280px; max-height: 75vh; }
         video, audio { width: 100%; max-height: 70vh; outline: none; }
         img.preview { max-width: 100%; max-height: 70vh; object-fit: contain; }
         .close-btn { background: #334155; border: none; color: #f1f5f9; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; }
-        .badge-stream { font-size: 10px; background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+        .badge-stream { font-size: 10px; background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); padding: 2px 6px; border-radius: 4px; }
         /* Upload Progress Card */
-        .upload-card { background: linear-gradient(135deg, #0f172a, #1e1b4b); border: 1px solid #3b82f6; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 10px 25px -5px rgba(59,130,246,0.3); animation: slideDown 0.2s ease-out; }
-        .upload-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .upload-card { background: linear-gradient(135deg, #0f172a, #1e1b4b); border: 1px solid #3b82f6; border-radius: 12px; padding: 12px 16px; margin-bottom: 14px; box-shadow: 0 10px 25px -5px rgba(59,130,246,0.3); animation: slideDown 0.2s ease-out; }
+        .upload-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
         .upload-info { display: flex; align-items: center; gap: 10px; overflow: hidden; min-width: 0; }
-        .upload-spinner { width: 18px; height: 18px; border: 2px solid rgba(56,189,248,0.3); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+        .upload-spinner { width: 16px; height: 16px; border: 2px solid rgba(56,189,248,0.3); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
         @keyframes spin { to { transform: rotate(360deg); } }
         @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
         .upload-filename { font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
         .upload-meta { font-size: 11px; color: #94a3b8; margin-top: 2px; }
-        .upload-percent { font-size: 14px; font-weight: 700; color: #34d399; font-family: monospace; }
-        .progress-bar-bg { width: 100%; height: 8px; background: #0b1120; border-radius: 999px; overflow: hidden; border: 1px solid #1e293b; }
+        .upload-percent { font-size: 13px; font-weight: 700; color: #34d399; font-family: monospace; }
+        .progress-bar-bg { width: 100%; height: 6px; background: #0b1120; border-radius: 999px; overflow: hidden; border: 1px solid #1e293b; }
         .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #38bdf8, #818cf8, #34d399); border-radius: 999px; transition: width 0.15s ease-out; }
+        /* Full Window Drag & Drop Overlay */
+        .drop-overlay { display: none; position: fixed; inset: 0; background: rgba(15,23,42,0.92); backdrop-filter: blur(8px); z-index: 300; align-items: center; justify-content: center; flex-direction: column; gap: 16px; border: 3px dashed #38bdf8; margin: 10px; border-radius: 20px; pointer-events: none; }
+        .drop-overlay.active { display: flex; }
+        .drop-overlay-icon { font-size: 48px; animation: bounce 1s infinite alternate; }
+        .drop-overlay-title { font-size: 18px; font-weight: 700; color: #fff; }
+        .drop-overlay-sub { font-size: 13px; color: #38bdf8; }
+        @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
+        /* Mobile Media Query */
         @media (max-width: 640px) {
-            header { padding: 12px 14px; flex-direction: column; align-items: flex-start; gap: 8px; }
-            .brand { width: 100%; }
-            .hub-link { align-self: flex-end; }
-            .toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
-            .breadcrumbs { overflow-x: auto; white-space: nowrap; padding-bottom: 4px; }
-            .actions { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
-            .actions .btn { flex: 1 1 auto; justify-content: center; min-height: 40px; font-size: 12px; padding: 6px 10px; }
+            header { padding: 10px 14px; }
+            .brand { max-width: calc(100% - 90px); }
+            .title h1 { font-size: 14px; }
+            .title p { display: none; }
+            .main-container { padding: 0 10px; margin: 10px auto; }
+            .toolbar { padding: 10px 12px; gap: 10px; }
+            .toolbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
+            .toolbar-actions .btn { justify-content: center; }
             .search-box { max-width: 100%; width: 100%; }
-            .search-box input { width: 100%; }
-            .file-grid { grid-template-columns: 1fr; }
+            .file-grid { grid-template-columns: 1fr; gap: 8px; }
             .file-card { padding: 10px 12px; }
-            .upload-filename { max-width: 180px; }
+            .action-btn { width: 32px; height: 32px; }
         }
     </style>
 </head>
 <body>
+    <!-- Fullscreen File Upload Drop Overlay -->
+    <div id=""dropOverlay"" class=""drop-overlay"">
+        <div class=""drop-overlay-icon"">📥</div>
+        <div class=""drop-overlay-title"">Drop Files to Upload</div>
+        <div class=""drop-overlay-sub"" id=""dropOverlaySub"">Release files to upload to current directory</div>
+    </div>
+
     <header>
         <div class=""brand"">
             <div class=""logo"">📁</div>
             <div class=""title"">
-                <h1>Native File Manager <span class=""badge-stream"">Byte-Range Streamer</span></h1>
-                <p>RFC 7233 Streaming • Touch Ready • Native Windows Engine</p>
+                <h1>Native File Manager <span class=""badge-stream"">Streamer</span></h1>
+                <p>RFC 7233 • Touch Ready • Native Windows Engine</p>
             </div>
         </div>
-        <a href=""http://localhost:3000"" class=""hub-link"">← Ownbase</a>
+        <a id=""hubLink"" href=""/"" class=""hub-link"">← Ownbase</a>
     </header>
 
     <div class=""main-container"">
-        <div class=""toolbar"">
-            <div class=""breadcrumbs"" id=""breadcrumbs""></div>
-            <div class=""actions"">
-                <input type=""file"" id=""fileUpload"" multiple style=""display:none"" onchange=""handleUpload(event)"">
-                <button class=""btn"" onclick=""document.getElementById('fileUpload').click()"">📤 Upload</button>
-                <button class=""btn btn-secondary"" onclick=""createFolder()"">📁 New Folder</button>
-                <button class=""btn btn-secondary"" onclick=""loadDirectory(currentPath)"">🔄 Refresh</button>
+        <!-- Clipboard Status Banner -->
+        <div id=""clipboardBar"" class=""clipboard-bar"" style=""display:none"">
+            <div class=""clipboard-info"">
+                <span id=""clipboardIcon"">📋</span>
+                <span><span id=""clipboardAction"">Copied</span>: <span id=""clipboardName"" class=""clipboard-name""></span></span>
             </div>
-            <div class=""search-box"">
-                <input type=""text"" id=""searchInput"" placeholder=""Search files..."" oninput=""filterFiles()"">
+            <div class=""clipboard-actions"">
+                <button class=""btn btn-paste"" onclick=""pasteItem()"">📥 Paste Here</button>
+                <button class=""btn btn-secondary"" onclick=""clearClipboard()"">✕ Cancel</button>
+            </div>
+        </div>
+
+        <div class=""toolbar"">
+            <div class=""toolbar-top"">
+                <div class=""breadcrumbs"" id=""breadcrumbs""></div>
+                <div class=""search-box"">
+                    <input type=""text"" id=""searchInput"" placeholder=""Search files..."" oninput=""filterFiles()"">
+                </div>
+            </div>
+            <div class=""toolbar-actions"">
+                <input type=""file"" id=""fileUpload"" multiple style=""display:none"" onchange=""handleUpload(event)"">
+                <button class=""btn"" onclick=""document.getElementById('fileUpload').click()"">⬆️ Upload</button>
+                <button class=""btn btn-secondary"" onclick=""createFolder()"">📁 New Folder</button>
+                <button id=""btnPasteToolbar"" class=""btn btn-paste"" style=""display:none"" onclick=""pasteItem()"">📥 Paste</button>
+                <button class=""btn btn-secondary"" onclick=""loadDirectory(currentPath)"">🔄 Refresh</button>
             </div>
         </div>
 
@@ -817,12 +1114,42 @@ namespace NativeFileBrowser
     <script>
         let currentPath = '/';
         let itemsList = [];
+        let clipboard = null; // { action: 'copy'|'cut', path: string, name: string, isDir: boolean }
+        let draggedItem = null; // { path: string, name: string, isDir: boolean }
+
+        // Token capture for cross-subdomain SSO
+        (function() {
+            try {
+                const p = new URLSearchParams(window.location.search);
+                const t = p.get('token') || p.get('access_token');
+                if (t) {
+                    document.cookie = 'ownbase_access_token=' + t + '; Path=/; SameSite=Lax; Max-Age=86400';
+                    localStorage.setItem('ownbase_access_token', t);
+                }
+            } catch(e) {}
+            updateHubLink();
+        })();
+
+        function updateHubLink() {
+            const h = window.location.hostname;
+            const p = h.split('.');
+            let hubUrl = '/';
+            if (p.length >= 3 && (h.includes('.nip.io') || h.includes('.sslip.io') || h.includes('.ts.net'))) {
+                p[0] = 'hub';
+                hubUrl = window.location.protocol + '//' + p.join('.') + (window.location.port ? ':' + window.location.port : '') + '/';
+            } else if (h === 'files.localhost' || h.endsWith('.localhost')) {
+                hubUrl = 'http://localhost:3000';
+            }
+            const el = document.getElementById('hubLink');
+            if (el) el.href = hubUrl;
+        }
 
         async function loadDirectory(path) {
             currentPath = path;
             renderBreadcrumbs();
+            updateClipboardBar();
             const container = document.getElementById('fileContainer');
-            container.innerHTML = '<div style=""color:#94a3b8;padding:20px;grid-column:1/-1;text-align:center"">Loading files...</div>';
+            container.innerHTML = '<div style=""color:#94a3b8;padding:40px;grid-column:1/-1;text-align:center"">Loading files...</div>';
 
             try {
                 const res = await fetch('/api/resources?path=' + encodeURIComponent(path));
@@ -830,7 +1157,7 @@ namespace NativeFileBrowser
                 itemsList = data.items || [];
                 renderFiles(itemsList);
             } catch (err) {
-                container.innerHTML = '<div style=""color:#ef4444;padding:20px;grid-column:1/-1;text-align:center"">Failed to load directory: ' + err.message + '</div>';
+                container.innerHTML = '<div style=""color:#ef4444;padding:40px;grid-column:1/-1;text-align:center"">Failed to load directory: ' + err.message + '</div>';
             }
         }
 
@@ -861,7 +1188,7 @@ namespace NativeFileBrowser
             if (['.mp3', '.wav', '.flac', '.ogg'].includes(ext)) return '🎵';
             if (['.jpg', '.jpeg', '.png', '.webp', '.gif', '.svg'].includes(ext)) return '🖼️';
             if (['.pdf', '.txt', '.doc', '.docx'].includes(ext)) return '📄';
-            if (['.zip', '.tar', '.gz', '.rar'].includes(ext)) return '📦';
+            if (['.zip', '.tar', '.gz', '.rar', '.7z'].includes(ext)) return '📦';
             return '📄';
         }
 
@@ -877,8 +1204,16 @@ namespace NativeFileBrowser
                 let displayName = it.name || '';
                 try { displayName = decodeURIComponent(displayName); } catch(e) {}
                 const subMeta = it.isDir ? 'Folder' : (formatBytes(it.size) + ' • ' + (it.extension || 'file').toUpperCase());
+                const safePath = it.path.replace(/'/g, ""\\'"");
+                const safeName = displayName.replace(/'/g, ""\\'"");
+
                 return `
-                    <div class=""file-card"" onclick=""handleItemClick('${it.path}', ${it.isDir}, '${it.extension}')"">
+                    <div class=""file-card""
+                         draggable=""true""
+                         ondragstart=""handleCardDragStart(event, '${safePath}', '${safeName}', ${it.isDir})""
+                         ondragend=""handleCardDragEnd(event)""
+                         ${it.isDir ? `ondragover=""handleFolderDragOver(event)"" ondragleave=""handleFolderDragLeave(event)"" ondrop=""handleFolderDrop(event, '${safePath}')""` : ''}
+                         onclick=""handleItemClick('${safePath}', ${it.isDir}, '${it.extension || ''}')"">
                         <div class=""file-info"">
                             <div class=""file-icon"">${icon}</div>
                             <div class=""file-details"">
@@ -887,8 +1222,10 @@ namespace NativeFileBrowser
                             </div>
                         </div>
                         <div class=""file-actions"" onclick=""event.stopPropagation()"">
+                            <button class=""action-btn"" title=""Copy"" onclick=""setClipboard('copy', '${safePath}', '${safeName}', ${it.isDir})"">📋</button>
+                            <button class=""action-btn"" title=""Cut"" onclick=""setClipboard('cut', '${safePath}', '${safeName}', ${it.isDir})"">✂️</button>
                             ${!it.isDir ? `<a href=""/api/stream?path=${encodeURIComponent(it.path)}"" download class=""action-btn"" title=""Download"">⬇️</a>` : ''}
-                            <button class=""action-btn action-delete"" title=""Delete"" onclick=""deleteItem('${it.path}')"">🗑️</button>
+                            <button class=""action-btn action-delete"" title=""Delete"" onclick=""deleteItem('${safePath}')"">🗑️</button>
                         </div>
                     </div>
                 `;
@@ -904,6 +1241,142 @@ namespace NativeFileBrowser
             });
             renderFiles(filtered);
         }
+
+        // ==========================================
+        // CLIPBOARD (COPY / CUT / PASTE)
+        // ==========================================
+        function setClipboard(action, path, name, isDir) {
+            clipboard = { action, path, name, isDir };
+            updateClipboardBar();
+        }
+
+        function clearClipboard() {
+            clipboard = null;
+            updateClipboardBar();
+        }
+
+        function updateClipboardBar() {
+            const bar = document.getElementById('clipboardBar');
+            const btnToolbar = document.getElementById('btnPasteToolbar');
+            if (!clipboard) {
+                bar.style.display = 'none';
+                btnToolbar.style.display = 'none';
+                return;
+            }
+            bar.style.display = 'flex';
+            btnToolbar.style.display = 'inline-flex';
+            document.getElementById('clipboardIcon').textContent = clipboard.action === 'copy' ? '📋' : '✂️';
+            document.getElementById('clipboardAction').textContent = clipboard.action === 'copy' ? 'Copied' : 'Cut';
+            document.getElementById('clipboardName').textContent = clipboard.name;
+        }
+
+        async function pasteItem() {
+            if (!clipboard) return;
+            const endpoint = clipboard.action === 'copy' ? '/api/copy' : '/api/move';
+            try {
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source: clipboard.path,
+                        destination: currentPath
+                    })
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    if (clipboard.action === 'cut') {
+                        clipboard = null;
+                    }
+                    loadDirectory(currentPath);
+                } else {
+                    alert('Operation failed: ' + (result.error || 'Server error'));
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        // ==========================================
+        // DRAG & DROP (CARD TO FOLDER)
+        // ==========================================
+        function handleCardDragStart(e, path, name, isDir) {
+            draggedItem = { path, name, isDir };
+            e.dataTransfer.setData('text/plain', path);
+            e.dataTransfer.effectAllowed = 'move';
+            e.currentTarget.classList.add('dragging');
+        }
+
+        function handleCardDragEnd(e) {
+            e.currentTarget.classList.remove('dragging');
+            document.querySelectorAll('.file-card.drop-target').forEach(el => el.classList.remove('drop-target'));
+        }
+
+        function handleFolderDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            e.currentTarget.classList.add('drop-target');
+        }
+
+        function handleFolderDragLeave(e) {
+            e.currentTarget.classList.remove('drop-target');
+        }
+
+        async function handleFolderDrop(e, targetFolderPath) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.currentTarget.classList.remove('drop-target');
+            if (!draggedItem || draggedItem.path === targetFolderPath) return;
+
+            try {
+                const res = await fetch('/api/move', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        source: draggedItem.path,
+                        destination: targetFolderPath
+                    })
+                });
+                const result = await res.json();
+                if (res.ok) {
+                    draggedItem = null;
+                    loadDirectory(currentPath);
+                } else {
+                    alert('Move failed: ' + (result.error || 'Server error'));
+                }
+            } catch (err) {
+                alert('Network error: ' + err.message);
+            }
+        }
+
+        // ==========================================
+        // WINDOW DRAG & DROP FOR UPLOAD
+        // ==========================================
+        window.addEventListener('dragenter', (e) => {
+            if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+                document.getElementById('dropOverlay').classList.add('active');
+                document.getElementById('dropOverlaySub').textContent = 'Upload files to ' + (currentPath === '/' ? 'Root' : currentPath);
+            }
+        });
+
+        window.addEventListener('dragover', (e) => {
+            if (e.dataTransfer.types && e.dataTransfer.types.includes('Files')) {
+                e.preventDefault();
+            }
+        });
+
+        window.addEventListener('dragleave', (e) => {
+            if (e.clientX <= 0 || e.clientY <= 0 || e.clientX >= window.innerWidth || e.clientY >= window.innerHeight) {
+                document.getElementById('dropOverlay').classList.remove('active');
+            }
+        });
+
+        window.addEventListener('drop', (e) => {
+            document.getElementById('dropOverlay').classList.remove('active');
+            if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+                e.preventDefault();
+                processFilesUpload(e.dataTransfer.files);
+            }
+        });
 
         function handleItemClick(path, isDir, ext) {
             if (isDir) {
@@ -992,8 +1465,7 @@ namespace NativeFileBrowser
             });
         }
 
-        async function handleUpload(event) {
-            const files = event.target.files;
+        async function processFilesUpload(files) {
             if (!files || files.length === 0) return;
 
             const card = document.getElementById('uploadProgressCard');
@@ -1032,8 +1504,15 @@ namespace NativeFileBrowser
                 barEl.style.width = '0%';
             }, 2200);
 
-            event.target.value = '';
             loadDirectory(currentPath);
+        }
+
+        async function handleUpload(event) {
+            const files = event.target.files;
+            if (files && files.length > 0) {
+                await processFilesUpload(files);
+                event.target.value = '';
+            }
         }
 
         // Initialize on load

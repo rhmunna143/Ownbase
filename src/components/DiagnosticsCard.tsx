@@ -336,7 +336,7 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
             rel="noopener noreferrer"
             className="flex items-center justify-between sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors max-w-full truncate"
           >
-            <span className="truncate">Open Storage ({filesUrl.replace(/^https?:\/\//, '')})</span>
+            <span className="truncate">Open Storage ({filesUrl.split('?')[0].replace(/^https?:\/\//, '')})</span>
             <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-1" />
           </a>
 
@@ -346,7 +346,7 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
             rel="noopener noreferrer"
             className="flex items-center justify-between sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors max-w-full truncate"
           >
-            <span className="truncate">Open AI Hub ({aiUrl.replace(/^https?:\/\//, '')})</span>
+            <span className="truncate">Open AI Hub ({aiUrl.split('?')[0].replace(/^https?:\/\//, '')})</span>
             <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-1" />
           </a>
         </div>

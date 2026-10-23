@@ -108,6 +108,13 @@ namespace NativeSyncthing
                 string path = req.Url.AbsolutePath.ToLowerInvariant();
                 string accept = req.Headers["Accept"] ?? "";
 
+                // Favicon
+                if (path == "/favicon.ico" || path == "/favicon.svg")
+                {
+                    SendFavicon(res, path, isHead);
+                    return;
+                }
+
                 // REST API status & ping
                 if (path == "/rest/system/ping" || path == "/ping")
                 {
@@ -165,6 +172,39 @@ namespace NativeSyncthing
             res.Close();
         }
 
+        private static void SendFavicon(HttpListenerResponse res, string path, bool isHead)
+        {
+            const string svg = @"<svg xmlns=""http://www.w3.org/2000/svg"" viewBox=""0 0 64 64"">
+  <defs>
+    <linearGradient id=""syncGrad"" x1=""0%"" y1=""0%"" x2=""100%"" y2=""100%"">
+      <stop offset=""0%"" stop-color=""#06b6d4""/>
+      <stop offset=""100%"" stop-color=""#2563eb""/>
+    </linearGradient>
+  </defs>
+  <rect width=""64"" height=""64"" rx=""16"" fill=""#06101e""/>
+  <rect x=""2"" y=""2"" width=""60"" height=""60"" rx=""14"" fill=""none"" stroke=""#1e293b"" stroke-width=""1.5""/>
+  <circle cx=""32"" cy=""32"" r=""18"" fill=""none"" stroke=""#1e293b"" stroke-width=""3""/>
+  <circle cx=""32"" cy=""32"" r=""18"" fill=""none"" stroke=""url(#syncGrad)"" stroke-width=""3"" stroke-dasharray=""25 15 35 15""/>
+  <circle cx=""32"" cy=""32"" r=""6"" fill=""#06b6d4""/>
+  <circle cx=""32"" cy=""32"" r=""3"" fill=""#ffffff""/>
+  <circle cx=""32"" cy=""14"" r=""5"" fill=""#38bdf8""/>
+  <circle cx=""47"" cy=""41"" r=""5"" fill=""#2563eb""/>
+  <circle cx=""17"" cy=""41"" r=""5"" fill=""#0891b2""/>
+  <line x1=""32"" y1=""32"" x2=""32"" y2=""14"" stroke=""#06b6d4"" stroke-width=""2""/>
+  <line x1=""32"" y1=""32"" x2=""47"" y2=""41"" stroke=""#2563eb"" stroke-width=""2""/>
+  <line x1=""32"" y1=""32"" x2=""17"" y2=""41"" stroke=""#0891b2"" stroke-width=""2""/>
+</svg>";
+            byte[] bytes = Encoding.UTF8.GetBytes(svg);
+            res.ContentType = (path.EndsWith(".ico", StringComparison.OrdinalIgnoreCase)) ? "image/x-icon" : "image/svg+xml";
+            res.ContentLength64 = bytes.Length;
+            res.StatusCode = 200;
+            if (!isHead)
+            {
+                res.OutputStream.Write(bytes, 0, bytes.Length);
+            }
+            res.Close();
+        }
+
         private static void SendHtml(HttpListenerResponse res, string html, bool isHead)
         {
             byte[] bytes = Encoding.UTF8.GetBytes(html);
@@ -192,6 +232,8 @@ namespace NativeSyncthing
     <meta charset=""UTF-8"">
     <meta name=""viewport"" content=""width=device-width, initial-scale=1.0"">
     <title>Syncthing - Ownbase</title>
+    <link rel=""icon"" type=""image/svg+xml"" href=""/favicon.svg"">
+    <link rel=""alternate icon"" href=""/favicon.ico"">
     <link rel=""preconnect"" href=""https://fonts.googleapis.com"">
     <link rel=""preconnect"" href=""https://fonts.gstatic.com"" crossorigin>
     <link href=""https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"" rel=""stylesheet"">
