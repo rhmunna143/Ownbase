@@ -301,8 +301,16 @@ export const FileBrowserCard: React.FC = () => {
     return <File className="w-8 h-8 sm:w-10 sm:h-10 text-slate-400 shrink-0" />;
   };
 
+  const getDisplayName = (name: string): string => {
+    try {
+      return decodeURIComponent(name);
+    } catch {
+      return name;
+    }
+  };
+
   const filteredItems = (data?.items || []).filter((item) =>
-    item.name.toLowerCase().includes(searchQuery.toLowerCase())
+    getDisplayName(item.name).toLowerCase().includes(searchQuery.toLowerCase())
   );
 
   const pathParts = currentPath ? currentPath.split('/').filter(Boolean) : [];
@@ -610,9 +618,9 @@ export const FileBrowserCard: React.FC = () => {
                 <div className="w-full">
                   <h4
                     className="text-xs font-semibold text-white truncate max-w-full group-hover:text-blue-400 transition-colors"
-                    title={item.name}
+                    title={getDisplayName(item.name)}
                   >
-                    {item.name}
+                    {getDisplayName(item.name)}
                   </h4>
                   <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono">
                     <span>{item.isDirectory ? 'Folder' : formatFileSize(item.size)}</span>
@@ -650,8 +658,8 @@ export const FileBrowserCard: React.FC = () => {
                     {getFileIcon(item)}
                   </div>
                   <div className="min-w-0">
-                    <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors">
-                      {item.name}
+                    <h4 className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors" title={getDisplayName(item.name)}>
+                      {getDisplayName(item.name)}
                     </h4>
                     <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                       {formatModifiedDate(item.modifiedAt)}

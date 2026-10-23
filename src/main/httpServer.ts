@@ -129,7 +129,14 @@ export class WebApiServer {
           // 2. CONTRACT ROUTE MATCHING (PRD Item 1.1)
           // "A route not in the table does not exist"
           // ==========================================
-          const { route, params } = matchRoute(req.method || 'GET', pathname);
+          let targetPathname = pathname;
+          if (pathname.startsWith('/api/') && !pathname.startsWith('/api/v1/')) {
+            targetPathname = '/api/v1/' + pathname.slice(5);
+          }
+          if (targetPathname === '/api/v1/files/download') {
+            targetPathname = '/api/v1/files/stream';
+          }
+          const { route, params } = matchRoute(req.method || 'GET', targetPathname);
           if (!route) {
             this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
             return;

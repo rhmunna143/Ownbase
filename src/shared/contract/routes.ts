@@ -429,8 +429,7 @@ export const ROUTE_TABLE: RouteDefinition[] = [
   {
     method: 'GET',
     path: '/api/v1/photos/media',
-    auth: 'user',
-    minRole: 'READ_ONLY',
+    auth: 'public',
     summary: 'Stream photo or video preview media',
   },
   {

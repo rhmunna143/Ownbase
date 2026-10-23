@@ -22,7 +22,7 @@ import {
   Check,
   Loader2,
 } from 'lucide-react';
-import { serverApi } from '@/shared/apiClient';
+import { serverApi, authStore } from '@/shared/apiClient';
 import { PhotoItem, PhotoTimelineSection, PhotosResponse } from '@/shared/types';
 
 export const PhotosGalleryCard: React.FC = () => {
@@ -45,6 +45,7 @@ export const PhotosGalleryCard: React.FC = () => {
     filePercent: number;
     overallPercent: number;
   } | null>(null);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -87,8 +88,11 @@ export const PhotosGalleryCard: React.FC = () => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
+    setUploadError(null);
     setIsUploading(true);
     const totalFilesCount = files.length;
+    let failedCount = 0;
+    let lastErrMsg = '';
 
     for (let i = 0; i < totalFilesCount; i++) {
       const file = files[i];
@@ -102,7 +106,7 @@ export const PhotosGalleryCard: React.FC = () => {
         overallPercent: Math.round((i / totalFilesCount) * 100),
       });
 
-      await serverApi.uploadFile('Photos', file, (progress) => {
+      const res = await serverApi.uploadFile('Photos', file, (progress) => {
         const overall = Math.round(((i + (progress.percent / 100)) / totalFilesCount) * 100);
         setUploadStatus({
           fileName: file.name,
@@ -115,10 +119,31 @@ export const PhotosGalleryCard: React.FC = () => {
         });
         setUploadProgress(progress.percent);
       });
+
+      if (!res.success) {
+        failedCount++;
+        lastErrMsg = res.error || 'Upload failed';
+      }
     }
 
-    setUploadStatus(null);
-    setIsUploading(false);
+    if (failedCount > 0) {
+      setUploadError(`${failedCount} of ${totalFilesCount} uploads failed: ${lastErrMsg}`);
+      setTimeout(() => setUploadError(null), 6000);
+    } else {
+      setUploadStatus((prev) => prev ? {
+        ...prev,
+        fileName: `Uploaded ${totalFilesCount} photo${totalFilesCount > 1 ? 's' : ''} successfully!`,
+        filePercent: 100,
+        overallPercent: 100,
+      } : null);
+    }
+
+    setTimeout(() => {
+      setUploadStatus(null);
+      setIsUploading(false);
+      setUploadProgress(0);
+    }, failedCount > 0 ? 500 : 2500);
+
     if (photoInputRef.current) photoInputRef.current.value = '';
     loadPhotos();
   };
@@ -189,7 +214,7 @@ export const PhotosGalleryCard: React.FC = () => {
               ref={photoInputRef}
               onChange={handleUploadPhotos}
               multiple
-              accept="image/*,video/*"
+              accept="image/*,video/*,.mkv,.mp4,.mov,.webm,.avi,.m4v,.jpg,.jpeg,.png,.webp,.gif"
               className="hidden"
             />
 
@@ -327,6 +352,19 @@ export const PhotosGalleryCard: React.FC = () => {
               <span className="text-slate-300 font-semibold">{uploadStatus.overallPercent}%</span>
             </div>
           )}
+        </div>
+      )}
+
+      {/* Live Upload Error Alert */}
+      {uploadError && (
+        <div className="glass-card rounded-2xl p-4 border border-rose-500/50 bg-rose-950/40 text-rose-300 text-xs flex items-center justify-between gap-3 animate-in fade-in">
+          <div className="flex items-center gap-2">
+            <span className="text-base">⚠️</span>
+            <span>{uploadError}</span>
+          </div>
+          <button onClick={() => setUploadError(null)} className="text-rose-400 hover:text-white text-xs underline shrink-0">
+            Dismiss
+          </button>
         </div>
       )}
 

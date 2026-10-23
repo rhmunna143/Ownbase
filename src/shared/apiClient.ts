@@ -603,7 +603,7 @@ export const serverApi = {
     targetPath: string,
     file: File,
     onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
-  ): Promise<{ success: boolean; path?: string }> => {
+  ): Promise<{ success: boolean; path?: string; error?: string }> => {
     return new Promise((resolve) => {
       const url = `/api/v1/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`;
       const xhr = new XMLHttpRequest();
@@ -634,16 +634,21 @@ export const serverApi = {
             resolve({ success: true });
           }
         } else {
-          resolve({ success: false });
+          let errMsg = `Upload failed (${xhr.status})`;
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            if (errData?.error) errMsg = errData.error;
+          } catch {}
+          resolve({ success: false, error: errMsg });
         }
       };
 
       xhr.onerror = () => {
-        resolve({ success: false });
+        resolve({ success: false, error: 'Network error during upload' });
       };
 
       xhr.ontimeout = () => {
-        resolve({ success: false });
+        resolve({ success: false, error: 'Upload timed out' });
       };
 
       xhr.send(file);

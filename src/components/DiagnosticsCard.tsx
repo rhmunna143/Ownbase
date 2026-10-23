@@ -323,32 +323,31 @@ export const DiagnosticsCard: React.FC<DiagnosticsProps> = ({
       </div>
 
       {/* Storage Service Access */}
-      <div className="mt-5 p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-wrap items-center justify-between gap-3 text-xs">
+      <div className="mt-5 p-4 rounded-xl bg-slate-950/60 border border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
         <div className="flex items-center space-x-2 text-slate-300">
           <span className="font-semibold text-white">Storage Security:</span>
           <span className="text-emerald-400 font-medium">Secured with Role-Based Access Control</span>
         </div>
 
-        <div className="flex items-center space-x-2">
-
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto">
           <a
             href={filesUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors"
+            className="flex items-center justify-between sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-blue-600/20 border border-blue-500/30 text-blue-400 hover:bg-blue-600/30 transition-colors max-w-full truncate"
           >
-            <span>Open Storage ({filesUrl.replace(/^https?:\/\//, '')})</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="truncate">Open Storage ({filesUrl.replace(/^https?:\/\//, '')})</span>
+            <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-1" />
           </a>
 
           <a
             href={aiUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors"
+            className="flex items-center justify-between sm:justify-start gap-1.5 px-3 py-2 sm:py-1.5 rounded-lg bg-purple-600/20 border border-purple-500/30 text-purple-400 hover:bg-purple-600/30 transition-colors max-w-full truncate"
           >
-            <span>Open AI Hub ({aiUrl.replace(/^https?:\/\//, '')})</span>
-            <ExternalLink className="w-3.5 h-3.5" />
+            <span className="truncate">Open AI Hub ({aiUrl.replace(/^https?:\/\//, '')})</span>
+            <ExternalLink className="w-3.5 h-3.5 shrink-0 ml-1" />
           </a>
         </div>
       </div>

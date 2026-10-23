@@ -428,8 +428,8 @@ export class FileManager {
                 day: 'numeric',
               }),
               groupKey,
-              mediaUrl: `/api/photos/media?path=${encodeURIComponent(relPath)}`,
-              streamUrl: `/api/files/stream?path=${encodeURIComponent(relPath)}`,
+              mediaUrl: `/api/v1/photos/media?path=${encodeURIComponent(relPath)}`,
+              streamUrl: `/api/v1/files/stream?path=${encodeURIComponent(relPath)}`,
               isFavorite: isFav,
             });
           }
@@ -523,8 +523,8 @@ export class FileManager {
               day: 'numeric',
             }),
             groupKey: this.formatDateGroup(mtime),
-            mediaUrl: `/api/photos/media?path=${encodeURIComponent(relPath)}`,
-            streamUrl: `/api/files/stream?path=${encodeURIComponent(relPath)}`,
+            mediaUrl: `/api/v1/photos/media?path=${encodeURIComponent(relPath)}`,
+            streamUrl: `/api/v1/files/stream?path=${encodeURIComponent(relPath)}`,
             isFavorite: isFav,
           });
         }

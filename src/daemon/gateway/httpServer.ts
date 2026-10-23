@@ -235,7 +235,14 @@ export class WebApiServer {
           // ==========================================
           // 3. CONTRACT ROUTE MATCHING (PRD Item 1.1)
           // ==========================================
-          const { route, params } = matchRoute(req.method || 'GET', pathname);
+          let targetPathname = pathname;
+          if (pathname.startsWith('/api/') && !pathname.startsWith('/api/v1/')) {
+            targetPathname = '/api/v1/' + pathname.slice(5);
+          }
+          if (targetPathname === '/api/v1/files/download') {
+            targetPathname = '/api/v1/files/stream';
+          }
+          const { route, params } = matchRoute(req.method || 'GET', targetPathname);
           if (!route) {
             this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
             return;
@@ -373,10 +380,10 @@ export class WebApiServer {
               const accessToken = await this.authService.generateAccessToken(authUser);
               const { token: refreshToken } = await this.authService.generateRefreshToken(user.id);
 
-              res.setHeader(
-                'Set-Cookie',
-                `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`
-              );
+              res.setHeader('Set-Cookie', [
+                `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`,
+                `ownbase_access_token=${accessToken}; Path=/; SameSite=Lax; Max-Age=${24 * 3600}`,
+              ]);
 
               await this.auditService.record({
                 actorId: user.id,

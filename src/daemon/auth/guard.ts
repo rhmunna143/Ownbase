@@ -1,5 +1,6 @@
 import http from 'http';
 import crypto from 'crypto';
+import cookie from 'cookie';
 import { AuthService } from './authService';
 import { Role, AuthenticatedUser, hasRequiredRole, RouteDefinition } from '../../shared/contract/types';
 
@@ -19,7 +20,7 @@ export class AuthGuard {
   }
 
   /**
-   * Authenticates the incoming HTTP request via Bearer JWT, x-api-key, or ?token query param.
+   * Authenticates the incoming HTTP request via Bearer JWT, x-api-key, ?token query param, or Cookie.
    */
   public async authenticate(req: http.IncomingMessage): Promise<AuthenticatedUser | null> {
     const authHeader = req.headers['authorization'];
@@ -47,6 +48,18 @@ export class AuthGuard {
         if (user) return user;
       }
     } catch {}
+
+    // 4. Fallback: Cookie authentication (for browser img/video tags and active sessions)
+    if (req.headers.cookie) {
+      try {
+        const cookies = cookie.parse(req.headers.cookie);
+        const cookieToken = cookies.ownbase_access_token || cookies.ownbase_session;
+        if (cookieToken) {
+          const user = await this.authService.verifyAccessToken(cookieToken);
+          if (user) return user;
+        }
+      } catch {}
+    }
 
     return null;
   }

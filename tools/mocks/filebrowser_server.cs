@@ -465,6 +465,7 @@ namespace NativeFileBrowser
 
             if (!string.IsNullOrEmpty(fileName))
             {
+                try { fileName = Uri.UnescapeDataString(fileName); } catch { }
                 fileName = Path.GetFileName(fileName);
                 string destPath = Path.Combine(targetDir, fileName);
                 using (FileStream fs = new FileStream(destPath, FileMode.Create, FileAccess.Write))
@@ -728,11 +729,31 @@ namespace NativeFileBrowser
         img.preview { max-width: 100%; max-height: 70vh; object-fit: contain; }
         .close-btn { background: #334155; border: none; color: #f1f5f9; width: 32px; height: 32px; border-radius: 8px; cursor: pointer; font-size: 16px; font-weight: bold; }
         .badge-stream { font-size: 10px; background: rgba(56,189,248,0.2); color: #38bdf8; border: 1px solid rgba(56,189,248,0.3); padding: 2px 6px; border-radius: 4px; margin-left: 6px; }
+        /* Upload Progress Card */
+        .upload-card { background: linear-gradient(135deg, #0f172a, #1e1b4b); border: 1px solid #3b82f6; border-radius: 12px; padding: 14px 16px; margin-bottom: 16px; box-shadow: 0 10px 25px -5px rgba(59,130,246,0.3); animation: slideDown 0.2s ease-out; }
+        .upload-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+        .upload-info { display: flex; align-items: center; gap: 10px; overflow: hidden; min-width: 0; }
+        .upload-spinner { width: 18px; height: 18px; border: 2px solid rgba(56,189,248,0.3); border-top-color: #38bdf8; border-radius: 50%; animation: spin 0.8s linear infinite; flex-shrink: 0; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @keyframes slideDown { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }
+        .upload-filename { font-size: 13px; font-weight: 600; color: #f8fafc; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 240px; }
+        .upload-meta { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+        .upload-percent { font-size: 14px; font-weight: 700; color: #34d399; font-family: monospace; }
+        .progress-bar-bg { width: 100%; height: 8px; background: #0b1120; border-radius: 999px; overflow: hidden; border: 1px solid #1e293b; }
+        .progress-bar-fill { height: 100%; background: linear-gradient(90deg, #38bdf8, #818cf8, #34d399); border-radius: 999px; transition: width 0.15s ease-out; }
         @media (max-width: 640px) {
-            .toolbar { flex-direction: column; align-items: stretch; }
-            .search-box { max-width: 100%; }
-            .actions { justify-content: space-between; }
+            header { padding: 12px 14px; flex-direction: column; align-items: flex-start; gap: 8px; }
+            .brand { width: 100%; }
+            .hub-link { align-self: flex-end; }
+            .toolbar { flex-direction: column; align-items: stretch; gap: 10px; }
+            .breadcrumbs { overflow-x: auto; white-space: nowrap; padding-bottom: 4px; }
+            .actions { display: flex; flex-wrap: wrap; gap: 6px; width: 100%; }
+            .actions .btn { flex: 1 1 auto; justify-content: center; min-height: 40px; font-size: 12px; padding: 6px 10px; }
+            .search-box { max-width: 100%; width: 100%; }
+            .search-box input { width: 100%; }
             .file-grid { grid-template-columns: 1fr; }
+            .file-card { padding: 10px 12px; }
+            .upload-filename { max-width: 180px; }
         }
     </style>
 </head>
@@ -759,6 +780,23 @@ namespace NativeFileBrowser
             </div>
             <div class=""search-box"">
                 <input type=""text"" id=""searchInput"" placeholder=""Search files..."" oninput=""filterFiles()"">
+            </div>
+        </div>
+
+        <!-- Live Upload Progress Card -->
+        <div id=""uploadProgressCard"" class=""upload-card"" style=""display:none"">
+            <div class=""upload-header"">
+                <div class=""upload-info"">
+                    <div class=""upload-spinner""></div>
+                    <div>
+                        <div class=""upload-filename"" id=""uploadFilename"">Uploading...</div>
+                        <div class=""upload-meta"" id=""uploadMeta"">0 B / 0 B</div>
+                    </div>
+                </div>
+                <div class=""upload-percent"" id=""uploadPercent"">0%</div>
+            </div>
+            <div class=""progress-bar-bg"">
+                <div class=""progress-bar-fill"" id=""progressBarFill"" style=""width:0%""></div>
             </div>
         </div>
 
@@ -836,13 +874,15 @@ namespace NativeFileBrowser
 
             container.innerHTML = items.map(it => {
                 const icon = getFileIcon(it);
+                let displayName = it.name || '';
+                try { displayName = decodeURIComponent(displayName); } catch(e) {}
                 const subMeta = it.isDir ? 'Folder' : (formatBytes(it.size) + ' • ' + (it.extension || 'file').toUpperCase());
                 return `
                     <div class=""file-card"" onclick=""handleItemClick('${it.path}', ${it.isDir}, '${it.extension}')"">
                         <div class=""file-info"">
                             <div class=""file-icon"">${icon}</div>
                             <div class=""file-details"">
-                                <div class=""file-name"" title=""${it.name}"">${it.name}</div>
+                                <div class=""file-name"" title=""${displayName}"">${displayName}</div>
                                 <div class=""file-meta"">${subMeta}</div>
                             </div>
                         </div>
@@ -857,7 +897,11 @@ namespace NativeFileBrowser
 
         function filterFiles() {
             const q = document.getElementById('searchInput').value.toLowerCase();
-            const filtered = itemsList.filter(it => it.name.toLowerCase().includes(q));
+            const filtered = itemsList.filter(it => {
+                let name = it.name || '';
+                try { name = decodeURIComponent(name); } catch(e) {}
+                return name.toLowerCase().includes(q);
+            });
             renderFiles(filtered);
         }
 
@@ -873,7 +917,8 @@ namespace NativeFileBrowser
             const isImage = ['.jpg', '.jpeg', '.png', '.webp', '.gif'].includes(ext);
 
             const streamUrl = '/api/stream?path=' + encodeURIComponent(path);
-            const name = path.split('/').pop();
+            let name = path.split('/').pop();
+            try { name = decodeURIComponent(name); } catch(e) {}
 
             if (isVideo) {
                 openModal(name, `<video controls autoplay playsinline preload=""metadata"" src=""${streamUrl}""></video>`);
@@ -914,7 +959,9 @@ namespace NativeFileBrowser
         }
 
         async function deleteItem(path) {
-            if (!confirm('Are you sure you want to delete ' + path.split('/').pop() + '?')) return;
+            let name = path.split('/').pop();
+            try { name = decodeURIComponent(name); } catch(e) {}
+            if (!confirm('Are you sure you want to delete ' + name + '?')) return;
             try {
                 const res = await fetch('/api/resources?path=' + encodeURIComponent(path), { method: 'DELETE' });
                 if (res.ok) loadDirectory(currentPath);
@@ -922,25 +969,69 @@ namespace NativeFileBrowser
             } catch (err) { alert(err.message); }
         }
 
+        function uploadSingleFile(file, path, onProgress) {
+            return new Promise((resolve, reject) => {
+                const xhr = new XMLHttpRequest();
+                xhr.open('POST', '/api/upload?path=' + encodeURIComponent(path), true);
+                xhr.setRequestHeader('X-File-Name', encodeURIComponent(file.name));
+                xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+                if (xhr.upload) {
+                    xhr.upload.onprogress = (e) => {
+                        if (e.lengthComputable && e.total > 0) {
+                            onProgress(e.loaded, e.total);
+                        }
+                    };
+                }
+                xhr.onload = () => {
+                    if (xhr.status >= 200 && xhr.status < 300) resolve();
+                    else reject(new Error('Server returned HTTP ' + xhr.status));
+                };
+                xhr.onerror = () => reject(new Error('Network error during upload'));
+                xhr.ontimeout = () => reject(new Error('Upload timed out'));
+                xhr.send(file);
+            });
+        }
+
         async function handleUpload(event) {
             const files = event.target.files;
             if (!files || files.length === 0) return;
 
+            const card = document.getElementById('uploadProgressCard');
+            const nameEl = document.getElementById('uploadFilename');
+            const metaEl = document.getElementById('uploadMeta');
+            const pctEl = document.getElementById('uploadPercent');
+            const barEl = document.getElementById('progressBarFill');
+
+            card.style.display = 'block';
+
             for (let i = 0; i < files.length; i++) {
                 const file = files[i];
+                nameEl.textContent = (files.length > 1 ? `[${i + 1}/${files.length}] ` : '') + file.name;
+                pctEl.textContent = '0%';
+                barEl.style.width = '0%';
+                metaEl.textContent = `0 B / ${formatBytes(file.size)}`;
+
                 try {
-                    await fetch('/api/upload?path=' + encodeURIComponent(currentPath), {
-                        method: 'POST',
-                        headers: {
-                            'X-File-Name': encodeURIComponent(file.name),
-                            'Content-Type': 'application/octet-stream'
-                        },
-                        body: file
+                    await uploadSingleFile(file, currentPath, (loaded, total) => {
+                        const pct = Math.min(100, Math.round((loaded / total) * 100));
+                        pctEl.textContent = pct + '%';
+                        barEl.style.width = pct + '%';
+                        metaEl.textContent = `${formatBytes(loaded)} / ${formatBytes(total)}`;
                     });
                 } catch (err) {
                     alert('Upload failed for ' + file.name + ': ' + err.message);
                 }
             }
+
+            nameEl.textContent = `✅ Uploaded ${files.length} file${files.length > 1 ? 's' : ''} successfully!`;
+            pctEl.textContent = '100%';
+            barEl.style.width = '100%';
+
+            setTimeout(() => {
+                card.style.display = 'none';
+                barEl.style.width = '0%';
+            }, 2200);
+
             event.target.value = '';
             loadDirectory(currentPath);
         }
