@@ -8,10 +8,10 @@
     "schema": "prisma/schema"
   },
   "scripts": {
-    "dev": "concurrently -k \"npm run dev:daemon\" \"npm run dev:electron\"",
+    "dev": "concurrently -k \"npm run dev:daemon\" \"npm run dev:next\" \"npm run dev:electron\"",
     "dev:next": "next dev -p 3000",
     "dev:all": "concurrently -k \"npm run dev:daemon\" \"npm run dev:next\" \"npm run dev:electron\"",
-    "dev:electron": "wait-on http://127.0.0.1:3001 && tsc -p tsconfig.electron.json && electron . --dev",
+    "dev:electron": "wait-on http://127.0.0.1:3001 http://127.0.0.1:3000 && tsc -p tsconfig.electron.json && electron . --dev",
     "dev:daemon": "tsx src/daemon/main.ts",
     "build": "npm run build:next && npm run build:electron",
     "build:next": "next build",
