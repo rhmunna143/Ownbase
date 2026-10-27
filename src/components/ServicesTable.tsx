@@ -38,6 +38,7 @@ import {
 import { ServiceRecord, ProcessStatus, LogEntry } from '@/shared/types';
 import { serverApi } from '@/shared/apiClient';
 import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
+import { modalDialog } from '@/components/ModalDialog';
 
 interface ServicesTableProps {
   services: ServiceRecord[];
@@ -381,10 +382,10 @@ export const ServicesTable: React.FC<ServicesTableProps> = ({
         setExecutable(res.filename);
         setUploadedExeName(res.filename);
       } else {
-        alert(res.error || 'Binary upload failed');
+        await modalDialog.alert(res.error || 'Binary upload failed', 'Upload Failed', 'danger');
       }
     } catch (err: any) {
-      alert(`Upload error: ${err.message}`);
+      await modalDialog.alert(`Upload error: ${err.message}`, 'Upload Error', 'danger');
     } finally {
       setIsUploadingExe(false);
     }

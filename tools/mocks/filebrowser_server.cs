@@ -250,6 +250,13 @@ namespace NativeFileBrowser
                     return;
                 }
 
+                // REST API: Rename file/directory
+                if ((lowerPath == "/api/rename" || lowerPath == "/api/resources/rename") && req.HttpMethod == "POST")
+                {
+                    HandleRenameResource(req, res);
+                    return;
+                }
+
                 // REST API: Delete file/directory
                 if (lowerPath == "/api/resources" && req.HttpMethod == "DELETE")
                 {
@@ -777,6 +784,67 @@ namespace NativeFileBrowser
             }
         }
 
+        private static void HandleRenameResource(HttpListenerRequest req, HttpListenerResponse res)
+        {
+            try
+            {
+                string body = "";
+                using (StreamReader reader = new StreamReader(req.InputStream, req.ContentEncoding ?? Encoding.UTF8))
+                {
+                    body = reader.ReadToEnd();
+                }
+
+                string oldPath = ExtractJsonField(body, "oldPath");
+                if (string.IsNullOrEmpty(oldPath)) oldPath = ExtractJsonField(body, "path");
+                if (string.IsNullOrEmpty(oldPath)) oldPath = ExtractJsonField(body, "source");
+                string newName = ExtractJsonField(body, "newName");
+                if (string.IsNullOrEmpty(newName)) newName = ExtractJsonField(body, "name");
+
+                if (string.IsNullOrEmpty(oldPath) || string.IsNullOrEmpty(newName))
+                {
+                    res.StatusCode = 400;
+                    SendJson(res, "{\"success\":false,\"error\":\"Missing oldPath or newName\"}", false);
+                    return;
+                }
+
+                string sourceFull = SafeResolvePath(oldPath);
+                if (Path.GetFullPath(sourceFull) == Path.GetFullPath(StorageRoot))
+                {
+                    res.StatusCode = 400;
+                    SendJson(res, "{\"success\":false,\"error\":\"Cannot rename storage root directory\"}", false);
+                    return;
+                }
+
+                string cleanName = Path.GetFileName(newName).Trim();
+                string parentDir = Path.GetDirectoryName(sourceFull);
+                string targetFull = Path.Combine(parentDir, cleanName);
+
+                if (File.Exists(sourceFull))
+                {
+                    File.Move(sourceFull, targetFull);
+                    SendJson(res, "{\"success\":true,\"path\":" + ToJsonString(GetRelativePath(targetFull)) + "}", false);
+                    return;
+                }
+                else if (Directory.Exists(sourceFull))
+                {
+                    Directory.Move(sourceFull, targetFull);
+                    SendJson(res, "{\"success\":true,\"path\":" + ToJsonString(GetRelativePath(targetFull)) + "}", false);
+                    return;
+                }
+                else
+                {
+                    res.StatusCode = 404;
+                    SendJson(res, "{\"success\":false,\"error\":\"Item not found\"}", false);
+                    return;
+                }
+            }
+            catch (Exception ex)
+            {
+                res.StatusCode = 500;
+                SendJson(res, "{\"success\":false,\"error\":" + ToJsonString(ex.Message) + "}", false);
+            }
+        }
+
         private static void CopyDirectoryRecursively(string sourceDir, string destinationDir)
         {
             if (!Directory.Exists(destinationDir))
@@ -938,8 +1006,8 @@ namespace NativeFileBrowser
     <link rel=""alternate icon"" href=""/favicon.ico"">
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
-        body { background: #070b14; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; min-height: 100vh; padding-bottom: 40px; }
-        header { background: #0c1220; border-bottom: 1px solid #1e293b; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; gap: 10px; flex-wrap: wrap; }
+        html, body { width: 100%; max-width: 100vw; overflow-x: hidden; background: #070b14; color: #f1f5f9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; display: flex; flex-direction: column; min-height: 100vh; padding-bottom: 40px; }
+        header { background: #0c1220; border-bottom: 1px solid #1e293b; padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; gap: 10px; width: 100%; box-sizing: border-box; }
         .brand { display: flex; align-items: center; gap: 10px; min-width: 0; }
         .logo { width: 36px; height: 36px; border-radius: 10px; background: linear-gradient(135deg, #0284c7, #2563eb); display: flex; align-items: center; justify-content: center; font-size: 18px; color: #fff; box-shadow: 0 4px 12px rgba(2,132,199,0.3); flex-shrink: 0; }
         .title { overflow: hidden; }
@@ -947,8 +1015,8 @@ namespace NativeFileBrowser
         .title p { font-size: 11px; color: #64748b; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .hub-link { background: #1e293b; color: #94a3b8; border: 1px solid #334155; padding: 7px 12px; border-radius: 8px; font-size: 12px; font-weight: 600; text-decoration: none; display: inline-flex; align-items: center; gap: 6px; transition: all 0.2s; white-space: nowrap; flex-shrink: 0; }
         .hub-link:hover { background: #334155; color: #fff; }
-        .main-container { max-width: 1280px; width: 100%; margin: 16px auto; padding: 0 16px; flex: 1; }
-        .toolbar { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 12px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; }
+        .main-container { max-width: 1280px; width: 100%; margin: 16px auto; padding: 0 16px; flex: 1; box-sizing: border-box; overflow-x: hidden; }
+        .toolbar { background: #0f172a; border: 1px solid #1e293b; border-radius: 14px; padding: 12px 16px; margin-bottom: 14px; display: flex; flex-direction: column; gap: 12px; width: 100%; box-sizing: border-box; }
         .toolbar-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
         .breadcrumbs { display: flex; align-items: center; gap: 4px; font-size: 13px; font-weight: 500; overflow-x: auto; white-space: nowrap; padding-bottom: 2px; scrollbar-width: none; }
         .breadcrumbs::-webkit-scrollbar { display: none; }
@@ -960,6 +1028,8 @@ namespace NativeFileBrowser
         .btn:hover { background: #0369a1; }
         .btn-secondary { background: #1e293b; border: 1px solid #334155; color: #cbd5e1; }
         .btn-secondary:hover { background: #334155; color: #fff; }
+        .btn-danger { background: #dc2626 !important; color: #fff !important; }
+        .btn-danger:hover { background: #b91c1c !important; }
         .btn-paste { background: #059669; color: #fff; }
         .btn-paste:hover { background: #047857; }
         .search-box { flex: 1; min-width: 200px; max-width: 320px; position: relative; }
@@ -971,9 +1041,10 @@ namespace NativeFileBrowser
         .clipboard-name { font-weight: 700; color: #fff; }
         .clipboard-actions { display: flex; align-items: center; gap: 6px; }
         /* Grid & Cards */
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
-        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; user-select: none; }
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; width: 100%; box-sizing: border-box; }
+        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; user-select: none; width: 100%; box-sizing: border-box; position: relative; z-index: 1; }
         .file-card:hover { border-color: #38bdf8; background: #131d35; transform: translateY(-1px); }
+        .file-card.menu-open { z-index: 100 !important; border-color: #38bdf8 !important; }
         .file-card.dragging { opacity: 0.4; border-style: dashed; }
         .file-card.drop-target { border-color: #10b981 !important; background: rgba(16,185,129,0.15) !important; transform: scale(1.02); }
         .file-info { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; min-width: 0; }
@@ -981,10 +1052,17 @@ namespace NativeFileBrowser
         .file-details { overflow: hidden; flex: 1; min-width: 0; }
         .file-name { font-size: 13px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
         .file-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
-        .file-actions { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; }
-        .action-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 6px; width: 30px; height: 30px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 12px; transition: all 0.15s; }
-        .action-btn:hover { background: #334155; color: #fff; }
-        .action-delete:hover { background: #dc2626; border-color: #dc2626; color: #fff; }
+        .file-actions { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; position: relative; z-index: 105; }
+        /* 3-Dots Dropdown Menu */
+        .dots-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; font-weight: bold; line-height: 1; transition: all 0.15s; flex-shrink: 0; }
+        .dots-btn:hover { background: #334155; color: #fff; border-color: #64748b; }
+        .dropdown-menu { display: none; position: absolute; right: 0; top: 38px; background: #0b1120; border: 1px solid #334155; border-radius: 12px; padding: 6px; min-width: 150px; box-shadow: 0 10px 30px rgba(0,0,0,0.8); z-index: 120 !important; flex-direction: column; gap: 2px; animation: slideDown 0.15s ease-out; }
+        .dropdown-menu.show { display: flex; }
+        .dropdown-menu button, .dropdown-menu a { background: transparent; border: none; color: #cbd5e1; padding: 8px 12px; border-radius: 8px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; gap: 8px; text-decoration: none; transition: all 0.15s; text-align: left; width: 100%; box-sizing: border-box; }
+        .dropdown-menu button:hover, .dropdown-menu a:hover { background: #1e293b; color: #fff; }
+        .dropdown-menu .delete-opt { color: #f87171; }
+        .dropdown-menu .delete-opt:hover { background: rgba(239,68,68,0.18); color: #fca5a5; }
+        .dropdown-sep { height: 1px; background: #1e293b; margin: 4px 0; }
         /* Player Modal */
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 200; align-items: center; justify-content: center; padding: 16px; }
         .modal.open { display: flex; }
@@ -1017,18 +1095,17 @@ namespace NativeFileBrowser
         @keyframes bounce { from { transform: translateY(0); } to { transform: translateY(-8px); } }
         /* Mobile Media Query */
         @media (max-width: 640px) {
-            header { padding: 10px 14px; }
-            .brand { max-width: calc(100% - 90px); }
-            .title h1 { font-size: 14px; }
+            header { padding: 10px 14px; width: 100%; }
+            .brand { max-width: calc(100% - 100px); }
+            .title h1 { font-size: 13px; }
             .title p { display: none; }
-            .main-container { padding: 0 10px; margin: 10px auto; }
-            .toolbar { padding: 10px 12px; gap: 10px; }
+            .main-container { padding: 0 8px; margin: 10px auto; width: 100%; }
+            .toolbar { padding: 10px 12px; gap: 10px; width: 100%; }
             .toolbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .toolbar-actions .btn { justify-content: center; }
             .search-box { max-width: 100%; width: 100%; }
-            .file-grid { grid-template-columns: 1fr; gap: 8px; }
-            .file-card { padding: 10px 12px; }
-            .action-btn { width: 32px; height: 32px; }
+            .file-grid { grid-template-columns: 1fr; gap: 8px; width: 100%; }
+            .file-card { padding: 10px 12px; width: 100%; }
         }
     </style>
 </head>
@@ -1111,7 +1188,123 @@ namespace NativeFileBrowser
         </div>
     </div>
 
+    <!-- Reusable Modal Dialog (Alert, Confirm, Prompt) -->
+    <div id=""fbDialogModal"" class=""modal"">
+        <div class=""modal-content"" style=""max-width: 440px; border-radius: 16px; border: 1px solid #334155; background: #0f172a; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.7);"">
+            <div class=""modal-header"" style=""border-bottom: 1px solid #1e293b; padding: 14px 18px;"">
+                <h3 id=""fbDialogTitle"" style=""font-size: 15px; font-weight: 600; color: #f8fafc;"">Notice</h3>
+            </div>
+            <div class=""modal-body"" style=""background: #0f172a; min-height: auto; padding: 20px; display: flex; flex-direction: column; align-items: stretch; gap: 14px;"">
+                <p id=""fbDialogMsg"" style=""font-size: 13px; color: #cbd5e1; line-height: 1.5; margin: 0;""></p>
+                <input type=""text"" id=""fbDialogInput"" style=""display:none; width: 100%; background: #090d16; border: 1px solid #334155; color: #f8fafc; padding: 10px 12px; border-radius: 8px; font-size: 13px; outline: none; box-sizing: border-box;"" />
+                <div style=""display: flex; justify-content: flex-end; gap: 10px; margin-top: 6px;"">
+                    <button id=""fbDialogCancel"" class=""btn btn-secondary"" style=""display:none; min-height: 36px; padding: 6px 14px;"">Cancel</button>
+                    <button id=""fbDialogOk"" class=""btn"" style=""min-height: 36px; padding: 6px 16px;"">Confirm</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        const fbModal = {
+            alert: function(message, title = 'Notice') {
+                return new Promise(resolve => {
+                    const modal = document.getElementById('fbDialogModal');
+                    document.getElementById('fbDialogTitle').textContent = title;
+                    document.getElementById('fbDialogMsg').textContent = message;
+                    document.getElementById('fbDialogInput').style.display = 'none';
+                    document.getElementById('fbDialogCancel').style.display = 'none';
+                    const okBtn = document.getElementById('fbDialogOk');
+                    okBtn.textContent = 'OK';
+                    okBtn.className = 'btn';
+
+                    function cleanup() {
+                        okBtn.removeEventListener('click', onOk);
+                        modal.classList.remove('open');
+                    }
+                    function onOk() {
+                        cleanup();
+                        resolve();
+                    }
+                    okBtn.addEventListener('click', onOk);
+                    modal.classList.add('open');
+                    okBtn.focus();
+                });
+            },
+            confirm: function(message, title = 'Confirm Action', okText = 'Confirm', isDanger = false) {
+                return new Promise(resolve => {
+                    const modal = document.getElementById('fbDialogModal');
+                    document.getElementById('fbDialogTitle').textContent = title;
+                    document.getElementById('fbDialogMsg').textContent = message;
+                    document.getElementById('fbDialogInput').style.display = 'none';
+                    const cancelBtn = document.getElementById('fbDialogCancel');
+                    cancelBtn.style.display = 'inline-flex';
+                    const okBtn = document.getElementById('fbDialogOk');
+                    okBtn.textContent = okText;
+                    okBtn.className = isDanger ? 'btn btn-danger' : 'btn';
+
+                    function cleanup() {
+                        okBtn.removeEventListener('click', onOk);
+                        cancelBtn.removeEventListener('click', onCancel);
+                        modal.classList.remove('open');
+                    }
+                    function onOk() {
+                        cleanup();
+                        resolve(true);
+                    }
+                    function onCancel() {
+                        cleanup();
+                        resolve(false);
+                    }
+                    okBtn.addEventListener('click', onOk);
+                    cancelBtn.addEventListener('click', onCancel);
+                    modal.classList.add('open');
+                    okBtn.focus();
+                });
+            },
+            prompt: function(message, defaultValue = '', title = 'Enter Value', placeholder = '') {
+                return new Promise(resolve => {
+                    const modal = document.getElementById('fbDialogModal');
+                    document.getElementById('fbDialogTitle').textContent = title;
+                    document.getElementById('fbDialogMsg').textContent = message;
+                    const input = document.getElementById('fbDialogInput');
+                    input.style.display = 'block';
+                    input.value = defaultValue;
+                    input.placeholder = placeholder;
+                    const cancelBtn = document.getElementById('fbDialogCancel');
+                    cancelBtn.style.display = 'inline-flex';
+                    const okBtn = document.getElementById('fbDialogOk');
+                    okBtn.textContent = 'Save';
+                    okBtn.className = 'btn';
+
+                    function cleanup() {
+                        okBtn.removeEventListener('click', onOk);
+                        cancelBtn.removeEventListener('click', onCancel);
+                        input.removeEventListener('keydown', onKeyDown);
+                        modal.classList.remove('open');
+                    }
+                    function onOk() {
+                        const val = input.value;
+                        cleanup();
+                        resolve(val);
+                    }
+                    function onCancel() {
+                        cleanup();
+                        resolve(null);
+                    }
+                    function onKeyDown(e) {
+                        if (e.key === 'Enter') { e.preventDefault(); onOk(); }
+                        if (e.key === 'Escape') { e.preventDefault(); onCancel(); }
+                    }
+                    okBtn.addEventListener('click', onOk);
+                    cancelBtn.addEventListener('click', onCancel);
+                    input.addEventListener('keydown', onKeyDown);
+                    modal.classList.add('open');
+                    setTimeout(() => { input.focus(); input.select(); }, 50);
+                });
+            }
+        };
+
         let currentPath = '/';
         let itemsList = [];
         let clipboard = null; // { action: 'copy'|'cut', path: string, name: string, isDir: boolean }
@@ -1199,13 +1392,14 @@ namespace NativeFileBrowser
                 return;
             }
 
-            container.innerHTML = items.map(it => {
+            container.innerHTML = items.map((it, idx) => {
                 const icon = getFileIcon(it);
                 let displayName = it.name || '';
                 try { displayName = decodeURIComponent(displayName); } catch(e) {}
                 const subMeta = it.isDir ? 'Folder' : (formatBytes(it.size) + ' • ' + (it.extension || 'file').toUpperCase());
                 const safePath = it.path.replace(/'/g, ""\\'"");
                 const safeName = displayName.replace(/'/g, ""\\'"");
+                const menuId = 'itemMenu_' + idx;
 
                 return `
                     <div class=""file-card""
@@ -1222,14 +1416,58 @@ namespace NativeFileBrowser
                             </div>
                         </div>
                         <div class=""file-actions"" onclick=""event.stopPropagation()"">
-                            <button class=""action-btn"" title=""Copy"" onclick=""setClipboard('copy', '${safePath}', '${safeName}', ${it.isDir})"">📋</button>
-                            <button class=""action-btn"" title=""Cut"" onclick=""setClipboard('cut', '${safePath}', '${safeName}', ${it.isDir})"">✂️</button>
-                            ${!it.isDir ? `<a href=""/api/stream?path=${encodeURIComponent(it.path)}"" download class=""action-btn"" title=""Download"">⬇️</a>` : ''}
-                            <button class=""action-btn action-delete"" title=""Delete"" onclick=""deleteItem('${safePath}')"">🗑️</button>
+                            <button class=""dots-btn"" title=""Actions"" onclick=""toggleMenu(event, '${menuId}')"">⋮</button>
+                            <div id=""${menuId}"" class=""dropdown-menu"">
+                                <button onclick=""promptRename('${safePath}', '${safeName}')"">✏️ Rename</button>
+                                <button onclick=""setClipboard('copy', '${safePath}', '${safeName}', ${it.isDir}); closeAllMenus();"">📋 Copy</button>
+                                <button onclick=""setClipboard('cut', '${safePath}', '${safeName}', ${it.isDir}); closeAllMenus();"">✂️ Cut</button>
+                                ${!it.isDir ? `<a href=""/api/stream?path=${encodeURIComponent(it.path)}"" download onclick=""closeAllMenus();"">⬇️ Download</a>` : ''}
+                                <div class=""dropdown-sep""></div>
+                                <button class=""delete-opt"" onclick=""deleteItem('${safePath}'); closeAllMenus();"">🗑️ Delete</button>
+                            </div>
                         </div>
                     </div>
                 `;
             }).join('');
+        }
+
+        function toggleMenu(e, menuId) {
+            e.stopPropagation();
+            const menu = document.getElementById(menuId);
+            const isOpen = menu && menu.classList.contains('show');
+            closeAllMenus();
+            if (!isOpen && menu) {
+                menu.classList.add('show');
+                const card = menu.closest('.file-card');
+                if (card) card.classList.add('menu-open');
+            }
+        }
+
+        function closeAllMenus() {
+            document.querySelectorAll('.dropdown-menu.show').forEach(m => m.classList.remove('show'));
+            document.querySelectorAll('.file-card.menu-open').forEach(c => c.classList.remove('menu-open'));
+        }
+        document.addEventListener('click', closeAllMenus);
+
+        async function promptRename(path, oldName) {
+            closeAllMenus();
+            const newName = await fbModal.prompt('Enter new filename for this item:', oldName, 'Rename Item', 'filename.ext');
+            if (!newName || !newName.trim() || newName.trim() === oldName) return;
+            try {
+                const res = await fetch('/api/rename', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ oldPath: path, newName: newName.trim() })
+                });
+                const result = await res.json();
+                if (res.ok && result.success) {
+                    loadDirectory(currentPath);
+                } else {
+                    await fbModal.alert('Failed to rename: ' + (result.error || 'Server error'), 'Rename Error');
+                }
+            } catch (err) {
+                await fbModal.alert('Network error: ' + err.message, 'Network Error');
+            }
         }
 
         function filterFiles() {
@@ -1289,10 +1527,10 @@ namespace NativeFileBrowser
                     }
                     loadDirectory(currentPath);
                 } else {
-                    alert('Operation failed: ' + (result.error || 'Server error'));
+                    await fbModal.alert('Operation failed: ' + (result.error || 'Server error'), 'Action Error');
                 }
             } catch (err) {
-                alert('Network error: ' + err.message);
+                await fbModal.alert('Network error: ' + err.message, 'Network Error');
             }
         }
 
@@ -1341,10 +1579,10 @@ namespace NativeFileBrowser
                     draggedItem = null;
                     loadDirectory(currentPath);
                 } else {
-                    alert('Move failed: ' + (result.error || 'Server error'));
+                    await fbModal.alert('Move failed: ' + (result.error || 'Server error'), 'Move Error');
                 }
             } catch (err) {
-                alert('Network error: ' + err.message);
+                await fbModal.alert('Network error: ' + err.message, 'Network Error');
             }
         }
 
@@ -1417,9 +1655,9 @@ namespace NativeFileBrowser
         }
 
         async function createFolder() {
-            const name = prompt('Enter new folder name:');
-            if (!name) return;
-            const full = currentPath === '/' ? ('/' + name) : (currentPath + '/' + name);
+            const name = await fbModal.prompt('Enter new folder name:', '', 'Create New Folder', 'e.g. MyFolder');
+            if (!name || !name.trim()) return;
+            const full = currentPath === '/' ? ('/' + name.trim()) : (currentPath + '/' + name.trim());
             try {
                 const res = await fetch('/api/mkdir', {
                     method: 'POST',
@@ -1427,19 +1665,20 @@ namespace NativeFileBrowser
                     body: JSON.stringify({ name: full })
                 });
                 if (res.ok) loadDirectory(currentPath);
-                else alert('Failed to create folder');
-            } catch (err) { alert(err.message); }
+                else await fbModal.alert('Failed to create folder', 'Folder Error');
+            } catch (err) { await fbModal.alert(err.message, 'Error'); }
         }
 
         async function deleteItem(path) {
             let name = path.split('/').pop();
             try { name = decodeURIComponent(name); } catch(e) {}
-            if (!confirm('Are you sure you want to delete ' + name + '?')) return;
+            const ok = await fbModal.confirm('Are you sure you want to permanently delete ' + name + '?', 'Delete Item', 'Delete', true);
+            if (!ok) return;
             try {
                 const res = await fetch('/api/resources?path=' + encodeURIComponent(path), { method: 'DELETE' });
                 if (res.ok) loadDirectory(currentPath);
-                else alert('Failed to delete item');
-            } catch (err) { alert(err.message); }
+                else await fbModal.alert('Failed to delete item', 'Delete Error');
+            } catch (err) { await fbModal.alert(err.message, 'Error'); }
         }
 
         function uploadSingleFile(file, path, onProgress) {

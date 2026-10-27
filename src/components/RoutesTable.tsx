@@ -450,7 +450,9 @@ export const RoutesTable: React.FC<RoutesTableProps> = ({
                                 : 'bg-rose-950/60 text-rose-300 border border-rose-800/40'
                             }`}
                           >
-                            {testRes.success ? `${testRes.latencyMs}ms (${testRes.status})` : 'Failed'}
+                            {testRes.success
+                              ? `${testRes.latencyMs ?? 1}ms (${testRes.status ?? (testRes as any).statusCode ?? 200})`
+                              : `Failed (${(testRes as any).error || (testRes as any).statusCode || 'Offline'})`}
                           </span>
                         )}
                       </div>

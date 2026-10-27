@@ -21,8 +21,12 @@ import {
   ZoomIn,
   Check,
   Loader2,
+  MoreVertical,
+  Edit3,
+  Copy,
 } from 'lucide-react';
 import { serverApi, authStore } from '@/shared/apiClient';
+import { modalDialog } from '@/components/ModalDialog';
 import { PhotoItem, PhotoTimelineSection, PhotosResponse } from '@/shared/types';
 
 export const PhotosGalleryCard: React.FC = () => {
@@ -46,6 +50,7 @@ export const PhotosGalleryCard: React.FC = () => {
     overallPercent: number;
   } | null>(null);
   const [uploadError, setUploadError] = useState<string | null>(null);
+  const [activeMenuPhotoId, setActiveMenuPhotoId] = useState<string | null>(null);
 
   const photoInputRef = useRef<HTMLInputElement>(null);
 
@@ -62,6 +67,54 @@ export const PhotosGalleryCard: React.FC = () => {
   useEffect(() => {
     loadPhotos();
   }, [filterType, favoritesOnly]);
+
+  useEffect(() => {
+    const handleDocClick = () => setActiveMenuPhotoId(null);
+    document.addEventListener('click', handleDocClick);
+    return () => document.removeEventListener('click', handleDocClick);
+  }, []);
+
+  const handleRenamePhoto = async (item: PhotoItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setActiveMenuPhotoId(null);
+    const newName = await modalDialog.prompt(
+      'Enter new filename for this media item:',
+      item.name,
+      'Rename Media Item',
+      'e.g. Vacation_2026.jpg'
+    );
+    if (!newName || newName.trim() === '' || newName.trim() === item.name) return;
+    const res = await serverApi.renameItem(item.path, newName.trim());
+    if (res && res.success) {
+      loadPhotos();
+      if (activeItem && activeItem.id === item.id) {
+        setActiveItem({ ...activeItem, name: newName.trim() });
+      }
+    } else {
+      await modalDialog.alert((res as any)?.error || 'Failed to rename media item', 'Rename Error', 'danger');
+    }
+  };
+
+  const handleDeletePhoto = async (item: PhotoItem, e?: React.MouseEvent) => {
+    if (e) e.stopPropagation();
+    setActiveMenuPhotoId(null);
+    const confirmed = await modalDialog.confirm(
+      `Are you sure you want to permanently delete "${item.name}"? This action cannot be undone.`,
+      'Delete Media Item',
+      'Delete',
+      'danger'
+    );
+    if (!confirmed) return;
+    const res = await serverApi.deleteItem(item.path);
+    if (res && res.success) {
+      if (activeItem && activeItem.id === item.id) {
+        setActiveItem(null);
+      }
+      loadPhotos();
+    } else {
+      await modalDialog.alert((res as any)?.error || 'Failed to delete media item', 'Delete Error', 'danger');
+    }
+  };
 
   const handleToggleFavorite = async (item: PhotoItem, e?: React.MouseEvent) => {
     if (e) e.stopPropagation();
@@ -198,7 +251,7 @@ export const PhotosGalleryCard: React.FC = () => {
           <div>
             <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
               <Camera className="w-5 h-5 text-indigo-400" />
-              <span>Google Photos &amp; Memories Service</span>
+              <span>Photos &amp; Memories Service</span>
               <span className="text-[10px] font-mono px-2 py-0.5 rounded-full bg-indigo-500/10 text-indigo-400 border border-indigo-500/30">
                 Timeline Hub
               </span>
@@ -402,63 +455,125 @@ export const PhotosGalleryCard: React.FC = () => {
                 {section.items.map((item) => (
                   <div
                     key={item.id}
-                    onClick={() => setActiveItem(item)}
-                    className="relative aspect-square rounded-2xl overflow-hidden bg-slate-900 border border-slate-800/80 cursor-pointer group hover:border-indigo-500/60 transition-all touch-manipulation shadow-md"
+                    className={`relative aspect-square rounded-2xl bg-slate-900 border border-slate-800/80 group hover:border-indigo-500/60 transition-all touch-manipulation shadow-md ${
+                      activeMenuPhotoId === item.id ? 'z-40' : 'z-0'
+                    }`}
                   >
-                    {/* Thumbnail Image */}
-                    {item.type === 'photo' ? (
-                      <img
-                        src={item.mediaUrl}
-                        alt={item.name}
-                        loading="lazy"
-                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                      />
-                    ) : (
-                      <div className="w-full h-full relative bg-slate-950 flex items-center justify-center">
-                        <video
-                          src={item.streamUrl}
-                          preload="metadata"
+                    {/* Media Container with overflow-hidden for rounded thumbnail */}
+                    <div
+                      onClick={() => setActiveItem(item)}
+                      className="w-full h-full rounded-2xl overflow-hidden relative cursor-pointer"
+                    >
+                      {item.type === 'photo' ? (
+                        <img
+                          src={item.mediaUrl}
+                          alt={item.name}
+                          loading="lazy"
                           className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
                         />
-                        <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
-                          <div className="w-10 h-10 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
-                            <Play className="w-5 h-5 fill-current ml-0.5" />
+                      ) : (
+                        <div className="w-full h-full relative bg-slate-950 flex items-center justify-center">
+                          <video
+                            src={item.streamUrl}
+                            preload="metadata"
+                            className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                          />
+                          <div className="absolute inset-0 bg-black/40 flex items-center justify-center">
+                            <div className="w-10 h-10 rounded-full bg-rose-600/90 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform">
+                              <Play className="w-5 h-5 fill-current ml-0.5" />
+                            </div>
                           </div>
                         </div>
-                      </div>
-                    )}
+                      )}
 
-                    {/* Overlay Gradient on Hover */}
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/70 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-between p-2.5">
-                      <div className="flex items-center justify-between">
-                        {item.type === 'video' ? (
-                          <span className="px-1.5 py-0.5 rounded bg-rose-500/80 text-white text-[9px] font-bold font-mono">
-                            VIDEO
-                          </span>
-                        ) : <span />}
+                      {/* Video indicator badge */}
+                      {item.type === 'video' && (
+                        <div className="absolute top-2 left-2 px-1.5 py-0.5 rounded bg-rose-500/90 text-white text-[9px] font-bold font-mono z-10 shadow">
+                          VIDEO
+                        </div>
+                      )}
 
-                        {/* Favorite Heart Button */}
-                        <button
-                          onClick={(e) => handleToggleFavorite(item, e)}
-                          className="p-1 rounded-full bg-black/50 hover:bg-black/80 text-white transition-colors"
-                        >
-                          <Heart
-                            className={`w-3.5 h-3.5 ${
-                              item.isFavorite ? 'text-rose-500 fill-rose-500' : 'text-white'
-                            }`}
-                          />
-                        </button>
-                      </div>
-
-                      <div className="text-[10px] text-white font-medium truncate">
-                        {item.name}
+                      {/* Bottom title gradient */}
+                      <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 via-black/40 to-transparent p-2 pt-6 flex items-end">
+                        <div className="text-[10px] text-white font-medium truncate w-full">
+                          {item.name}
+                        </div>
                       </div>
                     </div>
 
-                    {/* Persistent Star Badge if Favorite */}
-                    {item.isFavorite && (
-                      <div className="absolute top-2 right-2 p-1 rounded-full bg-black/60 shadow-md">
-                        <Heart className="w-3 h-3 text-rose-500 fill-rose-500" />
+                    {/* Top Action Overlay (Always visible on mobile/touch, hover on desktop) */}
+                    <div className="absolute top-2 right-2 flex items-center gap-1.5 z-20">
+                      {/* Favorite Heart Button */}
+                      <button
+                        onClick={(e) => handleToggleFavorite(item, e)}
+                        className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all shadow-md backdrop-blur-sm"
+                        title="Favorite"
+                      >
+                        <Heart
+                          className={`w-3.5 h-3.5 ${
+                            item.isFavorite ? 'text-rose-500 fill-rose-500' : 'text-white'
+                          }`}
+                        />
+                      </button>
+
+                      {/* 3-Dots Button */}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                          setActiveMenuPhotoId(activeMenuPhotoId === item.id ? null : item.id);
+                        }}
+                        className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all shadow-md backdrop-blur-sm"
+                        title="More Actions"
+                      >
+                        <MoreVertical className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* 3-Dots Dropdown Menu (Outside inner overflow-hidden container, always floats on top) */}
+                    {activeMenuPhotoId === item.id && (
+                      <div
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          e.preventDefault();
+                        }}
+                        className="absolute right-2 top-10 w-40 rounded-xl bg-slate-900/98 border border-slate-700 shadow-2xl backdrop-blur-xl py-1.5 z-50 animate-in fade-in zoom-in-95 text-xs text-slate-200 ring-1 ring-white/10"
+                      >
+                        <button
+                          onClick={(e) => handleRenamePhoto(item, e)}
+                          className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
+                        >
+                          <Edit3 className="w-3.5 h-3.5 text-blue-400" />
+                          <span>Rename</span>
+                        </button>
+                        <a
+                          href={`/api/files/download?path=${encodeURIComponent(item.path)}`}
+                          download={item.name}
+                          onClick={() => setActiveMenuPhotoId(null)}
+                          className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Download</span>
+                        </a>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            navigator.clipboard.writeText(window.location.origin + (item.mediaUrl || item.streamUrl));
+                            setActiveMenuPhotoId(null);
+                          }}
+                          className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
+                        >
+                          <Copy className="w-3.5 h-3.5 text-purple-400" />
+                          <span>Copy Link</span>
+                        </button>
+                        <div className="my-1 border-t border-slate-800" />
+                        <button
+                          onClick={(e) => handleDeletePhoto(item, e)}
+                          className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-rose-950/60 text-rose-400 hover:text-rose-300 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                          <span>Delete</span>
+                        </button>
                       </div>
                     )}
                   </div>
@@ -524,6 +639,54 @@ export const PhotosGalleryCard: React.FC = () => {
               >
                 <Download className="w-4 h-4" />
               </a>
+
+              {/* 3-Dots Menu inside Lightbox */}
+              <div className="relative">
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveMenuPhotoId(activeMenuPhotoId === 'lightbox' ? null : 'lightbox');
+                  }}
+                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  title="More actions"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+
+                {activeMenuPhotoId === 'lightbox' && (
+                  <div
+                    onClick={(e) => e.stopPropagation()}
+                    className="absolute right-0 top-11 w-40 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md py-1.5 z-40 text-xs text-slate-200"
+                  >
+                    <button
+                      onClick={(e) => handleRenamePhoto(activeItem, e)}
+                      className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
+                    >
+                      <Edit3 className="w-4 h-4 text-blue-400" />
+                      <span>Rename</span>
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        navigator.clipboard.writeText(window.location.origin + (activeItem.mediaUrl || activeItem.streamUrl));
+                        setActiveMenuPhotoId(null);
+                      }}
+                      className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
+                    >
+                      <Copy className="w-4 h-4 text-purple-400" />
+                      <span>Copy Link</span>
+                    </button>
+                    <div className="my-1 border-t border-slate-800" />
+                    <button
+                      onClick={(e) => handleDeletePhoto(activeItem, e)}
+                      className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-rose-950/60 text-rose-400 hover:text-rose-300 transition-colors"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 

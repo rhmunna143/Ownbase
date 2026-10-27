@@ -189,12 +189,12 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
             </div>
 
-            {/* Google Photos & Memories Gallery */}
+            {/* Photos & Memories Gallery */}
             <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
               <div>
                 <div className="font-semibold text-white flex items-center gap-1.5">
                   <Camera className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Google Photos & Memories Gallery</span>
+                  <span>Photos &amp; Memories Gallery</span>
                   <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">Web GUI</span>
                 </div>
                 <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
@@ -428,7 +428,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 <div>
                   <div className="font-semibold text-white flex items-center gap-1.5">
                     <Camera className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Google Photos & Memories (Remote)</span>
+                    <span>Photos &amp; Memories (Remote)</span>
                   </div>
                   <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
                     http://photos.{tailscaleIp}.nip.io

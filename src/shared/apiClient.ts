@@ -22,6 +22,19 @@ export const authStore = {
     if (inMemoryAccessToken) return inMemoryAccessToken;
     if (typeof window !== 'undefined') {
       try {
+        // 1. Check URL query parameters (?token=... or ?access_token=...)
+        if (window.location && window.location.search) {
+          const params = new URLSearchParams(window.location.search);
+          const urlToken = params.get('token') || params.get('access_token');
+          if (urlToken) {
+            inMemoryAccessToken = urlToken;
+            try { localStorage.setItem('ownbase_access_token', urlToken); } catch {}
+            try {
+              document.cookie = `ownbase_access_token=${encodeURIComponent(urlToken)}; path=/; max-age=2592000; SameSite=Lax`;
+            } catch {}
+            return urlToken;
+          }
+        }
         const saved = localStorage.getItem('ownbase_access_token');
         if (saved) {
           inMemoryAccessToken = saved;
@@ -737,6 +750,16 @@ export const serverApi = {
 
       xhr.send(file);
     });
+  },
+
+  getBinariesList: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/binaries/list').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getBinaryDownloadUrl: (filename: string): string => {
+    const token = authStore.getToken();
+    return `/api/v1/binaries/download?name=${encodeURIComponent(filename)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
   },
 
   getSystemDrives: async (): Promise<any[]> => {

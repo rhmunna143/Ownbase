@@ -355,32 +355,45 @@ export class BackupManager {
    */
   public async listBackups(): Promise<any[]> {
     const prisma = this.prismaManager.getClient();
+    let dbJobs: any[] = [];
     try {
       if ((prisma as any).backupJob) {
-        return await (prisma as any).backupJob.findMany({
+        const found = await (prisma as any).backupJob.findMany({
           orderBy: { createdAt: 'desc' },
         });
+        if (Array.isArray(found)) {
+          dbJobs = found.map((j: any) => ({
+            ...j,
+            fileSizeBytes: j.fileSizeBytes != null ? Number(j.fileSizeBytes) : 0,
+          }));
+        }
       }
     } catch {}
 
-    // Fallback: enumerate files in backupsDir
+    // Fallback/Supplement: enumerate files in backupsDir
+    const fileJobs: any[] = [];
     if (fs.existsSync(this.backupsDir)) {
       const files = fs.readdirSync(this.backupsDir).filter((f) => f.endsWith('.ownbase.bak'));
-      return files.map((file) => {
+      for (const file of files) {
         const fullPath = path.join(this.backupsDir, file);
         const stats = fs.statSync(fullPath);
-        return {
-          id: file.replace('.ownbase.bak', ''),
-          name: file,
-          status: 'completed',
-          archivePath: fullPath,
-          fileSizeBytes: stats.size,
-          createdAt: stats.birthtime.toISOString(),
-        };
-      });
+        const id = file.replace('.ownbase.bak', '');
+        // If not already in dbJobs, include it
+        if (!dbJobs.some((j) => j.id === id || j.archivePath === fullPath)) {
+          fileJobs.push({
+            id,
+            name: file,
+            status: 'completed',
+            archivePath: fullPath,
+            fileSizeBytes: stats.size,
+            checksumSha256: '',
+            createdAt: stats.birthtime.toISOString(),
+          });
+        }
+      }
     }
 
-    return [];
+    return [...dbJobs, ...fileJobs].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   }
 
   /**

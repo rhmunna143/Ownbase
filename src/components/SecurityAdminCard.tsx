@@ -16,6 +16,7 @@ import {
   Lock,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
+import { modalDialog } from '@/components/ModalDialog';
 
 export const SecurityAdminCard: React.FC = () => {
   const [subTab, setSubTab] = useState<'users' | 'keys' | 'audit'>('users');
@@ -126,14 +127,20 @@ export const SecurityAdminCard: React.FC = () => {
         fetchKeys();
       }
     } catch (err: any) {
-      alert(`Error creating key: ${err.message}`);
+      await modalDialog.alert(`Error creating key: ${err.message}`, 'Key Creation Error', 'danger');
     } finally {
       setIsCreatingKey(false);
     }
   };
 
   const handleRevokeKey = async (id: string) => {
-    if (!confirm('Are you sure you want to revoke this API key? This action is immediate and cannot be undone.')) {
+    const confirmed = await modalDialog.confirm(
+      'Are you sure you want to revoke this API key? This action is immediate and cannot be undone.',
+      'Revoke API Key',
+      'danger',
+      'Revoke Key'
+    );
+    if (!confirmed) {
       return;
     }
     await serverApi.revokeApiKey(id);

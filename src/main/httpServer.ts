@@ -810,6 +810,218 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/binaries/list') {
+            const binDir = path.join(process.cwd(), 'extraResources', 'bin');
+            const mockDir = path.join(process.cwd(), 'tools', 'mocks');
+            const services = await this.prismaManager.getServices();
+
+            const TEMPLATES = [
+              {
+                id: 'filebrowser',
+                name: 'FileBrowser Cloud Drive',
+                filename: 'filebrowser.exe',
+                category: 'Storage',
+                description: 'Personal cloud storage, file explorer & media streaming drive with user access control.',
+                defaultPort: 8080,
+                defaultSubdomain: 'files',
+                badge: 'Built-in Portable',
+              },
+              {
+                id: 'ollama',
+                name: 'Ollama AI Engine',
+                filename: 'ollama.exe',
+                category: 'AI / LLM',
+                description: 'Dynamic local/hybrid AI inference server with Hermes/Llama models & OpenAI-compatible API.',
+                defaultPort: 11434,
+                defaultSubdomain: 'ai',
+                badge: 'Dynamic AI',
+              },
+              {
+                id: 'minio',
+                name: 'MinIO S3 Object Storage',
+                filename: 'minio.exe',
+                category: 'Storage',
+                description: 'High-performance S3-compatible cloud object storage with web console & bucket CRUD.',
+                defaultPort: 9000,
+                defaultSubdomain: 's3',
+                badge: 'S3 Compatible',
+              },
+              {
+                id: 'caddy',
+                name: 'Caddy Reverse Proxy & TLS',
+                filename: 'caddy.exe',
+                category: 'Web',
+                description: 'High-performance reverse proxy, automatic TLS, and domain router for *.localhost.',
+                defaultPort: 2019,
+                defaultSubdomain: 'proxy',
+                badge: 'Reverse Proxy',
+              },
+              {
+                id: 'redis',
+                name: 'Redis / Memurai Cache',
+                filename: 'redis-server.exe',
+                category: 'Databases',
+                description: 'Ultra-fast in-memory key-value data structure store, caching layer & message broker.',
+                defaultPort: 6379,
+                defaultSubdomain: 'redis',
+                badge: 'Key-Value Cache',
+              },
+              {
+                id: 'pocketbase',
+                name: 'PocketBase Realtime Backend & DB',
+                filename: 'pocketbase.exe',
+                category: 'Databases',
+                description: 'All-in-one embedded SQLite database, realtime subscriptions, authentication & REST API.',
+                defaultPort: 8090,
+                defaultSubdomain: 'pocketbase',
+                badge: 'Realtime DB',
+              },
+              {
+                id: 'syncthing',
+                name: 'Syncthing Continuous Sync & Backup',
+                filename: 'syncthing.exe',
+                category: 'Storage',
+                description: 'Continuous, decentralized peer-to-peer file synchronization and cross-device backup.',
+                defaultPort: 8384,
+                defaultSubdomain: 'syncthing',
+                badge: 'P2P Backup Engine',
+              },
+              {
+                id: 'terminal',
+                name: 'Web Terminal & Shell Console',
+                filename: 'terminal.exe',
+                category: 'Tools',
+                description: 'Browser-based interactive PowerShell and Command Prompt web console at terminal.localhost.',
+                defaultPort: 7681,
+                defaultSubdomain: 'terminal',
+                badge: 'Browser Terminal',
+              },
+              {
+                id: 'tailscale',
+                name: 'Tailscale Mesh VPN',
+                filename: 'tailscale.exe',
+                category: 'Tools',
+                description: 'Zero-configuration WireGuard mesh networking for secure remote machine access.',
+                defaultPort: 41641,
+                defaultSubdomain: 'mesh',
+                badge: 'Mesh VPN',
+              },
+            ];
+
+            const result: any[] = TEMPLATES.map((tmpl) => {
+              const binPath = path.join(binDir, tmpl.filename);
+              const mockPath = path.join(mockDir, tmpl.filename);
+              let exists = false;
+              let sizeBytes = 0;
+
+              if (fs.existsSync(binPath)) {
+                exists = true;
+                try { sizeBytes = fs.statSync(binPath).size; } catch {}
+              } else if (fs.existsSync(mockPath)) {
+                exists = true;
+                try { sizeBytes = fs.statSync(mockPath).size; } catch {}
+              }
+
+              const matchingSvc = services.find(
+                (s) => s.type === tmpl.id || s.executable.toLowerCase().includes(tmpl.filename.toLowerCase())
+              );
+
+              return {
+                ...tmpl,
+                existsOnDisk: exists,
+                sizeBytes,
+                downloadUrl: `/api/v1/binaries/download?name=${encodeURIComponent(tmpl.filename)}`,
+                installed: !!matchingSvc,
+                serviceId: matchingSvc?.id,
+                serviceStatus: matchingSvc?.status,
+              };
+            });
+
+            if (fs.existsSync(binDir)) {
+              try {
+                const files = fs.readdirSync(binDir);
+                const knownFiles = new Set(TEMPLATES.map((t) => t.filename.toLowerCase()));
+                for (const file of files) {
+                  const lower = file.toLowerCase();
+                  if (
+                    lower.endsWith('.exe') &&
+                    !knownFiles.has(lower) &&
+                    !lower.includes('.old.') &&
+                    !lower.includes('.original.') &&
+                    !lower.includes('.real.') &&
+                    !lower.includes('_server') &&
+                    !lower.startsWith('ownbase-') &&
+                    !lower.startsWith('test_')
+                  ) {
+                    const fullPath = path.join(binDir, file);
+                    let sizeBytes = 0;
+                    try { sizeBytes = fs.statSync(fullPath).size; } catch {}
+                    const base = path.basename(file, '.exe');
+                    const matchingSvc = services.find(
+                      (s) => s.executable.toLowerCase().includes(file.toLowerCase())
+                    );
+                    result.push({
+                      id: base.toLowerCase(),
+                      name: `Custom (${file})`,
+                      filename: file,
+                      category: 'Custom',
+                      description: `User-uploaded executable binary in extraResources\\bin\\${file}`,
+                      defaultPort: 8085,
+                      defaultSubdomain: base.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                      badge: 'Custom Binary',
+                      existsOnDisk: true,
+                      sizeBytes,
+                      downloadUrl: `/api/v1/binaries/download?name=${encodeURIComponent(file)}`,
+                      installed: !!matchingSvc,
+                      serviceId: matchingSvc?.id,
+                      serviceStatus: matchingSvc?.status,
+                    });
+                  }
+                }
+              } catch {}
+            }
+
+            this.sendJson(res, result);
+            return;
+          }
+
+          if (route.path === '/api/v1/binaries/download') {
+            const requestedName = parsedUrl.searchParams.get('name');
+            if (!requestedName) {
+              this.sendJson(res, { error: 'Binary filename is required' }, 400);
+              return;
+            }
+            const cleanName = path.basename(requestedName);
+            const binDir = path.join(process.cwd(), 'extraResources', 'bin');
+            let targetFilePath = path.join(binDir, cleanName);
+
+            if (!fs.existsSync(targetFilePath)) {
+              const mockDir = path.join(process.cwd(), 'tools', 'mocks');
+              const mockPath = path.join(mockDir, cleanName);
+              if (fs.existsSync(mockPath)) {
+                targetFilePath = mockPath;
+              } else {
+                this.sendJson(res, { error: `Binary file "${cleanName}" not found on server` }, 404);
+                return;
+              }
+            }
+
+            try {
+              const stats = fs.statSync(targetFilePath);
+              res.writeHead(200, {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${cleanName}"`,
+                'Content-Length': stats.size,
+                'Cache-Control': 'no-cache',
+              });
+              const readStream = fs.createReadStream(targetFilePath);
+              readStream.pipe(res);
+            } catch (err: any) {
+              this.sendJson(res, { error: `Failed to stream binary: ${err.message}` }, 500);
+            }
+            return;
+          }
+
           if (route.path === '/api/v1/system/drives') {
             let drives: any[] = [];
             try {

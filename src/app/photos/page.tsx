@@ -3,6 +3,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { PhotosGalleryCard } from '@/components/PhotosGalleryCard';
+import { GlobalModalContainer } from '@/components/ModalDialog';
 import { Camera, ArrowLeft, Sparkles, ShieldCheck, Lock, AlertCircle, Loader2 } from 'lucide-react';
 import { serverApi, authStore } from '@/shared/apiClient';
 import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
@@ -190,7 +191,7 @@ export default function PhotosStandalonePage() {
   }
 
   return (
-    <div className="min-h-screen bg-[#080c14] text-slate-100 flex flex-col selection:bg-amber-500/30 selection:text-amber-200">
+    <div className="min-h-screen w-full bg-[#080c14] text-slate-100 flex flex-col overflow-y-auto overflow-x-hidden selection:bg-amber-500/30 selection:text-amber-200">
       {/* Top Header */}
       <header className="sticky top-0 z-50 bg-[#0d1322]/90 backdrop-blur-md border-b border-slate-800 px-4 sm:px-6 py-3.5 flex items-center justify-between shadow-lg shadow-black/20">
         <div className="flex items-center space-x-3">
@@ -244,11 +245,14 @@ export default function PhotosStandalonePage() {
         <div className="flex items-center justify-center gap-2">
           <span>Ownbase</span>
           <span>•</span>
-          <span className="text-amber-400 font-medium">Google Photos & Memories Engine</span>
+          <span className="text-amber-400 font-medium">Photos &amp; Memories Engine</span>
           <span>•</span>
           <span className="font-mono text-[11px] text-slate-400">Port 80 / 3001</span>
         </div>
       </footer>
+
+      {/* Global Reusable Modal Dialog Container */}
+      <GlobalModalContainer />
     </div>
   );
 }

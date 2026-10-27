@@ -19,6 +19,7 @@ import {
   ShieldAlert,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
+import { modalDialog } from '@/components/ModalDialog';
 
 interface SystemDrive {
   driveLetter: string;
@@ -107,7 +108,7 @@ export const StorageAllocationCard: React.FC = () => {
       setSaveSuccess(true);
       setTimeout(() => setSaveSuccess(false), 3000);
     } catch (err: any) {
-      alert(`Failed to save storage allocation: ${err.message}`);
+      await modalDialog.alert(`Failed to save storage allocation: ${err.message}`, 'Storage Error', 'danger');
     } finally {
       setIsSaving(false);
     }

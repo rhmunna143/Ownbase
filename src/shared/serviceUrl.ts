@@ -58,8 +58,8 @@ export function getAccessibleServiceUrl(
     }
   }
 
-  // Attach token for seamless SSO into protected service subdomains
-  if (subdomain !== 'hub' && typeof window !== 'undefined') {
+  // Attach token for seamless SSO into protected service subdomains and hub
+  if (typeof window !== 'undefined') {
     let token = explicitToken;
     if (!token) {
       try {

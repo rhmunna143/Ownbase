@@ -385,7 +385,8 @@ export class CaddyManager {
     return this.autosavePath;
   }
 
-  public async testRoute(host: string): Promise<{ success: boolean; statusCode?: number; error?: string }> {
+  public async testRoute(host: string): Promise<{ success: boolean; statusCode?: number; status?: number; latencyMs: number; error?: string }> {
+    const startTime = Date.now();
     return new Promise((resolve) => {
       const req = http.request(
         {
@@ -397,14 +398,20 @@ export class CaddyManager {
           timeout: 3000,
         },
         (res) => {
-          resolve({ success: (res.statusCode || 0) < 500, statusCode: res.statusCode });
+          const latencyMs = Math.max(1, Date.now() - startTime);
+          const status = res.statusCode || 200;
+          resolve({ success: status < 500, statusCode: status, status, latencyMs });
         }
       );
 
-      req.on('error', (err) => resolve({ success: false, error: err.message }));
+      req.on('error', (err) => {
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        resolve({ success: false, statusCode: 502, status: 502, latencyMs, error: err.message });
+      });
       req.on('timeout', () => {
         req.destroy();
-        resolve({ success: false, error: 'Connection timed out' });
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        resolve({ success: false, statusCode: 504, status: 504, latencyMs, error: 'Connection timed out' });
       });
       req.end();
     });

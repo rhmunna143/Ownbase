@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import { Terminal, Trash2, Filter, ArrowDownCircle, Search } from 'lucide-react';
+import { Terminal, Trash2, Filter, ArrowDownCircle, Search, Maximize2, Minimize2 } from 'lucide-react';
 import { LogEntry } from '@/shared/types';
 
 interface LogViewerProps {
@@ -14,6 +14,7 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
   const [levelFilter, setLevelFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [autoScroll, setAutoScroll] = useState<boolean>(true);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(false);
   const logContainerRef = useRef<HTMLDivElement>(null);
 
   const filteredLogs = logs.filter((log) => {
@@ -30,7 +31,13 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
   }, [filteredLogs, autoScroll]);
 
   return (
-    <div className="glass-card rounded-xl p-5 border border-slate-800 flex flex-col h-[400px]">
+    <div
+      className={`glass-card rounded-xl p-5 border border-slate-800 flex flex-col transition-all duration-300 ${
+        isFullscreen
+          ? 'fixed inset-0 z-50 rounded-none border-0 p-6 bg-[#030712]/95 backdrop-blur-xl h-screen w-screen'
+          : 'h-[calc(100vh-140px)] min-h-[600px] w-full'
+      }`}
+    >
       <div className="flex flex-wrap items-center justify-between pb-3 border-b border-slate-800/80 mb-3 gap-2">
         <div className="flex items-center space-x-2.5">
           <div className="w-7 h-7 rounded-lg bg-slate-800 border border-slate-700 flex items-center justify-center">
@@ -93,6 +100,19 @@ export const LogViewer: React.FC<LogViewerProps> = ({ logs, onClear }) => {
             title="Clear Log View"
           >
             <Trash2 className="w-3.5 h-3.5" />
+          </button>
+
+          {/* Fullscreen Toggle */}
+          <button
+            onClick={() => setIsFullscreen(!isFullscreen)}
+            className={`p-1.5 rounded-md border text-[11px] flex items-center gap-1 transition-colors ${
+              isFullscreen
+                ? 'bg-purple-600/20 border-purple-500/40 text-purple-400'
+                : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200 hover:bg-slate-800'
+            }`}
+            title={isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}
+          >
+            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5" /> : <Maximize2 className="w-3.5 h-3.5" />}
           </button>
         </div>
       </div>

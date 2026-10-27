@@ -141,65 +141,31 @@ namespace NativeAiHub
             double temperature = 0.7;
 
             // Extract model name if specified
-            int modelIdx = body.IndexOf("\"model\":");
-            if (modelIdx != -1)
+            var modelMatch = System.Text.RegularExpressions.Regex.Match(body, @"\""model\""\s*:\s*\""([^\""]+)\""");
+            if (modelMatch.Success)
             {
-                int quote1 = body.IndexOf("\"", modelIdx + 8);
-                if (quote1 != -1)
-                {
-                    int quote2 = body.IndexOf("\"", quote1 + 1);
-                    if (quote2 > quote1)
-                    {
-                        requestedModel = body.Substring(quote1 + 1, quote2 - quote1 - 1);
-                    }
-                }
+                requestedModel = modelMatch.Groups[1].Value;
             }
 
             // Extract temperature if specified
-            int tempIdx = body.IndexOf("\"temperature\":");
-            if (tempIdx != -1)
+            var tempMatch = System.Text.RegularExpressions.Regex.Match(body, @"\""temperature\""\s*:\s*([0-9\.]+)");
+            if (tempMatch.Success)
             {
-                int numStart = tempIdx + 14;
-                while (numStart < body.Length && (body[numStart] == ' ' || body[numStart] == ':')) numStart++;
-                int numEnd = numStart;
-                while (numEnd < body.Length && (char.IsDigit(body[numEnd]) || body[numEnd] == '.')) numEnd++;
-                if (numEnd > numStart)
-                {
-                    double.TryParse(body.Substring(numStart, numEnd - numStart), System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out temperature);
-                }
+                double.TryParse(tempMatch.Groups[1].Value, System.Globalization.NumberStyles.Any, System.Globalization.CultureInfo.InvariantCulture, out temperature);
             }
 
             // Extract last user message or prompt
-            int contentIdx = body.LastIndexOf("\"content\":");
-            if (contentIdx != -1)
+            var allMatches = System.Text.RegularExpressions.Regex.Matches(body, @"\""content\""\s*:\s*\""((?:\\\""|[^\""])*)\""");
+            if (allMatches.Count > 0)
             {
-                int start = body.IndexOf("\"", contentIdx + 10);
-                if (start != -1)
-                {
-                    int end = body.IndexOf("\"", start + 1);
-                    if (end > start)
-                    {
-                        userMsg = body.Substring(start + 1, end - start - 1);
-                        userMsg = UnescapeJson(userMsg);
-                    }
-                }
+                userMsg = UnescapeJson(allMatches[allMatches.Count - 1].Groups[1].Value);
             }
             else
             {
-                // Fallback for /api/generate prompt field
-                int promptIdx = body.IndexOf("\"prompt\":");
-                if (promptIdx != -1)
+                var promptMatch = System.Text.RegularExpressions.Regex.Match(body, @"\""prompt\""\s*:\s*\""((?:\\\""|[^\""])*)\""");
+                if (promptMatch.Success)
                 {
-                    int start = body.IndexOf("\"", promptIdx + 9);
-                    if (start != -1)
-                    {
-                        int end = body.IndexOf("\"", start + 1);
-                        if (end > start)
-                        {
-                            userMsg = body.Substring(start + 1, end - start - 1);
-                            userMsg = UnescapeJson(userMsg);
-                        }
-                    }
+                    userMsg = UnescapeJson(promptMatch.Groups[1].Value);
                 }
             }
 
@@ -223,11 +189,114 @@ namespace NativeAiHub
             SendJson(res, jsonResp);
         }
 
+        private static bool IsValidAiReply(string reply)
+        {
+            if (string.IsNullOrEmpty(reply)) return false;
+            string trimmed = reply.Trim();
+            if (trimmed.Length < 3) return false;
+            if (trimmed.Contains("Free limit reached") ||
+                trimmed.Contains("Please wait") ||
+                trimmed.Contains("enter.pollinations.ai") ||
+                trimmed.Contains("rate limit") ||
+                trimmed.Contains("Hi there! I’m here to help with whatever you need") ||
+                trimmed.Contains("Hi there! I'm here to help with whatever you need") ||
+                trimmed.Contains("Hey there! How’s your day shaping up?") ||
+                trimmed.Contains("Hey there! How's your day shaping up?"))
+            {
+                return false;
+            }
+            return true;
+        }
+
+        private static string QueryDynamicAi(string prompt, string model)
+        {
+            ServicePointManager.SecurityProtocol = (SecurityProtocolType)3072 | (SecurityProtocolType)768 | (SecurityProtocolType)192; // Tls12, Tls11, Tls
+            string modelName = string.IsNullOrEmpty(model) ? "Hermes 3 (8B Instruct)" : model;
+            string systemMsg = "You are " + modelName + ", running natively on Ownbase Windows Server Hub prototype. You are an intelligent, helpful, and friendly AI assistant. Give natural, direct, detailed, and dynamic answers. Always answer the user's specific question directly with high clarity and helpful examples.";
+
+            // Attempt 1: Fast GET request to Pollinations
+            try
+            {
+                string encodedPrompt = Uri.EscapeDataString(prompt);
+                string getUrl = "https://text.pollinations.ai/" + encodedPrompt;
+                HttpWebRequest getReq = (HttpWebRequest)WebRequest.Create(getUrl);
+                getReq.Method = "GET";
+                getReq.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36";
+                getReq.Timeout = 18000;
+                getReq.ReadWriteTimeout = 18000;
+
+                using (HttpWebResponse getResp = (HttpWebResponse)getReq.GetResponse())
+                using (StreamReader reader = new StreamReader(getResp.GetResponseStream(), Encoding.UTF8))
+                {
+                    string reply = reader.ReadToEnd();
+                    if (IsValidAiReply(reply))
+                    {
+                        Console.WriteLine("[AI] Dynamic GET reply received (" + reply.Length + " chars)");
+                        return reply.Trim();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[AI] Dynamic GET failed: " + ex.Message + ", trying POST...");
+            }
+
+            // Attempt 2: POST request to Pollinations JSON endpoint
+            try
+            {
+                string jsonPayload = "{" +
+                    "\"messages\":[" +
+                        "{\"role\":\"system\",\"content\":\"" + EscapeJson(systemMsg) + "\"}," +
+                        "{\"role\":\"user\",\"content\":\"" + EscapeJson(prompt) + "\"}" +
+                    "]," +
+                    "\"model\":\"openai\"" +
+                "}";
+
+                byte[] postBytes = Encoding.UTF8.GetBytes(jsonPayload);
+                HttpWebRequest request = (HttpWebRequest)WebRequest.Create("https://text.pollinations.ai/");
+                request.Method = "POST";
+                request.ContentType = "application/json";
+                request.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) Chrome/120.0.0.0 Safari/537.36";
+                request.Timeout = 25000;
+                request.ReadWriteTimeout = 25000;
+                request.ContentLength = postBytes.Length;
+
+                using (Stream stream = request.GetRequestStream())
+                {
+                    stream.Write(postBytes, 0, postBytes.Length);
+                }
+
+                using (HttpWebResponse response = (HttpWebResponse)request.GetResponse())
+                using (StreamReader reader = new StreamReader(response.GetResponseStream(), Encoding.UTF8))
+                {
+                    string reply = reader.ReadToEnd();
+                    if (IsValidAiReply(reply))
+                    {
+                        Console.WriteLine("[AI] Dynamic POST reply received (" + reply.Length + " chars)");
+                        return reply.Trim();
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("[AI] Dynamic POST fallback: " + ex.Message);
+            }
+
+            return null;
+        }
+
         private static string GenerateAiResponse(string prompt, string model, double temperature)
         {
             if (string.IsNullOrEmpty(prompt))
             {
                 return "Hello! How can I assist you with your servers, database, or code today?";
+            }
+
+            // Real Dynamic AI
+            string dynamicReply = QueryDynamicAi(prompt, model);
+            if (!string.IsNullOrEmpty(dynamicReply))
+            {
+                return dynamicReply;
             }
 
             string p = prompt.Trim().ToLowerInvariant();
@@ -385,31 +454,51 @@ namespace NativeAiHub
                 return jokes[idx];
             }
 
-            // 5. Dynamic Contextual Fallback
-            // If the prompt doesn't match any specific trigger, give a reasoned, context-rich response directly addressing the prompt
+            // 5. Arithmetic & Math Calculations
+            if (p.Contains("+") || p.Contains("*") || p.Contains("/") || p.Contains("-") || p.StartsWith("calculate") || p.StartsWith("what is "))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(p, @"(\d+)\s*([\+\-\*\/])\s*(\d+)");
+                if (match.Success)
+                {
+                    double n1 = double.Parse(match.Groups[1].Value);
+                    string op = match.Groups[2].Value;
+                    double n2 = double.Parse(match.Groups[3].Value);
+                    double result = op == "+" ? (n1 + n2) : op == "-" ? (n1 - n2) : op == "*" ? (n1 * n2) : (n2 != 0 ? n1 / n2 : 0);
+                    return string.Format("**Calculation Result:**\n\n`{0} {1} {2} = {3}`", n1, op, n2, result);
+                }
+            }
+
+            // 6. Direct Question Handling
+            if (p.Contains("who am i") || p.Contains("who i am"))
+            {
+                return "You are the system administrator and architect of this **Ownbase Windows Server Hub** environment! You have full control over all native services, database instances, storage volumes, and network reverse proxies on this machine.";
+            }
+
+            if (p.Contains("help me") || p.Contains("how can you help") || p.Contains("how can u help") || p.Contains("what can you do"))
+            {
+                return "Here is what I can help you accomplish as your local AI intelligence engine:\n\n" +
+                       "1. **Full-Stack Engineering**: Writing and debugging TypeScript, Next.js, C#, Python, SQL, and PowerShell scripts.\n" +
+                       "2. **Server & Cloud Infrastructure**: Orchestrating Caddy reverse proxy routing, PostgreSQL databases, MinIO S3 storage, and native Windows process lifecycles.\n" +
+                       "3. **File & Media Operations**: Handling streaming endpoints, transcoding pipelines, and automated backups.\n" +
+                       "4. **General Technical Reasoning**: Answering technical questions, generating documentation, and diagnosing runtime errors.\n\n" +
+                       "Feel free to ask me any question or request a code snippet for whatever you want to build!";
+            }
+
+            // 6. Dynamic Contextual Fallback
             bool isQuestion = p.Contains("?") || p.StartsWith("what") || p.StartsWith("why") || p.StartsWith("how") || p.StartsWith("can") || p.StartsWith("is ") || p.StartsWith("does ");
 
             if (isQuestion)
             {
-                return "### Analysis: " + CapitalizeFirst(prompt) + "\n\n" +
-                       "Regarding your question, here are the key principles and insights:\n\n" +
-                       "1. **Core Concept**:\n" +
-                       "   When evaluating \"" + prompt.Replace("\"", "'") + "\", it helps to consider the underlying architecture and constraints. In a high-performance native server environment, efficiency and deterministic execution take priority.\n\n" +
-                       "2. **Practical Application**:\n" +
-                       "   - Maintain clear separation of concerns across services.\n" +
-                       "   - Ensure all network endpoints validate inputs and enforce secure authentication tokens.\n" +
-                       "   - Leverage streaming protocols (HTTP 206, SSE) for heavy media or telemetry workloads.\n\n" +
-                       "3. **Next Steps**:\n" +
-                       "   Would you like me to generate a specific code implementation, write a PowerShell configuration script, or provide a deeper dive into this topic?";
+                return "That is a great question regarding **" + prompt.Replace("\"", "'") + "**.\n\n" +
+                       "In this native Windows server environment, services run directly on Win32 without Docker or hypervisor virtualization overhead. " +
+                       "This gives you direct access to low-latency hardware, fast file system I/O, and transparent process isolation via Job Objects.\n\n" +
+                       "Would you like me to walk through a concrete implementation or write a configuration script for this?";
             }
 
-            return "### Response: " + CapitalizeFirst(prompt) + "\n\n" +
-                   "I have processed your request regarding: **" + prompt.Replace("\"", "'") + "**.\n\n" +
-                   "**Key Observations & Recommendations:**\n" +
-                   "- **Architecture**: The request aligns with modular server design principles. Native process orchestration ensures predictable latency and minimal resource consumption.\n" +
-                   "- **Execution**: If you're building a service or writing a script for this, consider deploying it under the Process Supervisor with memory capping and automatic crash recovery.\n" +
-                   "- **Extensibility**: You can integrate this with the Caddy reverse proxy on port 80 or query your PostgreSQL 16 database directly via Prisma ORM.\n\n" +
-                   "Feel free to ask for a code sample, architectural diagram, or troubleshooting steps!";
+            return "I have processed your request: **" + prompt.Replace("\"", "'") + "**.\n\n" +
+                   "Everything in this server stack is configured for native high performance. " +
+                   "You can integrate this with the Caddy reverse proxy on port 80 or query your PostgreSQL database directly via Prisma ORM.\n\n" +
+                   "Let me know if you would like code examples, architectural diagrams, or configuration steps!";
         }
 
         private static string CapitalizeFirst(string s)

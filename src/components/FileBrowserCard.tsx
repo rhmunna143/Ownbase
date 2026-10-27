@@ -34,8 +34,10 @@ import {
   Scissors,
   Clipboard,
   ClipboardCheck,
+  MoreVertical,
 } from 'lucide-react';
 import { serverApi } from '@/shared/apiClient';
+import { modalDialog } from '@/components/ModalDialog';
 import { FileItem, FileListResponse } from '@/shared/types';
 
 export const FileBrowserCard: React.FC = () => {
@@ -44,6 +46,7 @@ export const FileBrowserCard: React.FC = () => {
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid');
+  const [activeMenuPath, setActiveMenuPath] = useState<string | null>(null);
 
   // Media preview modals
   const [activeMedia, setActiveMedia] = useState<FileItem | null>(null);
@@ -94,6 +97,9 @@ export const FileBrowserCard: React.FC = () => {
 
   useEffect(() => {
     loadDirectory('');
+    const closeMenu = () => setActiveMenuPath(null);
+    window.addEventListener('click', closeMenu);
+    return () => window.removeEventListener('click', closeMenu);
   }, []);
 
   const handleFolderClick = (item: FileItem) => {
@@ -124,7 +130,7 @@ export const FileBrowserCard: React.FC = () => {
         setTextPreviewTitle(item.name);
         setActiveTextContent(res.content || '');
       } catch (err: any) {
-        alert(`Cannot preview file: ${err.message}`);
+        modalDialog.alert(`Cannot preview file: ${err.message}`, 'Preview Error', 'danger');
       }
       return;
     }
@@ -144,12 +150,18 @@ export const FileBrowserCard: React.FC = () => {
   };
 
   const handleDelete = async (item: FileItem) => {
-    if (confirm(`Are you sure you want to delete "${item.name}"?`)) {
+    const confirmed = await modalDialog.confirm(
+      `Are you sure you want to permanently delete "${item.name}"? This action cannot be undone.`,
+      'Delete Item',
+      'Delete',
+      'danger'
+    );
+    if (confirmed) {
       const res = await serverApi.deleteItem(item.path);
       if (res.success) {
         loadDirectory(currentPath);
       } else {
-        alert('Failed to delete item.');
+        modalDialog.alert('Failed to delete item.', 'Delete Error', 'danger');
       }
     }
   };
@@ -163,7 +175,7 @@ export const FileBrowserCard: React.FC = () => {
       setIsNewFolderOpen(false);
       loadDirectory(currentPath);
     } else {
-      alert('Failed to create folder.');
+      modalDialog.alert('Failed to create folder.', 'Folder Error', 'danger');
     }
   };
 
@@ -176,7 +188,23 @@ export const FileBrowserCard: React.FC = () => {
       setNewName('');
       loadDirectory(currentPath);
     } else {
-      alert('Failed to rename item.');
+      modalDialog.alert('Failed to rename item.', 'Rename Error', 'danger');
+    }
+  };
+
+  const handleQuickRename = async (item: FileItem) => {
+    const promptName = await modalDialog.prompt(
+      'Enter new filename:',
+      item.name,
+      'Rename Item',
+      'e.g. document_v2.pdf'
+    );
+    if (!promptName || !promptName.trim() || promptName.trim() === item.name) return;
+    const res = await serverApi.renameItem(item.path, promptName.trim());
+    if (res && res.success) {
+      loadDirectory(currentPath);
+    } else {
+      modalDialog.alert('Failed to rename item.', 'Rename Error', 'danger');
     }
   };
 
@@ -199,19 +227,19 @@ export const FileBrowserCard: React.FC = () => {
       if (clipboard.operation === 'copy') {
         const res = await serverApi.copyItem(clipboard.item.path, currentPath);
         if (!res.success) {
-          alert('Failed to copy item.');
+          modalDialog.alert('Failed to copy item.', 'Copy Error', 'danger');
         }
       } else {
         const res = await serverApi.moveItem(clipboard.item.path, currentPath);
         if (res.success) {
           setClipboard(null);
         } else {
-          alert('Failed to move item.');
+          modalDialog.alert('Failed to move item.', 'Move Error', 'danger');
         }
       }
       await loadDirectory(currentPath);
     } catch (err: any) {
-      alert(`Error during ${clipboard.operation}: ${err.message}`);
+      modalDialog.alert(`Error during ${clipboard.operation}: ${err.message}`, 'Action Error', 'danger');
     } finally {
       setIsProcessingAction(false);
     }
@@ -228,10 +256,10 @@ export const FileBrowserCard: React.FC = () => {
         }
         await loadDirectory(currentPath);
       } else {
-        alert('Failed to move item into folder.');
+        modalDialog.alert('Failed to move item into folder.', 'Move Error', 'danger');
       }
     } catch (err: any) {
-      alert(`Error moving item: ${err.message}`);
+      modalDialog.alert(`Error moving item: ${err.message}`, 'Move Error', 'danger');
     } finally {
       setIsProcessingAction(false);
     }
@@ -749,6 +777,8 @@ export const FileBrowserCard: React.FC = () => {
                   }
                 }}
                 className={`glass-card rounded-2xl p-2.5 sm:p-3.5 border transition-all flex flex-col justify-between group relative min-h-[145px] ${
+                  activeMenuPath === item.path ? 'z-50' : 'z-0'
+                } ${
                   isBeingDragged
                     ? 'opacity-40 border-dashed border-blue-400 scale-95'
                     : isTarget
@@ -764,59 +794,77 @@ export const FileBrowserCard: React.FC = () => {
                   </div>
                 )}
 
-                {/* Quick Actions Dropdown / Hover Menu */}
-                <div className="absolute top-2 right-2 flex items-center gap-1 opacity-90 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity z-10 bg-slate-900/90 p-0.5 rounded-lg border border-slate-750 backdrop-blur-sm">
+                {/* 3-Dots Quick Actions Menu */}
+                <div className="absolute top-2 right-2 z-30" onClick={(e) => e.stopPropagation()}>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      handleCopy(item);
+                      setActiveMenuPath(activeMenuPath === item.path ? null : item.path);
                     }}
-                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                    title="Copy"
+                    className="p-1 rounded-md bg-slate-900/90 border border-slate-700 text-slate-300 hover:text-white transition-colors"
+                    title="Actions"
                   >
-                    <Copy className="w-3.5 h-3.5" />
+                    <MoreVertical className="w-3.5 h-3.5" />
                   </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleCut(item);
-                    }}
-                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-amber-400 transition-colors"
-                    title="Cut"
-                  >
-                    <Scissors className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDownload(item);
-                    }}
-                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                    title="Download"
-                  >
-                    <Download className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      setRenamingItem(item);
-                      setNewName(item.name);
-                    }}
-                    className="p-1 rounded-md hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
-                    title="Rename"
-                  >
-                    <Edit2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      handleDelete(item);
-                    }}
-                    className="p-1 rounded-md hover:bg-rose-900 text-rose-400 transition-colors"
-                    title="Delete"
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
+
+                  {activeMenuPath === item.path && (
+                    <div className="absolute right-0 top-full mt-1.5 w-40 bg-slate-900/98 border border-slate-700 shadow-2xl p-1.5 z-50 space-y-0.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 ring-1 ring-white/10 rounded-xl">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setActiveMenuPath(null);
+                          handleQuickRename(item);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                      >
+                        <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                        <span>Rename</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveMenuPath(null);
+                          handleCopy(item);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Copy</span>
+                      </button>
+                      <button
+                        onClick={() => {
+                          setActiveMenuPath(null);
+                          handleCut(item);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                      >
+                        <Scissors className="w-3.5 h-3.5 text-amber-400" />
+                        <span>Cut</span>
+                      </button>
+                      {!item.isDirectory && (
+                        <button
+                          onClick={() => {
+                            setActiveMenuPath(null);
+                            handleDownload(item);
+                          }}
+                          className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                        >
+                          <Download className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>Download</span>
+                        </button>
+                      )}
+                      <div className="border-t border-slate-800 my-1" />
+                      <button
+                        onClick={() => {
+                          setActiveMenuPath(null);
+                          handleDelete(item);
+                        }}
+                        className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-950/40 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Delete</span>
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 {/* Main Tap / Click Area */}
@@ -846,7 +894,7 @@ export const FileBrowserCard: React.FC = () => {
         </div>
       ) : (
         /* LIST VIEW */
-        <div className="glass-card rounded-2xl border border-slate-800/80 bg-slate-900/40 overflow-hidden">
+        <div className="glass-card rounded-2xl border border-slate-800/80 bg-slate-900/40 relative">
           <div className="divide-y divide-slate-800/60">
             {currentPath !== '' && (
               <div
@@ -931,7 +979,9 @@ export const FileBrowserCard: React.FC = () => {
                     }
                   }}
                   onClick={() => handleFileClick(item)}
-                  className={`p-2.5 sm:p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors group ${
+                  className={`p-2.5 sm:p-3.5 flex items-center justify-between gap-3 cursor-pointer transition-colors group relative ${
+                    activeMenuPath === item.path ? 'z-40 bg-slate-800/90' : 'z-0'
+                  } ${
                     isBeingDragged
                       ? 'opacity-40 border-l-2 border-dashed border-blue-400'
                       : isTarget
@@ -961,47 +1011,76 @@ export const FileBrowserCard: React.FC = () => {
                       {item.isDirectory ? 'Folder' : formatFileSize(item.size)}
                     </span>
 
-                    <div className="flex items-center gap-1">
+                    <div className={`relative shrink-0 ${activeMenuPath === item.path ? 'z-50' : 'z-10'}`} onClick={(e) => e.stopPropagation()}>
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          handleCopy(item);
+                          setActiveMenuPath(activeMenuPath === item.path ? null : item.path);
                         }}
-                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white"
-                        title="Copy"
+                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors"
+                        title="Actions"
                       >
-                        <Copy className="w-3.5 h-3.5" />
+                        <MoreVertical className="w-4 h-4" />
                       </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleCut(item);
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-amber-400"
-                        title="Cut"
-                      >
-                        <Scissors className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDownload(item);
-                        }}
-                        className="p-1.5 rounded-lg bg-slate-800/80 hover:bg-slate-700 text-slate-300 hover:text-white"
-                        title="Download"
-                      >
-                        <Download className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDelete(item);
-                        }}
-                        className="p-1.5 rounded-lg bg-rose-950/80 hover:bg-rose-900 text-rose-400 border border-rose-800/40"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-3.5 h-3.5" />
-                      </button>
+
+                      {activeMenuPath === item.path && (
+                        <div className="absolute right-0 top-full mt-1.5 w-40 bg-slate-900/98 border border-slate-700 rounded-xl shadow-2xl p-1.5 z-50 space-y-0.5 backdrop-blur-xl animate-in fade-in zoom-in-95 duration-100 ring-1 ring-white/10">
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setActiveMenuPath(null);
+                              handleQuickRename(item);
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                          >
+                            <Edit2 className="w-3.5 h-3.5 text-blue-400" />
+                            <span>Rename</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveMenuPath(null);
+                              handleCopy(item);
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                          >
+                            <Copy className="w-3.5 h-3.5 text-indigo-400" />
+                            <span>Copy</span>
+                          </button>
+                          <button
+                            onClick={() => {
+                              setActiveMenuPath(null);
+                              handleCut(item);
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                          >
+                            <Scissors className="w-3.5 h-3.5 text-amber-400" />
+                            <span>Cut</span>
+                          </button>
+                          {!item.isDirectory && (
+                            <button
+                              onClick={() => {
+                                setActiveMenuPath(null);
+                                handleDownload(item);
+                              }}
+                              className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-slate-200 hover:bg-slate-800 transition-colors"
+                            >
+                              <Download className="w-3.5 h-3.5 text-emerald-400" />
+                              <span>Download</span>
+                            </button>
+                          )}
+                          <div className="border-t border-slate-800 my-1" />
+                          <button
+                            onClick={() => {
+                              setActiveMenuPath(null);
+                              handleDelete(item);
+                            }}
+                            className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs text-rose-400 hover:bg-rose-950/40 transition-colors"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

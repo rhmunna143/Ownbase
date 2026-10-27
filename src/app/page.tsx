@@ -21,6 +21,7 @@ import { Terminal as WebTerminal } from '@/components/Terminal';
 import { ObservabilityCard } from '@/components/ObservabilityCard';
 import { BackupsCard } from '@/components/BackupsCard';
 import { StorageAllocationCard } from '@/components/StorageAllocationCard';
+import { GlobalModalContainer, modalDialog } from '@/components/ModalDialog';
 import { serverApi, authStore } from '@/shared/apiClient';
 import {
   SystemInfo,
@@ -185,10 +186,10 @@ export default function DashboardPage() {
         if (!exeName) setExeName(baseName.charAt(0).toUpperCase() + baseName.slice(1));
         if (!exeSubdomain || exeSubdomain === 'myapp') setExeSubdomain(baseName.toLowerCase().replace(/[^a-z0-9-]/g, ''));
       } else {
-        alert(res.error || 'Failed to upload binary');
+        modalDialog.alert(res.error || 'Failed to upload binary', 'Upload Failed', 'danger');
       }
     } catch (err: any) {
-      alert(`Upload error: ${err.message}`);
+      modalDialog.alert(`Upload error: ${err.message}`, 'Upload Error', 'danger');
     } finally {
       setIsUploadingExeFile(false);
     }
@@ -214,7 +215,7 @@ export default function DashboardPage() {
       setExeName('');
       setExeUploadSuccess(false);
     } catch (err: any) {
-      alert(`Deploy error: ${err.message}`);
+      modalDialog.alert(`Deploy error: ${err.message}`, 'Deployment Error', 'danger');
     } finally {
       setIsDeployingExe(false);
     }
@@ -505,7 +506,13 @@ export default function DashboardPage() {
   };
 
   const handleQuitApp = async () => {
-    if (confirm('Are you sure you want to stop all server processes and exit Ownbase?')) {
+    const confirmed = await modalDialog.confirm(
+      'Are you sure you want to stop all server processes and exit Ownbase?',
+      'Exit Ownbase Server',
+      'Stop & Exit',
+      'danger'
+    );
+    if (confirmed) {
       await serverApi.quitApp();
     }
   };
@@ -1341,7 +1348,7 @@ export default function DashboardPage() {
                     <div>
                       <h3 className="text-xs sm:text-sm font-semibold text-white">Photos &amp; Memories</h3>
                       <p className="text-[11px] text-slate-400 mt-0.5">
-                        Google Photos timeline &amp; albums
+                        Photos &amp; media timeline &amp; albums
                       </p>
                     </div>
                   </div>
@@ -1750,6 +1757,9 @@ export default function DashboardPage() {
           </div>
         </div>
       )}
+
+      {/* Global Reusable Modal Dialog Container */}
+      <GlobalModalContainer />
     </div>
   );
 }

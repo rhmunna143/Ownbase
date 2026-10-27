@@ -144,11 +144,138 @@ namespace NativeMinio
                 if ((req.HttpMethod == "PUT" || req.HttpMethod == "POST") && lowerPath.StartsWith("/api/buckets"))
                 {
                     string bucketName = req.QueryString["name"] ?? "new-bucket";
+                    bucketName = bucketName.Trim().ToLowerInvariant();
                     lock (BucketLock)
                     {
                         if (!Buckets.Contains(bucketName)) Buckets.Add(bucketName);
                     }
+                    try
+                    {
+                        string bDir = Path.Combine(StorageRoot, bucketName);
+                        if (!Directory.Exists(bDir)) Directory.CreateDirectory(bDir);
+                    }
+                    catch { }
                     SendJson(res, "{\"status\":\"ok\",\"created\":\"" + bucketName + "\"}", isHead);
+                    return;
+                }
+
+                // Bucket Deletion API
+                if (req.HttpMethod == "DELETE" && lowerPath.StartsWith("/api/buckets"))
+                {
+                    string bucketName = req.QueryString["name"] ?? "";
+                    bucketName = bucketName.Trim().ToLowerInvariant();
+                    if (string.IsNullOrEmpty(bucketName))
+                    {
+                        res.StatusCode = 400;
+                        SendJson(res, "{\"error\":\"Missing bucket name\"}", isHead);
+                        return;
+                    }
+                    lock (BucketLock)
+                    {
+                        Buckets.Remove(bucketName);
+                    }
+                    try
+                    {
+                        string bDir = Path.Combine(StorageRoot, bucketName);
+                        if (Directory.Exists(bDir)) Directory.Delete(bDir, true);
+                    }
+                    catch { }
+                    SendJson(res, "{\"status\":\"ok\",\"deleted\":\"" + bucketName + "\"}", isHead);
+                    return;
+                }
+
+                // Bucket Objects: List objects
+                if (lowerPath == "/api/objects" && req.HttpMethod == "GET")
+                {
+                    string bucket = (req.QueryString["bucket"] ?? "").Trim().ToLowerInvariant();
+                    string bDir = Path.Combine(StorageRoot, bucket);
+                    StringBuilder sb = new StringBuilder();
+                    sb.Append("{\"bucket\":\"" + EscapeJson(bucket) + "\",\"items\":[");
+                    if (Directory.Exists(bDir))
+                    {
+                        DirectoryInfo di = new DirectoryInfo(bDir);
+                        FileInfo[] files = di.GetFiles("*", SearchOption.AllDirectories);
+                        for (int i = 0; i < files.Length; i++)
+                        {
+                            if (i > 0) sb.Append(",");
+                            string rel = files[i].FullName.Substring(bDir.Length).TrimStart('\\', '/').Replace('\\', '/');
+                            sb.Append("{");
+                            sb.Append("\"name\":\"" + EscapeJson(rel) + "\",");
+                            sb.Append("\"size\":" + files[i].Length + ",");
+                            sb.Append("\"modified\":\"" + files[i].LastWriteTimeUtc.ToString("o") + "\"");
+                            sb.Append("}");
+                        }
+                    }
+                    sb.Append("]}");
+                    SendJson(res, sb.ToString(), isHead);
+                    return;
+                }
+
+                // Bucket Objects: Upload object
+                if (lowerPath == "/api/objects/upload" && req.HttpMethod == "POST")
+                {
+                    string bucket = (req.QueryString["bucket"] ?? "").Trim().ToLowerInvariant();
+                    string name = req.QueryString["name"] ?? "";
+                    if (string.IsNullOrEmpty(name)) name = req.Headers["X-File-Name"] ?? "uploaded-file";
+                    name = Uri.UnescapeDataString(name);
+
+                    if (string.IsNullOrEmpty(bucket) || string.IsNullOrEmpty(name))
+                    {
+                        res.StatusCode = 400;
+                        SendJson(res, "{\"error\":\"Bucket and file name required\"}", isHead);
+                        return;
+                    }
+
+                    string bDir = Path.Combine(StorageRoot, bucket);
+                    if (!Directory.Exists(bDir)) Directory.CreateDirectory(bDir);
+
+                    string filePath = Path.Combine(bDir, Path.GetFileName(name));
+                    using (FileStream fs = new FileStream(filePath, FileMode.Create, FileAccess.Write))
+                    {
+                        req.InputStream.CopyTo(fs);
+                    }
+
+                    SendJson(res, "{\"status\":\"ok\",\"bucket\":\"" + EscapeJson(bucket) + "\",\"name\":\"" + EscapeJson(name) + "\"}", isHead);
+                    return;
+                }
+
+                // Bucket Objects: Delete object
+                if (lowerPath == "/api/objects" && req.HttpMethod == "DELETE")
+                {
+                    string bucket = (req.QueryString["bucket"] ?? "").Trim().ToLowerInvariant();
+                    string name = req.QueryString["name"] ?? "";
+                    name = Uri.UnescapeDataString(name);
+
+                    string bDir = Path.Combine(StorageRoot, bucket);
+                    string filePath = Path.Combine(bDir, Path.GetFileName(name));
+                    if (File.Exists(filePath))
+                    {
+                        File.Delete(filePath);
+                    }
+                    SendJson(res, "{\"status\":\"ok\",\"deleted\":\"" + EscapeJson(name) + "\"}", isHead);
+                    return;
+                }
+
+                // Bucket Objects: Download object
+                if (lowerPath == "/api/objects/download" && req.HttpMethod == "GET")
+                {
+                    string bucket = (req.QueryString["bucket"] ?? "").Trim().ToLowerInvariant();
+                    string name = req.QueryString["name"] ?? "";
+                    name = Uri.UnescapeDataString(name);
+                    string filePath = Path.Combine(StorageRoot, bucket, Path.GetFileName(name));
+                    if (File.Exists(filePath))
+                    {
+                        byte[] bytes = File.ReadAllBytes(filePath);
+                        res.ContentType = "application/octet-stream";
+                        res.AddHeader("Content-Disposition", "attachment; filename=\"" + Path.GetFileName(name) + "\"");
+                        res.ContentLength64 = bytes.Length;
+                        res.StatusCode = 200;
+                        if (!isHead) res.OutputStream.Write(bytes, 0, bytes.Length);
+                        res.Close();
+                        return;
+                    }
+                    res.StatusCode = 404;
+                    SendJson(res, "{\"error\":\"File not found\"}", isHead);
                     return;
                 }
 
@@ -389,6 +516,14 @@ namespace NativeMinio
         .pill { font-size: 10.5px; font-family: 'JetBrains Mono', monospace; padding: 2px 7px; border-radius: 6px; background: rgba(51,65,85,0.4); border: 1px solid rgba(71,85,105,0.4); }
         .pill-green { background: rgba(16,185,129,0.15); color: #34d399; border-color: rgba(16,185,129,0.3); }
         .actions { display: flex; gap: 8px; }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85); backdrop-filter: blur(8px); z-index: 200; align-items: center; justify-content: center; padding: 20px; }
+        .modal.open { display: flex; }
+        .modal-box { background: #0c1220; border: 1px solid var(--border); border-radius: 16px; width: 100%; max-width: 680px; overflow: hidden; box-shadow: 0 25px 50px rgba(0,0,0,0.8); }
+        .modal-header { padding: 14px 20px; border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center; }
+        .modal-body { padding: 16px 20px; max-height: 60vh; overflow-y: auto; }
+        .object-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border-bottom: 1px solid rgba(51,65,85,0.3); font-size: 13px; }
+        .object-row:hover { background: rgba(255,255,255,0.03); }
+        .object-name { font-family: 'JetBrains Mono', monospace; font-weight: 500; color: #f8fafc; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 300px; }
     </style>
 </head>
 <body>
@@ -448,6 +583,7 @@ namespace NativeMinio
                         <th>Status</th>
                         <th>Access Policy</th>
                         <th>Created</th>
+                        <th style=""text-align: right;"">Actions</th>
                     </tr>
                 </thead>
                 <tbody id=""bucketList"">");
@@ -462,6 +598,12 @@ namespace NativeMinio
                         <td><span class=""pill pill-green"">Active</span></td>
                         <td><span class=""pill"">Private (S3 Auth)</span></td>
                         <td style=""font-family: 'JetBrains Mono'; font-size: 11.5px; color: #64748b;"">2026-10-10</td>
+                        <td style=""text-align: right;"">
+                            <div style=""display: inline-flex; gap: 6px;"">
+                                <button class=""btn btn-subtle"" style=""padding: 4px 10px; font-size: 11px;"" onclick=""openBucketObjects('" + b + @"')"">📁 Browse / Upload</button>
+                                <button class=""btn btn-subtle"" style=""padding: 4px 10px; font-size: 11px; color: #f87171; border-color: rgba(239,68,68,0.4);"" onclick=""deleteBucket('" + b + @"')"">🗑️ Delete</button>
+                            </div>
+                        </td>
                     </tr>");
                 }
             }
@@ -472,7 +614,30 @@ namespace NativeMinio
         </div>
     </div>
 
+    <!-- Object Browser & Upload Modal -->
+    <div id=""objectsModal"" class=""modal"">
+        <div class=""modal-box"">
+            <div class=""modal-header"">
+                <div>
+                    <h3 id=""modalBucketTitle"" style=""font-size: 15px; font-weight: 700; color: #fff;"">Bucket Objects</h3>
+                    <p style=""font-size: 11px; color: #94a3b8;"">Browse, upload, download, and delete files</p>
+                </div>
+                <button onclick=""closeModal()"" class=""btn btn-subtle"" style=""padding: 4px 10px;"">✕</button>
+            </div>
+            <div style=""padding: 12px 20px; background: rgba(15,23,42,0.6); border-bottom: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;"">
+                <input type=""file"" id=""objectFileInput"" style=""display: none;"" onchange=""handleFileUpload(event)"">
+                <button class=""btn"" onclick=""document.getElementById('objectFileInput').click()"">⬆️ Upload File</button>
+                <button class=""btn btn-subtle"" onclick=""refreshCurrentObjects()"">🔄 Refresh</button>
+            </div>
+            <div class=""modal-body"" id=""objectsListBody"">
+                <div style=""text-align: center; color: #64748b; padding: 30px;"">Loading objects...</div>
+            </div>
+        </div>
+    </div>
+
     <script>
+        let currentBucket = '';
+
         function copyEndpoint() {
             const ep = window.location.origin;
             navigator.clipboard.writeText(ep);
@@ -491,6 +656,101 @@ namespace NativeMinio
                 window.location.reload();
             } catch(e) {
                 alert('Error creating bucket: ' + e.message);
+            }
+        }
+
+        async function deleteBucket(bucketName) {
+            if (!confirm('Are you sure you want to delete bucket ' + bucketName + ' and all its files?')) return;
+            try {
+                const res = await fetch('/api/buckets?name=' + encodeURIComponent(bucketName), { method: 'DELETE' });
+                if (res.ok) {
+                    window.location.reload();
+                } else {
+                    alert('Failed to delete bucket');
+                }
+            } catch(e) {
+                alert('Network error: ' + e.message);
+            }
+        }
+
+        async function openBucketObjects(bucketName) {
+            currentBucket = bucketName;
+            document.getElementById('modalBucketTitle').textContent = 'Bucket: ' + bucketName;
+            document.getElementById('objectsModal').classList.add('open');
+            refreshCurrentObjects();
+        }
+
+        function closeModal() {
+            document.getElementById('objectsModal').classList.remove('open');
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024, dm = 1, sizes = ['B', 'KB', 'MB', 'GB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(dm)) + ' ' + sizes[i];
+        }
+
+        async function refreshCurrentObjects() {
+            const body = document.getElementById('objectsListBody');
+            body.innerHTML = '<div style=""text-align: center; color: #64748b; padding: 30px;"">Loading objects...</div>';
+            try {
+                const res = await fetch('/api/objects?bucket=' + encodeURIComponent(currentBucket));
+                const data = await res.json();
+                const items = data.items || [];
+                if (items.length === 0) {
+                    body.innerHTML = '<div style=""text-align: center; color: #64748b; padding: 40px;"">No files in this bucket yet.<br><br>Click Upload File to add objects.</div>';
+                    return;
+                }
+                body.innerHTML = items.map(it => `
+                    <div class=""object-row"">
+                        <div>
+                            <div class=""object-name"" title=""${it.name}"">${it.name}</div>
+                            <div style=""font-size: 11px; color: #64748b; margin-top: 2px;"">${formatBytes(it.size)}</div>
+                        </div>
+                        <div style=""display: flex; gap: 6px;"">
+                            <a href=""/api/objects/download?bucket=${encodeURIComponent(currentBucket)}&name=${encodeURIComponent(it.name)}"" download class=""btn btn-subtle"" style=""padding: 4px 8px; font-size: 11px;"">⬇️</a>
+                            <button onclick=""deleteObject('${currentBucket}', '${it.name}')"" class=""btn btn-subtle"" style=""padding: 4px 8px; font-size: 11px; color: #f87171; border-color: rgba(239,68,68,0.4);"">🗑️</button>
+                        </div>
+                    </div>
+                `).join('');
+            } catch(e) {
+                body.innerHTML = '<div style=""color: #f87171; text-align: center; padding: 20px;"">Failed to load objects: ' + e.message + '</div>';
+            }
+        }
+
+        async function handleFileUpload(e) {
+            const files = e.target.files;
+            if (!files || files.length === 0) return;
+            const file = files[0];
+            try {
+                const res = await fetch('/api/objects/upload?bucket=' + encodeURIComponent(currentBucket) + '&name=' + encodeURIComponent(file.name), {
+                    method: 'POST',
+                    headers: { 'X-File-Name': encodeURIComponent(file.name) },
+                    body: file
+                });
+                if (res.ok) {
+                    refreshCurrentObjects();
+                } else {
+                    alert('Upload failed');
+                }
+            } catch(err) {
+                alert('Upload error: ' + err.message);
+            }
+            e.target.value = '';
+        }
+
+        async function deleteObject(bucket, name) {
+            if (!confirm('Delete ' + name + '?')) return;
+            try {
+                const res = await fetch('/api/objects?bucket=' + encodeURIComponent(bucket) + '&name=' + encodeURIComponent(name), { method: 'DELETE' });
+                if (res.ok) {
+                    refreshCurrentObjects();
+                } else {
+                    alert('Delete failed');
+                }
+            } catch(err) {
+                alert('Delete error: ' + err.message);
             }
         }
     </script>

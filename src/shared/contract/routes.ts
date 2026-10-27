@@ -200,6 +200,20 @@ export const ROUTE_TABLE: RouteDefinition[] = [
   },
   {
     method: 'GET',
+    path: '/api/v1/binaries/list',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'List available template executable binaries (.exe)',
+  },
+  {
+    method: 'GET',
+    path: '/api/v1/binaries/download',
+    auth: 'user',
+    minRole: 'READ_ONLY',
+    summary: 'Download template binary (.exe) file directly',
+  },
+  {
+    method: 'GET',
     path: '/api/v1/system/drives',
     auth: 'user',
     minRole: 'READ_ONLY',
