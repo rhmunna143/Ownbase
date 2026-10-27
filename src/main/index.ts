@@ -274,10 +274,22 @@ async function loadStaticBundle() {
   logger.error('electron', 'Static export out/index.html not found! Please run npm run build:next');
 }
 
-app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.rhmunna143.nativewindowsserverhub');
-  }
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.rhmunna143.nativewindowsserverhub');
+    }
   postgresManager = new PostgresManager(5432);
   prismaManager = new PrismaManager(5432, 'postgres');
   supervisor = new ProcessSupervisor(prismaManager);
@@ -323,6 +335,7 @@ app.whenReady().then(async () => {
     }
   });
 });
+}
 
 // Phase 2 & 4: Graceful Termination with taskkill /pid <PID> /T /F before quit
 app.on('before-quit', async (event) => {

@@ -68,7 +68,7 @@
       }
     ],
     "icon": "assets/icon.ico",
-    "requestedExecutionLevel": "asInvoker",
+    "requestedExecutionLevel": "highestAvailable",
     "sign": "./scripts/custom-sign.js",
     "signAndEditExecutable": false
   },
@@ -87,6 +87,8 @@
     "artifactName": "${productName}-Setup-${version}.${ext}"
   },
   "portable": {
-    "artifactName": "${productName}-Portable-${version}.${ext}"
+    "artifactName": "${productName}-Portable-${version}.${ext}",
+    "requestExecutionLevel": "highest",
+    "unpackDirName": false
   }
 }
