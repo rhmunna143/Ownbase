@@ -1041,18 +1041,18 @@ namespace NativeFileBrowser
         .clipboard-name { font-weight: 700; color: #fff; }
         .clipboard-actions { display: flex; align-items: center; gap: 6px; }
         /* Grid & Cards */
-        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; width: 100%; box-sizing: border-box; }
-        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; user-select: none; width: 100%; box-sizing: border-box; position: relative; z-index: 1; }
+        .file-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(260px, 100%), 1fr)); gap: 12px; width: 100%; box-sizing: border-box; }
+        .file-card { background: #0f172a; border: 1px solid #1e293b; border-radius: 12px; padding: 12px 14px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; transition: all 0.2s; min-height: 64px; user-select: none; width: 100%; min-width: 0; max-width: 100%; box-sizing: border-box; position: relative; z-index: 1; }
         .file-card:hover { border-color: #38bdf8; background: #131d35; transform: translateY(-1px); }
         .file-card.menu-open { z-index: 100 !important; border-color: #38bdf8 !important; }
         .file-card.dragging { opacity: 0.4; border-style: dashed; }
         .file-card.drop-target { border-color: #10b981 !important; background: rgba(16,185,129,0.15) !important; transform: scale(1.02); }
-        .file-info { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1; min-width: 0; }
+        .file-info { display: flex; align-items: center; gap: 12px; overflow: hidden; flex: 1 1 0%; min-width: 0; max-width: calc(100% - 44px); }
         .file-icon { font-size: 26px; flex-shrink: 0; width: 34px; text-align: center; }
-        .file-details { overflow: hidden; flex: 1; min-width: 0; }
-        .file-name { font-size: 13px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .file-meta { font-size: 11px; color: #64748b; margin-top: 2px; }
-        .file-actions { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; position: relative; z-index: 105; }
+        .file-details { overflow: hidden; flex: 1 1 0%; min-width: 0; }
+        .file-name { font-size: 13px; font-weight: 600; color: #f1f5f9; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; display: block; max-width: 100%; }
+        .file-meta { font-size: 11px; color: #64748b; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .file-actions { display: flex; gap: 4px; margin-left: 8px; flex-shrink: 0; position: relative; z-index: 105; width: 32px; justify-content: flex-end; }
         /* 3-Dots Dropdown Menu */
         .dots-btn { background: #1e293b; border: 1px solid #334155; color: #94a3b8; border-radius: 8px; width: 32px; height: 32px; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 18px; font-weight: bold; line-height: 1; transition: all 0.15s; flex-shrink: 0; }
         .dots-btn:hover { background: #334155; color: #fff; border-color: #64748b; }
@@ -1104,8 +1104,8 @@ namespace NativeFileBrowser
             .toolbar-actions { width: 100%; display: grid; grid-template-columns: repeat(2, 1fr); gap: 8px; }
             .toolbar-actions .btn { justify-content: center; }
             .search-box { max-width: 100%; width: 100%; }
-            .file-grid { grid-template-columns: 1fr; gap: 8px; width: 100%; }
-            .file-card { padding: 10px 12px; width: 100%; }
+            .file-grid { grid-template-columns: minmax(0, 1fr) !important; gap: 8px; width: 100%; }
+            .file-card { padding: 10px 12px; width: 100%; min-width: 0; max-width: 100%; overflow: visible; box-sizing: border-box; }
         }
     </style>
 </head>
@@ -1385,6 +1385,19 @@ namespace NativeFileBrowser
             return '📄';
         }
 
+        function truncateDisplayName(name, maxLen = 28) {
+            if (!name || name.length <= maxLen) return name;
+            const extIdx = name.lastIndexOf('.');
+            if (extIdx > 0 && name.length - extIdx <= 8) {
+                const ext = name.slice(extIdx);
+                const avail = maxLen - ext.length - 3;
+                if (avail > 6) {
+                    return name.slice(0, avail) + '...' + ext;
+                }
+            }
+            return name.slice(0, maxLen - 3) + '...';
+        }
+
         function renderFiles(items) {
             const container = document.getElementById('fileContainer');
             if (items.length === 0) {
@@ -1396,6 +1409,7 @@ namespace NativeFileBrowser
                 const icon = getFileIcon(it);
                 let displayName = it.name || '';
                 try { displayName = decodeURIComponent(displayName); } catch(e) {}
+                const shortName = truncateDisplayName(displayName, window.innerWidth < 640 ? 24 : 32);
                 const subMeta = it.isDir ? 'Folder' : (formatBytes(it.size) + ' • ' + (it.extension || 'file').toUpperCase());
                 const safePath = it.path.replace(/'/g, ""\\'"");
                 const safeName = displayName.replace(/'/g, ""\\'"");
@@ -1411,7 +1425,7 @@ namespace NativeFileBrowser
                         <div class=""file-info"">
                             <div class=""file-icon"">${icon}</div>
                             <div class=""file-details"">
-                                <div class=""file-name"" title=""${displayName}"">${displayName}</div>
+                                <div class=""file-name"" title=""${displayName}"">${shortName}</div>
                                 <div class=""file-meta"">${subMeta}</div>
                             </div>
                         </div>

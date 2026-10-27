@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { serverApi, authStore } from '@/shared/apiClient';
 import { modalDialog } from '@/components/ModalDialog';
+import { copyToClipboard } from '@/shared/clipboard';
 import { PhotoItem, PhotoTimelineSection, PhotosResponse } from '@/shared/types';
 
 export const PhotosGalleryCard: React.FC = () => {
@@ -69,7 +70,13 @@ export const PhotosGalleryCard: React.FC = () => {
   }, [filterType, favoritesOnly]);
 
   useEffect(() => {
-    const handleDocClick = () => setActiveMenuPhotoId(null);
+    const handleDocClick = (e: MouseEvent) => {
+      const target = e.target as HTMLElement | null;
+      if (target?.closest?.('.photo-menu-btn, .photo-menu-dropdown')) {
+        return;
+      }
+      setActiveMenuPhotoId(null);
+    };
     document.addEventListener('click', handleDocClick);
     return () => document.removeEventListener('click', handleDocClick);
   }, []);
@@ -520,10 +527,10 @@ export const PhotosGalleryCard: React.FC = () => {
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
-                          e.preventDefault();
-                          setActiveMenuPhotoId(activeMenuPhotoId === item.id ? null : item.id);
+                          e.nativeEvent.stopImmediatePropagation?.();
+                          setActiveMenuPhotoId((prev) => (prev === item.id ? null : item.id));
                         }}
-                        className="w-7 h-7 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all shadow-md backdrop-blur-sm"
+                        className="photo-menu-btn w-7 h-7 rounded-full bg-black/60 hover:bg-black/90 text-white flex items-center justify-center transition-all shadow-md backdrop-blur-sm"
                         title="More Actions"
                       >
                         <MoreVertical className="w-3.5 h-3.5" />
@@ -535,9 +542,9 @@ export const PhotosGalleryCard: React.FC = () => {
                       <div
                         onClick={(e) => {
                           e.stopPropagation();
-                          e.preventDefault();
+                          e.nativeEvent.stopImmediatePropagation?.();
                         }}
-                        className="absolute right-2 top-10 w-40 rounded-xl bg-slate-900/98 border border-slate-700 shadow-2xl backdrop-blur-xl py-1.5 z-50 animate-in fade-in zoom-in-95 text-xs text-slate-200 ring-1 ring-white/10"
+                        className="photo-menu-dropdown absolute right-2 top-10 w-40 rounded-xl bg-slate-900/98 border border-slate-700 shadow-2xl backdrop-blur-xl py-1.5 z-50 animate-in fade-in zoom-in-95 text-xs text-slate-200 ring-1 ring-white/10"
                       >
                         <button
                           onClick={(e) => handleRenamePhoto(item, e)}
@@ -556,9 +563,9 @@ export const PhotosGalleryCard: React.FC = () => {
                           <span>Download</span>
                         </a>
                         <button
-                          onClick={(e) => {
+                          onClick={async (e) => {
                             e.stopPropagation();
-                            navigator.clipboard.writeText(window.location.origin + (item.mediaUrl || item.streamUrl));
+                            await copyToClipboard(window.location.origin + (item.mediaUrl || item.streamUrl));
                             setActiveMenuPhotoId(null);
                           }}
                           className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"
@@ -645,9 +652,10 @@ export const PhotosGalleryCard: React.FC = () => {
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setActiveMenuPhotoId(activeMenuPhotoId === 'lightbox' ? null : 'lightbox');
+                    e.nativeEvent.stopImmediatePropagation?.();
+                    setActiveMenuPhotoId((prev) => (prev === 'lightbox' ? null : 'lightbox'));
                   }}
-                  className="p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  className="photo-menu-btn p-2 rounded-full bg-white/10 hover:bg-white/20 text-white transition-colors"
                   title="More actions"
                 >
                   <MoreVertical className="w-4 h-4" />
@@ -655,8 +663,11 @@ export const PhotosGalleryCard: React.FC = () => {
 
                 {activeMenuPhotoId === 'lightbox' && (
                   <div
-                    onClick={(e) => e.stopPropagation()}
-                    className="absolute right-0 top-11 w-40 rounded-xl bg-slate-900/95 border border-slate-700/80 shadow-2xl backdrop-blur-md py-1.5 z-40 text-xs text-slate-200"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      e.nativeEvent.stopImmediatePropagation?.();
+                    }}
+                    className="photo-menu-dropdown absolute right-0 top-11 w-40 rounded-xl bg-slate-900/98 border border-slate-700 shadow-2xl backdrop-blur-xl py-1.5 z-40 text-xs text-slate-200 ring-1 ring-white/10"
                   >
                     <button
                       onClick={(e) => handleRenamePhoto(activeItem, e)}
@@ -666,9 +677,9 @@ export const PhotosGalleryCard: React.FC = () => {
                       <span>Rename</span>
                     </button>
                     <button
-                      onClick={(e) => {
+                      onClick={async (e) => {
                         e.stopPropagation();
-                        navigator.clipboard.writeText(window.location.origin + (activeItem.mediaUrl || activeItem.streamUrl));
+                        await copyToClipboard(window.location.origin + (activeItem.mediaUrl || activeItem.streamUrl));
                         setActiveMenuPhotoId(null);
                       }}
                       className="w-full text-left px-3 py-2 flex items-center gap-2 hover:bg-slate-800 hover:text-white transition-colors"

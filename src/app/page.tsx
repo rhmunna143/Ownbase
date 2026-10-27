@@ -1165,6 +1165,51 @@ export default function DashboardPage() {
                 </button>
 
                 <button
+                  onClick={() => navigateTab('terminal')}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'terminal' ? 'bg-cyan-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Terminal className="w-4 h-4 text-cyan-400" />
+                    <span>Web Terminal</span>
+                  </div>
+                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                    ROOT
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('observability')}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'observability' ? 'bg-indigo-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Activity className="w-4 h-4 text-indigo-400" />
+                    <span>Observability</span>
+                  </div>
+                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-indigo-500/10 text-indigo-300 border border-indigo-500/30">
+                    Metrics
+                  </span>
+                </button>
+
+                <button
+                  onClick={() => navigateTab('backups')}
+                  className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-semibold ${
+                    activeTab === 'backups' ? 'bg-sky-600 text-white' : 'text-slate-400 hover:bg-slate-800'
+                  }`}
+                >
+                  <div className="flex items-center gap-3">
+                    <Archive className="w-4 h-4 text-sky-400" />
+                    <span>Backups &amp; DR</span>
+                  </div>
+                  <span className="text-[9px] font-mono uppercase px-1.5 py-0.5 rounded bg-sky-500/10 text-sky-300 border border-sky-500/30">
+                    AES-256
+                  </span>
+                </button>
+
+                <button
                   onClick={() => navigateTab('settings')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold ${
                     activeTab === 'settings' ? 'bg-blue-600 text-white' : 'text-slate-400 hover:bg-slate-800'

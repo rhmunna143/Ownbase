@@ -409,6 +409,20 @@ export const FileBrowserCard: React.FC = () => {
     }
   };
 
+  const getShortName = (name: string, maxLen = 28): string => {
+    const decoded = getDisplayName(name);
+    if (!decoded || decoded.length <= maxLen) return decoded;
+    const extIdx = decoded.lastIndexOf('.');
+    if (extIdx > 0 && decoded.length - extIdx <= 8) {
+      const ext = decoded.slice(extIdx);
+      const avail = maxLen - ext.length - 3;
+      if (avail > 6) {
+        return decoded.slice(0, avail) + '...' + ext;
+      }
+    }
+    return decoded.slice(0, maxLen - 3) + '...';
+  };
+
   const filteredItems = (data?.items || []).filter((item) =>
     getDisplayName(item.name).toLowerCase().includes(searchQuery.toLowerCase())
   );
@@ -881,7 +895,7 @@ export const FileBrowserCard: React.FC = () => {
                       className="text-xs font-semibold text-white truncate max-w-full group-hover:text-blue-400 transition-colors"
                       title={getDisplayName(item.name)}
                     >
-                      {getDisplayName(item.name)}
+                      {getShortName(item.name, 22)}
                     </h4>
                     <div className="flex items-center justify-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono">
                       <span>{item.isDirectory ? 'Folder' : formatFileSize(item.size)}</span>
@@ -995,10 +1009,10 @@ export const FileBrowserCard: React.FC = () => {
                     </div>
                     <div className="min-w-0">
                       <h4
-                        className="text-xs sm:text-sm font-semibold text-white truncate group-hover:text-blue-400 transition-colors"
+                        className="text-xs sm:text-sm font-semibold text-white truncate max-w-full group-hover:text-blue-400 transition-colors"
                         title={getDisplayName(item.name)}
                       >
-                        {getDisplayName(item.name)}
+                        {getShortName(item.name, 34)}
                       </h4>
                       <p className="text-[10px] text-slate-500 font-mono mt-0.5">
                         {formatModifiedDate(item.modifiedAt)}
