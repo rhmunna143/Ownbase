@@ -14,10 +14,15 @@
     "assets/**/*",
     "prisma/**/*"
   ],
+  "npmRebuild": false,
+  "nodeGypRebuild": false,
   "asar": true,
   "asarUnpack": [
     "node_modules/@prisma/client/**/*",
-    "node_modules/.prisma/**/*"
+    "node_modules/.prisma/**/*",
+    "node_modules/argon2/**/*",
+    "node_modules/koffi/**/*",
+    "node_modules/node-pty/**/*"
   ],
   "extraResources": [
     {
