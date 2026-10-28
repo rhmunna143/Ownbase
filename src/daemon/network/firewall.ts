@@ -24,7 +24,7 @@ export class WindowsFirewallManager {
       remoteIpClause = 'remoteip=100.64.0.0/10';
     }
 
-    const cmd = `netsh advfirewall firewall add rule name="${params.ruleName}" dir=in action=allow protocol=${protocol} localport=${params.port} ${remoteIpClause}`.trim();
+    const cmd = `netsh advfirewall firewall add rule name="${params.ruleName}" dir=in action=allow protocol=${protocol} localport=${params.port} profile=any ${remoteIpClause}`.trim();
 
     try {
       await execAsync(cmd);

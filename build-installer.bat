@@ -51,12 +51,14 @@ if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
+call node scripts\finalize-release.js
+
 echo.
 echo ======================================================================
 echo  [SUCCESS] Installable Windows Setup EXE built successfully!
 echo.
 echo  Artifact Location:
-echo  release\Native Windows Server Hub-Setup-0.1.0.exe
+node -e "const pkg=require('./package.json'); const p=pkg.productName||'Ownbase'; console.log('  release\\' + p + '-Setup-' + pkg.version + '.exe');"
 echo ======================================================================
 echo.
 

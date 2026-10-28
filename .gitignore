@@ -15,6 +15,7 @@ out/
 .next/
 build/
 release/
+release-build/
 
 # Large Portable Binaries & Distributions (>100MB)
 extraResources/*.zip

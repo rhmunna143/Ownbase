@@ -1,0 +1,296 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Ownbase - Native Windows Server Platform &amp; Private Cloud</title>
+  <meta name="description" content="Turn any Windows 10/11 PC into a private 24/7 bare-metal cloud server without Docker or WSL2." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/svg+xml" href="../../public/favicon.svg" />
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="index.html" class="brand">
+        <div class="brand-icon">⚡</div>
+        <span>Ownbase</span>
+        <span class="brand-badge">v0.1.0</span>
+      </a>
+
+      <button class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
+
+      <ul class="nav-links">
+        <li><a href="index.html" class="active">Home</a></li>
+        <li><a href="docs.html">Documentation</a></li>
+        <li><a href="docs.html#tailscale">Tailscale Setup</a></li>
+        <li><a href="#downloads">Downloads</a></li>
+        <li><a href="docs.html#troubleshooting">Troubleshooting</a></li>
+        <li>
+          <a href="https://github.com/rhmunna143/ownbase" class="btn btn-secondary btn-sm" target="_blank" rel="noreferrer">
+            GitHub ↗
+          </a>
+        </li>
+      </ul>
+    </div>
+  </header>
+
+  <!-- Hero Section -->
+  <main>
+    <section class="hero container">
+      <div class="hero-pill">
+        <span>🚀 Bare-Metal Native Architecture</span>
+        <span style="color: var(--border-accent);">•</span>
+        <span>Zero Docker / Zero WSL2</span>
+      </div>
+
+      <h1>Your Private Windows Cloud.<br />Bare-Metal. Self-Hosted. 24/7.</h1>
+
+      <p>
+        Ownbase turns any standard Windows 10/11 PC or laptop into a fast, private, 24/7 accessible server (VPS equivalent)
+        using 100% native Windows executables. Includes embedded PostgreSQL, Caddy reverse proxy, and secure Tailscale mobile sync.
+      </p>
+
+      <div class="hero-actions">
+        <a href="#downloads" class="btn btn-primary">Download Executables (.exe)</a>
+        <a href="docs.html" class="btn btn-secondary">Explore Documentation</a>
+        <a href="https://github.com/rhmunna143/ownbase" class="btn btn-secondary" target="_blank" rel="noreferrer">View Source Code</a>
+      </div>
+
+      <!-- App Screenshot Mockup -->
+      <div class="mockup-window">
+        <div class="mockup-bar">
+          <div class="mockup-dots">
+            <span class="dot red"></span>
+            <span class="dot yellow"></span>
+            <span class="dot green"></span>
+          </div>
+          <span class="mockup-title">Ownbase Desktop Dashboard — Overview &amp; Engine Telemetry</span>
+        </div>
+        <div class="mockup-body">
+          <div class="mockup-icon">🖥️</div>
+          <h3>Application Screenshot Showcase</h3>
+          <p>
+            Full-featured desktop dashboard with real-time service supervisor, storage allocations, PostgreSQL query browser,
+            interactive OpenAPI docs, and byte-range video streaming.
+          </p>
+          <span style="font-size: 0.8rem; color: var(--accent-cyan); margin-top: 1rem;">
+            [Interactive UI Screenshots will be showcased here]
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <!-- Key Architectural Highlights -->
+    <section class="section container">
+      <div class="section-header">
+        <div class="section-tag">Native Engineering</div>
+        <h2 class="section-title">Built for Bare-Metal Windows Performance</h2>
+        <p class="section-desc">
+          No virtual machines. No Docker Desktop licenses. Just raw Windows speed, instant boots, and minimal RAM footprint.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon">⚡</div>
+          <h3>Zero Virtualization</h3>
+          <p>
+            Executes natively on Windows 10/11. Starts in under 2 seconds and uses a fraction of the RAM required by Linux VMs or Docker containers.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📱</div>
+          <h3>Tailscale Remote Sync</h3>
+          <p>
+            Access your database, file streams, and photos from your mobile device anywhere in the world over encrypted WireGuard mesh tunnels.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📦</div>
+          <h3>Installer &amp; Portable</h3>
+          <p>
+            Choose between a Windows Service installer with desktop shortcuts and auto-firewall rules, or a standalone zero-install Portable EXE.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🐘</div>
+          <h3>Embedded PostgreSQL 16</h3>
+          <p>
+            Pre-configured relational database initialized on loopback with scram-sha-256 security, automatic Prisma migrations, and SQL viewer.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🎬</div>
+          <h3>HTTP 206 Media Streaming</h3>
+          <p>
+            Native byte-range streaming engine plays multi-gigabyte 4K/1080p MKV, MP4, and WebM videos smoothly on phones without buffering.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">📸</div>
+          <h3>Photos &amp; Memories Gallery</h3>
+          <p>
+            Chronological photo timeline, direct camera roll smartphone backups, full-screen lightbox modal, and favorite starring.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🌐</div>
+          <h3>Caddy Reverse Proxy</h3>
+          <p>
+            Dynamic zero-config routing via Caddy's REST API. Automatically binds subdomains and wildcard domains (*.nip.io) without host edits.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">🛡️</div>
+          <h3>Smart App Control Trust</h3>
+          <p>
+            Internal micro-services compiled via Microsoft's built-in csc.exe compiler, ensuring full Smart App Control compatibility.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">💤</div>
+          <h3>24/7 Power Persistence</h3>
+          <p>
+            Prevents Windows sleep and app suspension, allowing your personal server to continue running reliably with laptop lids closed.
+          </p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Downloads Section -->
+    <section id="downloads" class="section container" style="border-top: 1px solid var(--border-subtle);">
+      <div class="section-header">
+        <div class="section-tag">Release Binaries</div>
+        <h2 class="section-title">Download Ownbase for Windows</h2>
+        <p class="section-desc">
+          Packages are generated with versioned naming for transparent tracking and clean updates.
+        </p>
+      </div>
+
+      <div class="grid-2" style="max-width: 950px; margin: 0 auto;">
+        <!-- Setup Wizard -->
+        <div class="card" style="text-align: center; border-color: rgba(59, 130, 246, 0.4);">
+          <div class="card-icon" style="margin: 0 auto 1.25rem;">💿</div>
+          <h3>Windows Setup Installer</h3>
+          <p style="margin-bottom: 1.5rem;">
+            Recommended for primary machines. Installs the Ownbase Windows Service, registers startup triggers,
+            creates start menu shortcuts, and configures Windows Firewall rules.
+          </p>
+          <div class="code-box" style="margin-bottom: 1.5rem; text-align: left;">
+            <div class="code-header">
+              <span>File: Ownbase-Setup-v0.1.0.exe</span>
+              <span class="brand-badge">NSIS Installer</span>
+            </div>
+            <pre><code>Target: Windows 10 / 11 (x64)
+Architecture: Bare-Metal Native
+Service: NT SERVICE\Ownbase</code></pre>
+          </div>
+          <a href="https://github.com/rhmunna143/ownbase/releases" class="btn btn-primary" style="width: 100%; justify-content: center;">
+            Download Setup Installer (.exe)
+          </a>
+        </div>
+
+        <!-- Standalone Portable -->
+        <div class="card" style="text-align: center;">
+          <div class="card-icon" style="margin: 0 auto 1.25rem;">💼</div>
+          <h3>Standalone Portable Binary</h3>
+          <p style="margin-bottom: 1.5rem;">
+            Zero installation required. Self-contained single executable you can run from a USB flash drive or arbitrary folder
+            without administrative privileges.
+          </p>
+          <div class="code-box" style="margin-bottom: 1.5rem; text-align: left;">
+            <div class="code-header">
+              <span>File: Ownbase-Portable-v0.1.0.exe</span>
+              <span class="brand-badge">Portable</span>
+            </div>
+            <pre><code>Target: Windows 10 / 11 (x64)
+Data Directory: ./data/
+Registry: None (100% Isolated)</code></pre>
+          </div>
+          <a href="https://github.com/rhmunna143/ownbase/releases" class="btn btn-secondary" style="width: 100%; justify-content: center;">
+            Download Portable Executable (.exe)
+          </a>
+        </div>
+      </div>
+    </section>
+
+    <!-- Quick Tailscale Guide -->
+    <section class="section container" style="border-top: 1px solid var(--border-subtle);">
+      <div class="section-header">
+        <div class="section-tag">Remote Networking</div>
+        <h2 class="section-title">Mobile Access via Tailscale in 60 Seconds</h2>
+        <p class="section-desc">
+          Connect your iPhone or Android phone to your home server from coffee shops or cellular networks without public port forwarding.
+        </p>
+      </div>
+
+      <div class="grid-3">
+        <div class="card">
+          <div class="card-icon">1️⃣</div>
+          <h3>Install Tailscale</h3>
+          <p>
+            Download the Tailscale client on your Windows PC and on your smartphone. Log in with the same account to join your private mesh.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">2️⃣</div>
+          <h3>Configure Firewall</h3>
+          <p>
+            Run our single PowerShell firewall rule so Windows Defender allows incoming packets across the Tailscale interface.
+          </p>
+        </div>
+
+        <div class="card">
+          <div class="card-icon">3️⃣</div>
+          <h3>Connect from Mobile</h3>
+          <p>
+            Open your mobile browser and enter your PC's Tailscale IP (e.g. <code>http://100.85.12.34/</code>) to manage your server anywhere.
+          </p>
+        </div>
+      </div>
+
+      <div class="code-box" style="max-width: 850px; margin: 2.5rem auto 0;">
+        <div class="code-header">
+          <span>PowerShell (Administrator) — Allow Tailscale Mesh Subnet</span>
+          <button class="copy-btn">Copy</button>
+        </div>
+        <pre><code>New-NetFirewallRule -Name "Ownbase-Tailscale-Inbound" `
+    -DisplayName "Ownbase Tailscale Remote Access" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 80, 443, 3000, 3001, 8080 `
+    -RemoteAddress 100.64.0.0/10 `
+    -Action Allow `
+    -Profile Any</code></pre>
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p style="margin-bottom: 0.5rem;">
+        <strong>Ownbase</strong> — Engineered by <a href="mailto:rhmunna19@gmail.com">rhmunna143</a>. Released under the MIT License.
+      </p>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">
+        Documentation and landing website deployed via GitHub Pages.
+        <a href="https://github.com/rhmunna143/ownbase" target="_blank" rel="noreferrer" style="margin-left: 0.5rem;">GitHub Repository</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

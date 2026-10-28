@@ -41,6 +41,8 @@ if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
+call node scripts\finalize-release.js
+
 echo.
 echo ======================================================================
 echo  [SUCCESS] All distribution packages built successfully!
@@ -48,9 +50,7 @@ echo.
 echo  Output Directory:
 echo    release\
 echo.
-echo  Artifacts Created:
-echo    1. Setup Installer : Native Windows Server Hub-Setup-0.1.0.exe
-echo    2. Portable Binary : Native Windows Server Hub-Portable-0.1.0.exe
+node -e "const pkg=require('./package.json'); const p=pkg.productName||'Ownbase'; console.log(' Artifacts Created:\n   1. Setup Installer : ' + p + '-Setup-' + pkg.version + '.exe\n   2. Portable Binary : ' + p + '-Portable-' + pkg.version + '.exe');"
 echo ======================================================================
 echo.
 

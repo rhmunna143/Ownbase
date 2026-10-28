@@ -40,9 +40,15 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+node scripts/finalize-release.js
+
+$pkg = Get-Content -Raw -Path "package.json" | ConvertFrom-Json
+$ver = $pkg.version
+$pName = if ($pkg.productName) { $pkg.productName } else { "Ownbase" }
+
 Write-Host "`n======================================================================" -ForegroundColor Green
 Write-Host " [SUCCESS] Windows Setup Installer built successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host " Output File:" -ForegroundColor White
-Write-Host "   release\Ownbase-Setup-0.1.0.exe" -ForegroundColor Green
+Write-Host "   release\${pName}-Setup-${ver}.exe" -ForegroundColor Green
 Write-Host "======================================================================" -ForegroundColor Green

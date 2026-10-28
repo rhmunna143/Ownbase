@@ -96,8 +96,23 @@ if (Test-Path $winSwExe) {
     sc.exe description ownbase "Ownbase self-hosted cloud server orchestrator, reverse proxy, and storage daemon"
 }
 
-# 5. Start Service
-Write-Host "[4/4] Starting service..." -ForegroundColor Yellow
+# 5. Configure Windows Firewall
+Write-Host "[4/5] Configuring Windows Defender Firewall for LAN and Tailscale access..." -ForegroundColor Yellow
+$firewallScript = Join-Path $scriptDir "..\firewall-rules.ps1"
+if (-not (Test-Path $firewallScript)) {
+    $firewallScript = Join-Path $scriptDir "firewall-rules.ps1"
+}
+if (Test-Path $firewallScript) {
+    try {
+        & powershell.exe -ExecutionPolicy Bypass -File $firewallScript
+        Write-Host "      Firewall rules configured successfully." -ForegroundColor Green
+    } catch {
+        Write-Warning "Failed to execute firewall script: $_"
+    }
+}
+
+# 6. Start Service
+Write-Host "[5/5] Starting service..." -ForegroundColor Yellow
 try {
     Start-Service -Name "ownbase"
     Write-Host "      Ownbase service is RUNNING." -ForegroundColor Green
@@ -105,4 +120,4 @@ try {
     Write-Warning "Could not immediately start service: $_"
 }
 
-Write-Host "`nOwnbase Windows Service successfully installed!" -ForegroundColor Green
+Write-Host "`nOwnbase Windows Service successfully installed and firewall configured!" -ForegroundColor Green
