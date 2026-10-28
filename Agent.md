@@ -185,7 +185,7 @@ extraResources/bin/       <-- Native Windows binaries (caddy.exe, filebrowser.ex
   - Audit logging: Records terminal session start, stop, actor, duration, and IP address in `AuditLog`.
   - Transcript recording: Logs terminal session input and output stream to protected log (`paths.logsDir/terminal-<sessionId>.log`).
   - Session protection: Inactivity idle timeout (15 min), maximum concurrent sessions (5), window resize support.
-- **License Attribution Notices (`docs/licenses.md` and `DOCS/licenses.md`)**:
+- **License Attribution Notices (`docs/licenses.md`)**:
   - Comprehensive open-source notices covering AGPL, Apache 2.0, MIT, and BSD third-party upstream components.
 - **Verification Suite (`tests/phase6/`)**:
   - 5 test suites, 26 tests covering catalog real recipes, atomic download/install with SHA-256 verification, forward-auth, ConPTY terminal session lifecycle, and simulator purge.
