@@ -6,7 +6,7 @@ export interface TestServerInstance {
   baseUrl: string;
 }
 
-export async function createTestServer(port = 3199): Promise<TestServerInstance> {
+export async function createTestServer(port = 0): Promise<TestServerInstance> {
   const mockPostgresManager: any = {
     getStatus: () => ({ status: 'stopped', port: 5432, isListening: false }),
     isProcessRunning: () => false,
@@ -64,10 +64,11 @@ export async function createTestServer(port = 3199): Promise<TestServerInstance>
   );
 
   await server.start();
+  const actualPort = server.getPort();
 
   return {
     server,
-    port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    port: actualPort,
+    baseUrl: `http://127.0.0.1:${actualPort}`,
   };
 }

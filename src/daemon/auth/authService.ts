@@ -1,28 +1,43 @@
 import crypto from 'crypto';
-import argon2 from 'argon2';
-import * as jose from 'jose';
+import { hash as argonHash, verify as argonVerify, Algorithm as ArgonAlgorithm } from '@node-rs/argon2';
 import { PrismaManager } from '../db/prisma';
 import { secretsManager } from '../core/secrets';
 import { Role, AuthenticatedUser } from '../../shared/contract/types';
 import { logger } from '../core/logger';
 
+function base64UrlEncode(str: string): string {
+  return Buffer.from(str)
+    .toString('base64')
+    .replace(/=/g, '')
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_');
+}
+
+function base64UrlDecode(str: string): string {
+  let s = str.replace(/-/g, '+').replace(/_/g, '/');
+  while (s.length % 4) {
+    s += '=';
+  }
+  return Buffer.from(s, 'base64').toString('utf8');
+}
+
 export class AuthService {
   private prismaManager: PrismaManager;
-  private jwtSecret: Uint8Array;
+  private jwtSecret: Buffer;
 
   constructor(prismaManager: PrismaManager) {
     this.prismaManager = prismaManager;
     // Derive a dedicated JWT signing secret from master data key
     const rawKey = secretsManager.getOrCreateDataKey();
-    this.jwtSecret = new Uint8Array(crypto.createHmac('sha256', rawKey).update('ownbase_jwt_signing_key_v1').digest());
+    this.jwtSecret = crypto.createHmac('sha256', rawKey).update('ownbase_jwt_signing_key_v1').digest();
   }
 
   /**
    * Hashes a password with Argon2id using recommended parameters (m=64MB, t=3, p=1).
    */
   public async hashPassword(password: string): Promise<string> {
-    return await argon2.hash(password, {
-      type: argon2.argon2id,
+    return await argonHash(password, {
+      algorithm: ArgonAlgorithm.Argon2id,
       memoryCost: 65536, // 64 MiB
       timeCost: 3,
       parallelism: 1,
@@ -34,34 +49,73 @@ export class AuthService {
    */
   public async verifyPassword(hash: string, plain: string): Promise<boolean> {
     try {
-      return await argon2.verify(hash, plain);
+      return await argonVerify(hash, plain);
     } catch {
       return false;
     }
   }
 
   /**
-   * Generates a 15-minute access JWT token.
+   * Generates a 15-minute access JWT token using native HS256 HMAC.
    */
   public async generateAccessToken(user: { id: string; username: string; role: Role }): Promise<string> {
-    return await new jose.SignJWT({
+    const header = { alg: 'HS256', typ: 'JWT' };
+    const now = Math.floor(Date.now() / 1000);
+    const payload = {
       sub: user.id,
       username: user.username,
       role: user.role,
-    })
-      .setProtectedHeader({ alg: 'HS256', typ: 'JWT' })
-      .setIssuedAt()
-      .setExpirationTime('15m')
-      .sign(this.jwtSecret);
+      iat: now,
+      exp: now + 15 * 60, // 15 minutes
+    };
+
+    const encodedHeader = base64UrlEncode(JSON.stringify(header));
+    const encodedPayload = base64UrlEncode(JSON.stringify(payload));
+    const signatureInput = `${encodedHeader}.${encodedPayload}`;
+
+    const signature = crypto
+      .createHmac('sha256', this.jwtSecret)
+      .update(signatureInput)
+      .digest('base64')
+      .replace(/=/g, '')
+      .replace(/\+/g, '-')
+      .replace(/\//g, '_');
+
+    return `${signatureInput}.${signature}`;
   }
 
   /**
-   * Verifies and decodes an access JWT token.
+   * Verifies and decodes an access JWT token using native HS256 HMAC with timingSafeEqual.
    */
   public async verifyAccessToken(token: string): Promise<AuthenticatedUser | null> {
     try {
-      const { payload } = await jose.jwtVerify(token, this.jwtSecret);
+      if (!token || typeof token !== 'string') return null;
+      const parts = token.split('.');
+      if (parts.length !== 3) return null;
+
+      const [encodedHeader, encodedPayload, signature] = parts;
+      const signatureInput = `${encodedHeader}.${encodedPayload}`;
+
+      const expectedSignature = crypto
+        .createHmac('sha256', this.jwtSecret)
+        .update(signatureInput)
+        .digest('base64')
+        .replace(/=/g, '')
+        .replace(/\+/g, '-')
+        .replace(/\//g, '_');
+
+      if (signature.length !== expectedSignature.length) return null;
+      const sigBuf = Buffer.from(signature);
+      const expBuf = Buffer.from(expectedSignature);
+      if (!crypto.timingSafeEqual(sigBuf, expBuf)) return null;
+
+      const payload = JSON.parse(base64UrlDecode(encodedPayload));
+      const now = Math.floor(Date.now() / 1000);
+      if (payload.exp && payload.exp < now) {
+        return null; // Expired
+      }
       if (!payload.sub || !payload.role) return null;
+
       return {
         id: payload.sub as string,
         username: (payload.username as string) || 'unknown',

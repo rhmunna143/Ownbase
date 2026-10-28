@@ -2,7 +2,6 @@ import http from 'http';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import cookie from 'cookie';
 import { paths } from '../core/paths';
 import { configManager } from '../core/config';
 import { logger } from '../core/logger';
@@ -179,7 +178,7 @@ export class WebApiServer {
 
   public start(): Promise<boolean> {
     return new Promise((resolve) => {
-      this.server = http.createServer(async (req, res) => {
+      const requestListener = async (req: http.IncomingMessage, res: http.ServerResponse) => {
         // HTTP Hardening & Security Headers (PRD Item 1.12)
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('X-Frame-Options', 'DENY');
@@ -2369,28 +2368,63 @@ export class WebApiServer {
             message: safeMessage,
           }, err.statusCode || 500);
         }
-      });
+      };
 
-      // WebSocket HTTP Upgrade handler for Audited ConPTY Web Terminal (PRD §6.5 & A4)
-      this.server.on('upgrade', (req, socket, head) => {
-        const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
-        if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
-          this.terminalWsBridge.handleUpgrade(req, socket, head);
-        } else {
-          socket.destroy();
-        }
-      });
+      const candidatePorts = Array.from(
+        new Set([
+          Number(process.env.OWNBASE_PORT || process.env.DAEMON_PORT || this.port),
+          this.port,
+          3400,
+          3500,
+          3600,
+          3700,
+          3800,
+        ])
+      );
 
-      // Decision D3: Daemon binds strictly to loopback 127.0.0.1!
-      this.server.listen(this.port, '127.0.0.1', () => {
-        logger.success('web-api', `Ownbase Daemon Web API listening on http://127.0.0.1:${this.port} (loopback only)`);
-        resolve(true);
-      });
+      let portIndex = 0;
 
-      this.server.on('error', (err) => {
-        logger.error('web-api', `Web API server error: ${err.message}`);
-        resolve(false);
-      });
+      const tryListen = (port: number) => {
+        const server = http.createServer(requestListener);
+        this.server = server;
+
+        server.on('upgrade', (req, socket, head) => {
+          const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+          if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
+            this.terminalWsBridge.handleUpgrade(req, socket, head);
+          } else {
+            socket.destroy();
+          }
+        });
+
+        server.once('error', (err: any) => {
+          try { server.close(); } catch {}
+          if ((err.code === 'EACCES' || err.code === 'EADDRINUSE') && portIndex + 1 < candidatePorts.length) {
+            logger.warn(
+              'web-api',
+              `Port ${port} unavailable (${err.code}). Trying fallback port ${candidatePorts[portIndex + 1]}...`
+            );
+            portIndex++;
+            tryListen(candidatePorts[portIndex]);
+            return;
+          }
+          logger.error('web-api', `Web API server error: ${err.message}`);
+          resolve(false);
+        });
+
+        // Decision D3: Daemon binds strictly to loopback 127.0.0.1!
+        server.listen(port, '127.0.0.1', () => {
+          this.port = port;
+          try {
+            fs.mkdirSync(paths.dataDir, { recursive: true });
+            fs.writeFileSync(path.join(paths.dataDir, 'daemon.port'), String(port), 'utf-8');
+          } catch {}
+          logger.success('web-api', `Ownbase Daemon Web API listening on http://127.0.0.1:${this.port} (loopback only)`);
+          resolve(true);
+        });
+      };
+
+      tryListen(candidatePorts[portIndex]);
     });
   }
 
@@ -2468,11 +2502,24 @@ export class WebApiServer {
   }
 
   private async serveStaticFile(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<boolean> {
+    const resPath =
+      process.env.RESOURCES_PATH ||
+      (process as any).resourcesPath ||
+      path.join(path.dirname(process.execPath), 'resources') ||
+      '';
+
     const candidateDirs = [
-      path.join(process.cwd(), 'out'),
+      resPath ? path.join(resPath, 'out') : '',
+      resPath ? path.join(resPath, 'app.asar.unpacked', 'out') : '',
+      path.join(path.dirname(process.execPath), 'resources', 'out'),
+      path.join(path.dirname(process.execPath), 'resources', 'app.asar.unpacked', 'out'),
+      path.join(path.dirname(process.execPath), 'out'),
+      process.env.PORTABLE_EXECUTABLE_DIR ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'out') : '',
+      path.join(__dirname, '..', '..', '..', '..', 'out'),
       path.join(__dirname, '..', '..', '..', 'out'),
       path.join(__dirname, '..', '..', 'out'),
-    ];
+      path.join(process.cwd(), 'out'),
+    ].filter(Boolean);
 
     let outDir: string | null = null;
     for (const d of candidateDirs) {

@@ -92,6 +92,24 @@ export class SetupService {
       const passwordHash = await this.authService.hashPassword(params.password);
       const client = this.prismaManager.getClient();
 
+      // Safety check: verify public.users table exists in current database, auto-deploy migrations if needed
+      try {
+        const tableCheck = await client.$queryRawUnsafe<{ exists: boolean }[]>(`
+          SELECT EXISTS (
+            SELECT FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+            AND table_name = 'users'
+          ) as exists;
+        `);
+        if (!tableCheck[0]?.exists) {
+          logger.warn('setup', 'Table public.users missing during initial setup! Auto-deploying migrations now...');
+          await this.prismaManager.runMigrations();
+        }
+      } catch (checkErr: any) {
+        logger.warn('setup', `Pre-setup table check notice: ${checkErr.message}. Attempting migration run...`);
+        await this.prismaManager.runMigrations();
+      }
+
       const user = await (client as any).user.create({
         data: {
           username: params.username,

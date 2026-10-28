@@ -13,6 +13,11 @@ export class CaddyManager {
   private prismaManager: PrismaManager;
   private lastConfigHash: string = '';
   private autosavePath: string;
+  private daemonPort: number = 3001;
+
+  public setDaemonPort(port: number) {
+    this.daemonPort = port;
+  }
 
   constructor(prismaManager: PrismaManager, adminUrl = 'http://127.0.0.1:2019') {
     this.prismaManager = prismaManager;
@@ -119,7 +124,7 @@ export class CaddyManager {
       const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
       allRoutes.push({
         subdomain: 'photos',
-        targetPort: isDev ? 3000 : 3001,
+        targetPort: isDev ? 3000 : this.daemonPort,
         targetHost: '127.0.0.1',
         exposeLocal: true,
         exposeLan: true,
@@ -194,7 +199,7 @@ export class CaddyManager {
               handle: [
                 {
                   handler: 'reverse_proxy',
-                  upstreams: [{ dial: '127.0.0.1:3001' }],
+                  upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
                   rewrite: {
                     method: 'GET',
                     uri: '/api/v1/auth/verify',
@@ -295,7 +300,7 @@ export class CaddyManager {
       handle: [
         {
           handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
+          upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
         },
       ],
     });
@@ -307,7 +312,7 @@ export class CaddyManager {
       handle: [
         {
           handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
+          upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
         },
       ],
     });

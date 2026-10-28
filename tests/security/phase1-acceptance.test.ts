@@ -9,7 +9,7 @@ describe('Phase 1 Acceptance Criteria (A1 - A7)', () => {
   let testServer: TestServerInstance;
 
   beforeAll(async () => {
-    testServer = await createTestServer(3105);
+    testServer = await createTestServer(0);
   });
 
   afterAll(async () => {

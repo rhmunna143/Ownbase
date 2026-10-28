@@ -85,7 +85,7 @@ describe('Phase 7 - Item 7.1: Full End-to-End Product Regression Flow (PRD §7.1
       const req = http.request(
         {
           hostname: '127.0.0.1',
-          port: testPort,
+          port: server.getPort(),
           path,
           method,
           headers: {

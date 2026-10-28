@@ -33,6 +33,7 @@ describe('Phase 5 - Item 5.7 & 5.14: Ingress & Storage REST API Gateway', () => 
 
     const started = await server.start();
     expect(started).toBe(true);
+    testPort = server.getPort();
 
     // Create an admin user token for test requests
     const authService = new AuthService(prismaManager);

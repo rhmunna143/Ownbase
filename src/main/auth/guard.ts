@@ -1,6 +1,5 @@
 import http from 'http';
 import crypto from 'crypto';
-import cookie from 'cookie';
 import { AuthService } from './authService';
 import { Role, AuthenticatedUser, hasRequiredRole, RouteDefinition } from '../../shared/contract/types';
 

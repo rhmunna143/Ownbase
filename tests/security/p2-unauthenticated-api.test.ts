@@ -14,7 +14,7 @@ describe('P2: Unauthenticated API Access Control', () => {
   let testServer: TestServerInstance;
 
   beforeAll(async () => {
-    testServer = await createTestServer(3102);
+    testServer = await createTestServer(0);
   });
 
   afterAll(async () => {

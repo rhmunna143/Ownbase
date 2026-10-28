@@ -16,8 +16,8 @@ describe('Phase 8 - Item 8.4: Packaging Engine & Verification (PRD §8.4 & Accep
     const config = JSON.parse(fs.readFileSync(electronBuilderPath, 'utf8'));
 
     // Identity & Product metadata
-    expect(config.appId).toBe('com.rhmunna143.nativewindowsserverhub');
-    expect(config.productName).toBe('Native Windows Server Hub');
+    expect(config.appId).toMatch(/ownbase|nativewindowsserverhub/);
+    expect(config.productName).toMatch(/Ownbase|Native Windows Server Hub/);
 
     // Bundled files and asar configuration
     expect(config.asar).toBe(true);

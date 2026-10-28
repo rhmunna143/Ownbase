@@ -7,6 +7,7 @@ export interface ThinClientAPI {
   close: () => void;
   openExternal: (url: string) => void;
   startService: () => Promise<{ success: boolean; error?: string }>;
+  retryConnection: () => Promise<{ success: boolean; error?: string }>;
 }
 
 const thinClientApi: ThinClientAPI = {
@@ -16,6 +17,7 @@ const thinClientApi: ThinClientAPI = {
   close: () => ipcRenderer.send('window:close'),
   openExternal: (url: string) => ipcRenderer.send('shell:open-external', url),
   startService: () => ipcRenderer.invoke('service:start'),
+  retryConnection: () => ipcRenderer.invoke('connection:retry'),
 };
 
 contextBridge.exposeInMainWorld('thinClientAPI', thinClientApi);

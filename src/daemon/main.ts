@@ -64,7 +64,10 @@ export async function bootstrapDaemon(): Promise<{
   );
 
   await webApiServer.start();
-  updateStep('gateway-early', 'success', `Listening on 127.0.0.1:${config.ports.daemon}`);
+  const actualPort = webApiServer.getPort();
+  config.ports.daemon = actualPort;
+  caddyManager.setDaemonPort(actualPort);
+  updateStep('gateway-early', 'success', `Listening on 127.0.0.1:${actualPort}`);
 
   // 3. PostgreSQL Database
   updateStep('postgres-init', 'running');
@@ -153,7 +156,7 @@ export async function bootstrapDaemon(): Promise<{
   powerManager.enablePowerPersistence();
   updateStep('power-persistence', 'success', 'SetThreadExecutionState persistence active');
 
-  logger.success('daemon', `Ownbase Headless Daemon fully initialized on http://127.0.0.1:${config.ports.daemon}`);
+  logger.success('daemon', `Ownbase Headless Daemon fully initialized on http://127.0.0.1:${webApiServer.getPort()}`);
 
   // Graceful shutdown hooks
   const shutdown = async (signal: string) => {

@@ -2,24 +2,39 @@ import { app, BrowserWindow, Tray, Menu, shell, ipcMain } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { exec } from 'child_process';
-import { isDaemonRunning, ensurePortableDaemon } from './portable';
+import {
+  isDaemonRunning,
+  ensurePortableDaemon,
+  getActiveDaemonPort,
+  findRunningDaemonPort,
+  getDaemonLastError,
+  stopPortableDaemon,
+} from './portable';
 
 let mainWindow: BrowserWindow | null = null;
 let tray: Tray | null = null;
 let isQuittingViewer = false;
 
-const DAEMON_PORT = 3001;
-const DAEMON_URL = `http://127.0.0.1:${DAEMON_PORT}`;
+function getDaemonPort(): number {
+  return getActiveDaemonPort();
+}
+
+function getDaemonUrl(): string {
+  return `http://127.0.0.1:${getActiveDaemonPort()}`;
+}
 
 function getAppIcon(): string | undefined {
+  const resPath = (process as any).resourcesPath || '';
   const candidatePaths = [
+    resPath ? path.join(resPath, 'assets', 'icon.ico') : '',
+    resPath ? path.join(resPath, 'assets', 'icon.png') : '',
     path.join(process.cwd(), 'assets', 'icon.ico'),
     path.join(__dirname, '..', '..', 'assets', 'icon.ico'),
     path.join(__dirname, '..', '..', '..', 'assets', 'icon.ico'),
     path.join(process.cwd(), 'assets', 'icon.png'),
     path.join(__dirname, '..', '..', 'assets', 'icon.png'),
     path.join(__dirname, '..', '..', '..', 'assets', 'icon.png'),
-  ];
+  ].filter(Boolean);
   for (const p of candidatePaths) {
     if (fs.existsSync(p)) return p;
   }
@@ -44,6 +59,7 @@ function createFallbackHtml(): string {
       justify-content: center;
       height: 100vh;
       text-align: center;
+      user-select: none;
     }
     .card {
       background: #111827;
@@ -75,16 +91,29 @@ function createFallbackHtml(): string {
       font-size: 14px;
       font-weight: 500;
       cursor: pointer;
-      transition: background 0.2s;
+      transition: background 0.2s, opacity 0.2s;
       margin: 6px;
     }
-    button:hover { background: #2563eb; }
+    button:hover:not(:disabled) { background: #2563eb; }
+    button:disabled { opacity: 0.6; cursor: not-allowed; }
     button.secondary {
       background: #1e293b;
       color: #cbd5e1;
       border: 1px solid #334155;
     }
-    button.secondary:hover { background: #334155; }
+    button.secondary:hover:not(:disabled) { background: #334155; }
+    .status-msg {
+      margin-top: 20px;
+      padding: 10px 14px;
+      border-radius: 8px;
+      font-size: 13px;
+      line-height: 1.4;
+      display: none;
+      text-align: left;
+    }
+    .status-info { background: rgba(59, 130, 246, 0.15); color: #93c5fd; border: 1px solid rgba(59, 130, 246, 0.3); }
+    .status-error { background: rgba(239, 68, 68, 0.15); color: #fca5a5; border: 1px solid rgba(239, 68, 68, 0.3); }
+    .status-success { background: rgba(34, 197, 94, 0.15); color: #86efac; border: 1px solid rgba(34, 197, 94, 0.3); }
   </style>
 </head>
 <body>
@@ -93,16 +122,83 @@ function createFallbackHtml(): string {
     <h1>Ownbase Server is Offline</h1>
     <p>The headless background daemon is not running. Start the service or launch in portable mode to access your self-hosted cloud.</p>
     <div>
-      <button onclick="startService()">Start Ownbase Service</button>
-      <button class="secondary" onclick="window.location.reload()">Retry Connection</button>
+      <button id="btn-start" onclick="startService()">Start Ownbase Service</button>
+      <button id="btn-retry" class="secondary" onclick="retryConnection()">Retry Connection</button>
     </div>
+    <div id="status-msg" class="status-msg"></div>
   </div>
   <script>
-    function startService() {
+    async function startService() {
+      const btnStart = document.getElementById('btn-start');
+      const btnRetry = document.getElementById('btn-retry');
+      const statusMsg = document.getElementById('status-msg');
+
+      btnStart.disabled = true;
+      btnRetry.disabled = true;
+      btnStart.innerText = 'Starting Service...';
+      statusMsg.style.display = 'block';
+      statusMsg.className = 'status-msg status-info';
+      statusMsg.innerText = 'Attempting to start background service or portable daemon...';
+
       if (window.thinClientAPI && window.thinClientAPI.startService) {
-        window.thinClientAPI.startService().then(res => {
-          setTimeout(() => window.location.reload(), 2000);
-        });
+        try {
+          const res = await window.thinClientAPI.startService();
+          if (res && res.success) {
+            statusMsg.className = 'status-msg status-success';
+            statusMsg.innerText = 'Service started successfully! Connecting to dashboard...';
+          } else {
+            statusMsg.className = 'status-msg status-error';
+            statusMsg.innerText = res && res.error ? 'Start failed: ' + res.error : 'Could not start service. Check permissions or run as administrator.';
+            btnStart.disabled = false;
+            btnRetry.disabled = false;
+            btnStart.innerText = 'Start Ownbase Service';
+          }
+        } catch (err) {
+          statusMsg.className = 'status-msg status-error';
+          statusMsg.innerText = 'Error: ' + (err.message || 'Unknown error');
+          btnStart.disabled = false;
+          btnRetry.disabled = false;
+          btnStart.innerText = 'Start Ownbase Service';
+        }
+      } else {
+        window.location.href = 'http://127.0.0.1:${getDaemonPort()}';
+      }
+    }
+
+    async function retryConnection() {
+      const btnStart = document.getElementById('btn-start');
+      const btnRetry = document.getElementById('btn-retry');
+      const statusMsg = document.getElementById('status-msg');
+
+      btnStart.disabled = true;
+      btnRetry.disabled = true;
+      btnRetry.innerText = 'Connecting...';
+      statusMsg.style.display = 'block';
+      statusMsg.className = 'status-msg status-info';
+      statusMsg.innerText = 'Testing connection to http://127.0.0.1:${getDaemonPort()}...';
+
+      if (window.thinClientAPI && window.thinClientAPI.retryConnection) {
+        try {
+          const res = await window.thinClientAPI.retryConnection();
+          if (res && res.success) {
+            statusMsg.className = 'status-msg status-success';
+            statusMsg.innerText = 'Connection established! Loading dashboard...';
+          } else {
+            statusMsg.className = 'status-msg status-error';
+            statusMsg.innerText = res && res.error ? res.error : 'Server is still offline on 127.0.0.1:${getDaemonPort()}. Click "Start Ownbase Service" to start it.';
+            btnStart.disabled = false;
+            btnRetry.disabled = false;
+            btnRetry.innerText = 'Retry Connection';
+          }
+        } catch (err) {
+          statusMsg.className = 'status-msg status-error';
+          statusMsg.innerText = 'Error: ' + (err.message || 'Unknown error');
+          btnStart.disabled = false;
+          btnRetry.disabled = false;
+          btnRetry.innerText = 'Retry Connection';
+        }
+      } else {
+        window.location.href = 'http://127.0.0.1:${getDaemonPort()}';
       }
     }
   </script>
@@ -136,12 +232,21 @@ async function createWindow() {
     } catch {}
   }
 
-  // Intercept window close (Item 2.10 / Defect P1):
-  // Closing window hides or closes the client, leaving daemon 100% active in background!
   mainWindow.on('close', (event) => {
     if (!isQuittingViewer) {
-      event.preventDefault();
-      mainWindow?.hide();
+      const isPortable =
+        process.argv.includes('--portable') ||
+        !!process.env.PORTABLE_EXECUTABLE_DIR;
+      if (isPortable) {
+        // Portable mode: closing the window terminates the portable session cleanly
+        isQuittingViewer = true;
+        stopPortableDaemon();
+        app.quit();
+      } else {
+        // Installed mode: hide window to system tray, background service continues
+        event.preventDefault();
+        mainWindow?.hide();
+      }
     }
   });
 
@@ -158,13 +263,13 @@ async function loadDashboard() {
   const isDev = process.argv.includes('--dev') || !app.isPackaged;
 
   if (isPortable || isDev) {
-    await ensurePortableDaemon(DAEMON_PORT);
+    await ensurePortableDaemon();
   }
 
-  const running = await isDaemonRunning(DAEMON_PORT);
-  if (running) {
+  const runningPort = await findRunningDaemonPort();
+  if (runningPort) {
     try {
-      await mainWindow.loadURL(DAEMON_URL);
+      await mainWindow.loadURL(getDaemonUrl());
     } catch {
       await mainWindow.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(createFallbackHtml())}`);
     }
@@ -196,7 +301,7 @@ function createTray() {
       {
         label: 'Open in Browser',
         click: () => {
-          shell.openExternal(DAEMON_URL);
+          shell.openExternal(getDaemonUrl());
         },
       },
       { type: 'separator' },
@@ -205,6 +310,15 @@ function createTray() {
         sublabel: '(Server continues running)',
         click: () => {
           isQuittingViewer = true;
+          app.quit();
+        },
+      },
+      {
+        label: 'Stop Server & Exit All',
+        sublabel: '(Terminates daemon and viewer)',
+        click: () => {
+          isQuittingViewer = true;
+          stopPortableDaemon();
           app.quit();
         },
       },
@@ -236,7 +350,9 @@ ipcMain.on('window:maximize', () => {
 });
 
 ipcMain.on('window:close', () => {
-  mainWindow?.hide();
+  if (mainWindow) {
+    mainWindow.close();
+  }
 });
 
 ipcMain.on('shell:open-external', (_event, url: string) => {
@@ -254,49 +370,109 @@ ipcMain.handle('service:start', async () => {
         // Service exists: start via UAC
         exec('powershell.exe -Command "Start-Process cmd -ArgumentList \'/c net start ownbase\' -Verb runAs -Wait"', (startErr) => {
           if (startErr) {
-            ensurePortableDaemon(DAEMON_PORT)
-              .then((started) => resolve({ success: started }))
+            ensurePortableDaemon()
+              .then(async (started) => {
+                if (started && mainWindow) {
+                  await mainWindow.loadURL(getDaemonUrl()).catch(() => {});
+                }
+                const errorMsg = started ? undefined : (getDaemonLastError() || 'Failed to start daemon fallback');
+                resolve({ success: started, error: errorMsg });
+              })
               .catch((e) => resolve({ success: false, error: e.message }));
           } else {
-            resolve({ success: true });
+            findRunningDaemonPort().then(async (port) => {
+              if (port && mainWindow) {
+                await mainWindow.loadURL(getDaemonUrl()).catch(() => {});
+              }
+              resolve({ success: !!port, error: port ? undefined : 'Service started but daemon port not ready' });
+            });
           }
         });
       } else {
         // Service not installed on this system (e.g. dev machine or portable): launch standalone daemon
-        ensurePortableDaemon(DAEMON_PORT)
-          .then((started) => resolve({ success: started }))
+        ensurePortableDaemon()
+          .then(async (started) => {
+            if (started && mainWindow) {
+              await mainWindow.loadURL(getDaemonUrl()).catch(() => {});
+            }
+            const errorMsg = started ? undefined : (getDaemonLastError() || 'Failed to launch standalone daemon process');
+            resolve({ success: started, error: errorMsg });
+          })
           .catch((e) => resolve({ success: false, error: e.message }));
       }
     });
   });
 });
 
-app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.rhmunna143.ownbase');
-  }
-
-  createTray();
-  await createWindow();
-
-  app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) {
-      createWindow();
-    } else if (mainWindow) {
-      mainWindow.show();
-      mainWindow.focus();
+ipcMain.handle('connection:retry', async () => {
+  const runningPort = await findRunningDaemonPort();
+  if (runningPort) {
+    if (mainWindow) {
+      try {
+        await mainWindow.loadURL(getDaemonUrl());
+        return { success: true };
+      } catch (err: any) {
+        return { success: false, error: err.message };
+      }
     }
-  });
+    return { success: true };
+  } else {
+    // If portable or dev, attempt auto-starting daemon on retry
+    const isPortable = process.argv.includes('--portable') || !!process.env.PORTABLE_EXECUTABLE_DIR;
+    const isDev = process.argv.includes('--dev') || !app.isPackaged;
+    if (isPortable || isDev) {
+      const started = await ensurePortableDaemon();
+      if (started && mainWindow) {
+        await mainWindow.loadURL(getDaemonUrl()).catch(() => {});
+        return { success: true };
+      }
+    }
+    const lastErr = getDaemonLastError();
+    return { success: false, error: lastErr || `Server daemon is offline on 127.0.0.1:${getDaemonPort()}` };
+  }
 });
 
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      if (!mainWindow.isVisible()) mainWindow.show();
+      mainWindow.focus();
+      mainWindow.moveTop();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.rhmunna143.ownbase');
+    }
+
+    createTray();
+    await createWindow();
+
+    app.on('activate', () => {
+      if (BrowserWindow.getAllWindows().length === 0) {
+        createWindow();
+      } else if (mainWindow) {
+        mainWindow.show();
+        mainWindow.focus();
+      }
+    });
+  });
+}
+
 app.on('window-all-closed', () => {
-  // Do not quit when windows close unless explicit quit
-  if (process.platform !== 'win32' && isQuittingViewer) {
+  const isPortable = process.argv.includes('--portable') || !!process.env.PORTABLE_EXECUTABLE_DIR;
+  if (isPortable || isQuittingViewer || process.platform !== 'win32') {
+    stopPortableDaemon();
     app.quit();
   }
 });
 
-// Notice: Closing Electron thin client does NOT terminate background daemon or database (P1 closed)
 app.on('before-quit', () => {
   isQuittingViewer = true;
+  stopPortableDaemon();
 });

@@ -2,7 +2,6 @@ import http from 'http';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import cookie from 'cookie';
 import { app } from 'electron';
 import { PostgresManager } from './postgres';
 import { PrismaManager } from './prisma';
@@ -1383,8 +1382,12 @@ export class WebApiServer {
         }
       });
 
-      this.server.listen(this.port, '0.0.0.0', () => {
-        logger.success('web-api', `Ownbase Web API listening on http://0.0.0.0:${this.port}`);
+      this.server.listen(this.port, '127.0.0.1', () => {
+        const addr = this.server?.address();
+        if (addr && typeof addr === 'object') {
+          this.port = addr.port;
+        }
+        logger.success('web-api', `Ownbase Web API listening on http://127.0.0.1:${this.port}`);
         resolve(true);
       });
 
@@ -1469,11 +1472,24 @@ export class WebApiServer {
   }
 
   private async serveStaticFile(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<boolean> {
+    const resPath =
+      process.env.RESOURCES_PATH ||
+      (process as any).resourcesPath ||
+      path.join(path.dirname(process.execPath), 'resources') ||
+      '';
+
     const candidateDirs = [
+      resPath ? path.join(resPath, 'out') : '',
+      resPath ? path.join(resPath, 'app.asar.unpacked', 'out') : '',
+      path.join(path.dirname(process.execPath), 'resources', 'out'),
+      path.join(path.dirname(process.execPath), 'resources', 'app.asar.unpacked', 'out'),
+      path.join(path.dirname(process.execPath), 'out'),
+      process.env.PORTABLE_EXECUTABLE_DIR ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'out') : '',
       path.join(process.cwd(), 'out'),
       path.join(__dirname, '..', '..', 'out'),
       path.join(__dirname, '..', '..', '..', 'out'),
-    ];
+      path.join(__dirname, '..', '..', '..', '..', 'out'),
+    ].filter(Boolean);
 
     try {
       if (app && typeof app.getAppPath === 'function') {

@@ -14,7 +14,7 @@ describe('P3: Raw SQL Execution Endpoint Removal', () => {
   let testServer: TestServerInstance;
 
   beforeAll(async () => {
-    testServer = await createTestServer(3103);
+    testServer = await createTestServer(0);
   });
 
   afterAll(async () => {

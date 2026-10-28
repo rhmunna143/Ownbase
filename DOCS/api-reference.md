@@ -3,7 +3,7 @@
 **Document Version:** 1.0.0  
 **OpenAPI Specification:** 3.0.3  
 **Base URL:** `http://127.0.0.1:3001` (Direct Gateway) or `http://localhost` (Caddy Ingress Port 80)  
-**Total Endpoints:** 100
+**Total Endpoints:** 104
 
 ---
 
@@ -40,13 +40,13 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | **Backups & Disaster Recovery** | 4 | Authenticated (Bearer / API Key) |
 | **Database Table Browser** | 2 | Authenticated (Bearer / API Key) |
 | **Edge Gateway & Reverse Proxy** | 6 | Authenticated (Bearer / API Key) |
-| **General** | 21 | Mixed (Public / Authenticated) |
+| **General** | 23 | Mixed (Public / Authenticated) |
 | **Lifecycle & Power Management** | 3 | Authenticated (Bearer / API Key) |
 | **Observability & Alerting** | 4 | Authenticated (Bearer / API Key) |
-| **Photos & Media Indexer** | 4 | Authenticated (Bearer / API Key) |
+| **Photos & Media Indexer** | 4 | Mixed (Public / Authenticated) |
 | **Process Supervisor & App Catalog** | 11 | Authenticated (Bearer / API Key) |
 | **Security Audit Stream** | 1 | Authenticated (Bearer / API Key) |
-| **Storage Volumes & Contained File Streaming** | 14 | Authenticated (Bearer / API Key) |
+| **Storage Volumes & Contained File Streaming** | 16 | Authenticated (Bearer / API Key) |
 | **System & Health Telemetry** | 12 | Mixed (Public / Authenticated) |
 | **Tailscale Mesh Networking** | 3 | Authenticated (Bearer / API Key) |
 
@@ -118,6 +118,8 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | `GET` | `/api/v1/postgres-status` | `READ_ONLY` | — | Query PostgreSQL native engine process and port status |
 | `GET` | `/api/v1/migration-status` | `READ_ONLY` | — | Query Prisma migration status and schema health |
 | `GET` | `/api/v1/logs` | `READ_ONLY` | — | Retrieve global system logs |
+| `GET` | `/api/v1/binaries/list` | `READ_ONLY` | — | List available template executable binaries (.exe) |
+| `GET` | `/api/v1/binaries/download` | `READ_ONLY` | — | Download template binary (.exe) file directly |
 | `GET` | `/api/v1/openapi.json` | `Public` | — | OpenAPI 3.0 specification auto-generated from route table |
 | `GET` | `/api/v1/docs/endpoints` | `Public` | — | Summary catalogue of all registered system endpoints |
 | `GET` | `/api/v1/apps` | `READ_ONLY` | — | List deployed applications |
@@ -159,7 +161,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | Method | Path | Min Role | Audited | Summary |
 | :--- | :--- | :--- | :---: | :--- |
 | `GET` | `/api/v1/photos/timeline` | `READ_ONLY` | — | Fetch photos media timeline |
-| `GET` | `/api/v1/photos/media` | `READ_ONLY` | — | Stream photo or video preview media |
+| `GET` | `/api/v1/photos/media` | `Public` | — | Stream photo or video preview media |
 | `POST` | `/api/v1/photos/favorites` | `READ_ONLY` | — | Toggle photo favorite flag |
 | `POST` | `/api/v1/photos/favorite` | `READ_ONLY` | — | Toggle photo favorite flag (alias) |
 
@@ -195,6 +197,8 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | `POST` | `/api/v1/files/upload` | `OPERATOR` | ✅ Yes | Upload a file to storage |
 | `POST` | `/api/v1/files/mkdir` | `OPERATOR` | ✅ Yes | Create a new folder in storage |
 | `POST` | `/api/v1/files/rename` | `OPERATOR` | ✅ Yes | Rename a file or folder in storage |
+| `POST` | `/api/v1/files/copy` | `OPERATOR` | ✅ Yes | Copy a file or directory in storage |
+| `POST` | `/api/v1/files/move` | `OPERATOR` | ✅ Yes | Move or rename/cut-paste a file or directory in storage |
 | `DELETE` | `/api/v1/files/delete` | `ADMIN` | ✅ Yes | Delete a file or folder from storage |
 | `POST` | `/api/v1/files/delete` | `ADMIN` | ✅ Yes | Delete a file or folder from storage (POST alternative) |
 | `GET` | `/api/v1/files/stream` | `READ_ONLY` | — | Stream video/audio with HTTP 206 Byte-Range support |
