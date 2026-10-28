@@ -129,7 +129,7 @@ GET /api/v1/openapi.json
 
 if (require.main === module) {
   const docs = generateApiMarkdownDocs();
-  const outputPath = path.join(__dirname, '..', 'DOCS', 'API_DOCUMENTATION.md');
+  const outputPath = path.join(__dirname, '..', 'docs', 'API_DOCUMENTATION.md');
   const lowercaseOutputPath = path.join(__dirname, '..', 'docs', 'api-reference.md');
 
   fs.writeFileSync(outputPath, docs, 'utf8');

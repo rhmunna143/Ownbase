@@ -7,7 +7,7 @@ import { generateApiMarkdownDocs } from '../../scripts/generate-api-docs';
 
 describe('Phase 8 - Item 8.5: API Reference & Contract Synchronization (FR14 & PRD §8.5)', () => {
   const rootDir = path.resolve(__dirname, '../..');
-  const apiDocPath = path.join(rootDir, 'DOCS', 'API_DOCUMENTATION.md');
+  const apiDocPath = path.join(rootDir, 'docs', 'API_DOCUMENTATION.md');
   const apiRefPath = path.join(rootDir, 'docs', 'api-reference.md');
 
   it('generates OpenAPI 3.0.3 specification covering 100% of defined routes', () => {
