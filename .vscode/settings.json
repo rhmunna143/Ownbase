@@ -1,0 +1,29 @@
+{
+  "files.watcherExclude": {
+    "**/.git/objects/**": true,
+    "**/.git/subtree-cache/**": true,
+    "**/node_modules/**": true,
+    "**/dist/**": true,
+    "**/.next/**": true,
+    "**/out/**": true,
+    "**/release/**": true,
+    "**/release-build/**": true,
+    "**/*.asar": true
+  },
+  "search.exclude": {
+    "**/release/**": true,
+    "**/release-build/**": true,
+    "**/dist/**": true,
+    "**/.next/**": true,
+    "**/out/**": true,
+    "**/*.asar": true
+  },
+  "files.exclude": {
+    "**/.git": true,
+    "**/.svn": true,
+    "**/.hg": true,
+    "**/CVS": true,
+    "**/.DS_Store": true,
+    "**/Thumbs.db": true
+  }
+}

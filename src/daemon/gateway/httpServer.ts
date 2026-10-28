@@ -79,6 +79,24 @@ export function parseCookieHeader(header?: string): Record<string, string> {
   return result;
 }
 
+export function resolveAppVersion(): string {
+  try {
+    const pkgPath = path.join(process.cwd(), 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.version) return pkg.version;
+    }
+  } catch {}
+  try {
+    const pkgPath = path.join(__dirname, '..', '..', '..', 'package.json');
+    if (fs.existsSync(pkgPath)) {
+      const pkg = JSON.parse(fs.readFileSync(pkgPath, 'utf8'));
+      if (pkg.version) return pkg.version;
+    }
+  } catch {}
+  return '0.1.0';
+}
+
 export class WebApiServer {
   private server: http.Server | null = null;
   private port: number = 3001;
@@ -515,7 +533,7 @@ export class WebApiServer {
               nodeVersion: process.versions.node,
               electronVersion: 'none (headless daemon)',
               appDataDir: paths.dataDir,
-              appVersion: '0.1.0',
+              appVersion: resolveAppVersion(),
               totalMemoryMb: Math.round(os.totalmem() / (1024 * 1024)),
               freeMemoryMb: Math.round(os.freemem() / (1024 * 1024)),
               localIp,
@@ -523,6 +541,36 @@ export class WebApiServer {
               allIps,
             };
             this.sendJson(res, info);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/about') {
+            const ver = resolveAppVersion();
+            this.sendJson(res, {
+              name: 'Ownbase',
+              productName: 'Ownbase',
+              version: ver,
+              description: 'Native Windows Server Hub - Standalone server orchestration without Docker or WSL2',
+              developer: {
+                name: 'rhmunna143',
+                email: 'rhmunna19@gmail.com',
+                github: 'https://github.com/rhmunna143/ownbase',
+                website: 'https://rhmunna143.github.io/ownbase/'
+              },
+              license: 'MIT',
+              platform: `${os.platform()} (${os.arch()})`,
+              osRelease: os.release(),
+              nodeVersion: process.versions.node,
+              mode: paths.mode,
+              dataDir: paths.dataDir,
+              runtime: {
+                caddy: '2.8.4',
+                postgres: '16.4',
+                prisma: '6.4.0',
+                tailwind: '3.4.14',
+                next: '14.2.15'
+              }
+            });
             return;
           }
 

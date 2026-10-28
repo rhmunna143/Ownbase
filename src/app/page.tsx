@@ -15,6 +15,7 @@ import { FileBrowserCard } from '@/components/FileBrowserCard';
 import { PhotosGalleryCard } from '@/components/PhotosGalleryCard';
 import { ApiDocsCard } from '@/components/ApiDocsCard';
 import { SetupWizardModal } from '@/components/SetupWizardModal';
+import { AboutModal } from '@/components/AboutModal';
 import { LoginModal } from '@/components/LoginModal';
 import { SecurityAdminCard } from '@/components/SecurityAdminCard';
 import { Terminal as WebTerminal } from '@/components/Terminal';
@@ -76,6 +77,7 @@ export default function DashboardPage() {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
   const [isSetupWizardOpen, setIsSetupWizardOpen] = useState<boolean>(false);
   const [isLoginModalOpen, setIsLoginModalOpen] = useState<boolean>(false);
+  const [isAboutModalOpen, setIsAboutModalOpen] = useState<boolean>(false);
   const [currentUser, setCurrentUser] = useState<{ id: string; username: string; role: string } | null>(null);
   const [systemInfo, setSystemInfo] = useState<SystemInfo | null>(null);
   const [postgresStatus, setPostgresStatus] = useState<PostgresStatus | null>(null);
@@ -1001,6 +1003,14 @@ export default function DashboardPage() {
             </div>
           </div>
 
+          <button
+            onClick={() => setIsAboutModalOpen(true)}
+            className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-900/80 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white text-[11px] font-medium transition-colors"
+          >
+            <Server className="w-3.5 h-3.5 text-blue-400" />
+            <span>About Ownbase v{systemInfo?.appVersion || '0.1.0'}</span>
+          </button>
+
           <div className="flex items-center space-x-1.5">
             <button
               onClick={handleMinimizeToTray}
@@ -1256,6 +1266,7 @@ export default function DashboardPage() {
           currentUser={currentUser}
           onLoginClick={() => setIsLoginModalOpen(true)}
           onLogoutClick={handleLogout}
+          onAboutClick={() => setIsAboutModalOpen(true)}
           activeTab={activeTab}
         />
         {!isElectronAvailable && (
@@ -1617,6 +1628,12 @@ export default function DashboardPage() {
           fetchAllData();
         }}
         onClose={() => setIsLoginModalOpen(false)}
+      />
+
+      <AboutModal
+        isOpen={isAboutModalOpen}
+        onClose={() => setIsAboutModalOpen(false)}
+        systemInfo={systemInfo}
       />
 
       {/* Dedicated Upload & Deploy Executable Modal Dialog */}

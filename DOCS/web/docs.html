@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Documentation - Ownbase Windows Server Platform</title>
+  <meta name="description" content="Comprehensive documentation, Tailscale setup, architecture guides, and troubleshooting for Ownbase." />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="icon" type="image/svg+xml" href="../../public/favicon.svg" />
+</head>
+<body>
+
+  <!-- Navigation -->
+  <header class="navbar">
+    <div class="container nav-container">
+      <a href="index.html" class="brand">
+        <div class="brand-icon">⚡</div>
+        <span>Ownbase</span>
+        <span class="brand-badge">Docs</span>
+      </a>
+
+      <button class="menu-toggle" aria-label="Toggle navigation">&#9776;</button>
+
+      <ul class="nav-links">
+        <li><a href="index.html">Home</a></li>
+        <li><a href="docs.html" class="active">Documentation</a></li>
+        <li><a href="#tailscale">Tailscale Setup</a></li>
+        <li><a href="#troubleshooting">Troubleshooting</a></li>
+        <li>
+          <a href="https://github.com/rhmunna143/ownbase" class="btn btn-secondary btn-sm" target="_blank" rel="noreferrer">
+            GitHub ↗
+          </a>
+        </li>
+      </ul>
+    </div>
+  </header>
+
+  <!-- Docs Layout -->
+  <div class="container docs-page">
+    <!-- Sticky Sidebar -->
+    <aside class="docs-sidebar">
+      <div class="sidebar-title">Getting Started</div>
+      <ul class="sidebar-menu">
+        <li><a href="#overview" class="active">Overview &amp; Architecture</a></li>
+        <li><a href="#requirements">System Requirements</a></li>
+        <li><a href="#installation">Installation Options</a></li>
+      </ul>
+
+      <div class="sidebar-title">Networking &amp; Access</div>
+      <ul class="sidebar-menu">
+        <li><a href="#tailscale">Tailscale Mobile Access</a></li>
+        <li><a href="#firewall">Windows Firewall Rules</a></li>
+        <li><a href="#caddy-routing">Caddy Ingress &amp; Routing</a></li>
+      </ul>
+
+      <div class="sidebar-title">Native Services</div>
+      <ul class="sidebar-menu">
+        <li><a href="#postgres">PostgreSQL 16 Cluster</a></li>
+        <li><a href="#file-streaming">Byte-Range Media Streaming</a></li>
+        <li><a href="#photos-hub">Google Photos &amp; Memories</a></li>
+        <li><a href="#process-supervisor">Native Process Supervisor</a></li>
+      </ul>
+
+      <div class="sidebar-title">Developer &amp; Support</div>
+      <ul class="sidebar-menu">
+        <li><a href="#api-reference">REST API &amp; OpenAPI Spec</a></li>
+        <li><a href="#building-source">Building from Source</a></li>
+        <li><a href="#troubleshooting">Troubleshooting &amp; FAQ</a></li>
+        <li><a href="#developer-info">Developer &amp; License</a></li>
+      </ul>
+    </aside>
+
+    <!-- Main Docs Content -->
+    <main class="docs-body">
+      <!-- Section: Overview -->
+      <section id="overview">
+        <h2>Overview &amp; Architecture</h2>
+        <p>
+          Ownbase transforms any standard Windows 10 or Windows 11 computer into a self-hosted cloud server platform.
+          Unlike traditional server orchestration platforms that rely on Linux virtualization (WSL2, Docker Desktop, Hyper-V),
+          Ownbase operates directly on bare-metal Windows using native Win32 executables.
+        </p>
+
+        <div class="callout">
+          <strong>Key Architectural Advantage:</strong> By bypassing virtualization, Ownbase consumes under 150 MB of base RAM,
+          boots in under 2 seconds, and accesses Windows storage drives directly without filesystem translation penalties.
+        </div>
+
+        <h3>Core Subsystems</h3>
+        <ul>
+          <li><strong>Edge Ingress:</strong> Caddy v2.8 reverse proxy handling HTTP (:80) and HTTPS (:443) ingress and dynamic domain routing.</li>
+          <li><strong>API Gateway:</strong> Express/Node REST daemon listening strictly on loopback (:3001) for security isolation.</li>
+          <li><strong>Database Engine:</strong> Portable PostgreSQL 16 initialized on loopback (:5432) with SCRAM-SHA-256 and Prisma ORM.</li>
+          <li><strong>Mesh Overlay:</strong> Tailscale WireGuard integration for zero-config remote access across cellular and external networks.</li>
+          <li><strong>Storage &amp; Streaming:</strong> FileBrowser with HTTP 206 Byte-Range streaming for instant video playback on mobile devices.</li>
+          <li><strong>Photos Hub:</strong> Timeline photo gallery, favorites system, and smartphone camera roll sync.</li>
+        </ul>
+      </section>
+
+      <!-- Section: Requirements -->
+      <section id="requirements">
+        <h2>System Requirements</h2>
+        <p>Ownbase is designed to run efficiently on any modern Windows system, from compact mini-PCs to powerful desktop workstations:</p>
+        <ul>
+          <li><strong>Operating System:</strong> Windows 10 (Build 19041+) or Windows 11 (64-bit).</li>
+          <li><strong>Processor:</strong> x64 Dual-Core CPU (Intel Core i3 / AMD Ryzen 3 or higher recommended).</li>
+          <li><strong>Memory:</strong> 4 GB RAM minimum (8 GB+ recommended if running local AI models with Ollama).</li>
+          <li><strong>Disk Space:</strong> 500 MB free space for core engines; additional space for your personal files and databases.</li>
+          <li><strong>Network:</strong> Local Wi-Fi or Ethernet; Tailscale account for remote mobile access.</li>
+        </ul>
+      </section>
+
+      <!-- Section: Installation -->
+      <section id="installation">
+        <h2>Installation Options</h2>
+        <p>Ownbase provides two packaging formats to accommodate different usage workflows:</p>
+
+        <h3>1. Windows Setup Installer (NSIS)</h3>
+        <p>
+          The recommended setup for a dedicated home or office server. The installer creates a managed Windows Service
+          (<code>NT SERVICE\Ownbase</code>), configures Windows Firewall automatically, creates desktop and start menu shortcuts,
+          and sets up background delayed autostart.
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>Installed Path Structure</span>
+          </div>
+          <pre><code>%LocalAppData%\Programs\ownbase\     # Binaries and desktop shell
+%ProgramData%\Ownbase\              # PostgreSQL data, secrets, and runtimes</code></pre>
+        </div>
+
+        <h3>2. Standalone Portable Executable</h3>
+        <p>
+          A single executable that runs immediately without administrative privileges or registry writes. All configuration,
+          databases, and logs are kept isolated in a <code>./data/</code> directory adjacent to the executable.
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>Portable Path Structure</span>
+          </div>
+          <pre><code>Ownbase-Portable-v0.1.0.exe
+└── data\                           # 100% self-contained data directory</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Tailscale -->
+      <section id="tailscale">
+        <h2>Tailscale VPN Remote &amp; Mobile Access</h2>
+        <p>
+          With Tailscale integration, you can securely access your Ownbase server from your iPhone, Android phone, or another laptop
+          from anywhere in the world without configuring port forwarding on your home router or exposing ports to the public internet.
+        </p>
+
+        <div class="callout callout-warning">
+          <strong>Important Windows Rule:</strong> Windows Defender Firewall treats the virtual Tailscale network adapter as a
+          <strong>Public</strong> network by default. If your firewall rule only allows <em>Private</em> networks, Tailscale traffic will be silently dropped!
+        </div>
+
+        <h3>Step-by-Step Setup</h3>
+        <ol>
+          <li>
+            <strong>Install Tailscale on PC:</strong> Download and install Tailscale for Windows, sign in with your account, and verify your assigned <code>100.x.y.z</code> IPv4 address.
+          </li>
+          <li>
+            <strong>Install Tailscale on Mobile:</strong> Download the Tailscale app on your phone (App Store or Google Play) and sign in using the <strong>same account</strong>.
+          </li>
+          <li>
+            <strong>Apply Windows Firewall Rule:</strong> Open an elevated PowerShell session (Run as Administrator) and execute:
+          </li>
+        </ol>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell (Run as Administrator)</span>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <pre><code>New-NetFirewallRule -Name "Ownbase-Tailscale-Inbound" `
+    -DisplayName "Ownbase Tailscale Remote Access" `
+    -Description "Allows inbound web traffic from Tailscale WireGuard mesh devices (100.64.0.0/10)" `
+    -Direction Inbound `
+    -Protocol TCP `
+    -LocalPort 80, 443, 3000, 3001, 8080 `
+    -RemoteAddress 100.64.0.0/10 `
+    -Action Allow `
+    -Profile Any</code></pre>
+        </div>
+
+        <h3>Accessing from Mobile Browser</h3>
+        <p>
+          Make sure Tailscale is <strong>Connected</strong> (active VPN indicator) on your phone. Then open your mobile browser (Safari, Chrome, Firefox) and navigate directly to:
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>Mobile Browser URL</span>
+          </div>
+          <pre><code>http://&lt;your-pc-tailscale-ip&gt;/    # Example: http://100.85.12.34/</code></pre>
+        </div>
+      </section>
+
+      <!-- Section: Firewall -->
+      <section id="firewall">
+        <h2>Windows Firewall Rules</h2>
+        <p>
+          Ownbase relies on Caddy as its sole external ingress gateway on ports <strong>80 (HTTP)</strong> and <strong>443 (HTTPS)</strong>.
+          All internal microservices (Postgres, daemon, terminal) bind strictly to loopback (<code>127.0.0.1</code>) for security hardening.
+        </p>
+
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Port</th>
+                <th>Protocol</th>
+                <th>Purpose</th>
+                <th>Allowed Scope</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>80</strong></td>
+                <td>TCP</td>
+                <td>Caddy HTTP Web Dashboard &amp; Reverse Proxy</td>
+                <td>LAN &amp; Tailscale (Profile: Any)</td>
+              </tr>
+              <tr>
+                <td><strong>443</strong></td>
+                <td>TCP</td>
+                <td>Caddy HTTPS TLS Reverse Proxy</td>
+                <td>LAN &amp; Tailscale (Profile: Any)</td>
+              </tr>
+              <tr>
+                <td><strong>3001</strong></td>
+                <td>TCP</td>
+                <td>Ownbase Internal REST API Daemon</td>
+                <td>Loopback only (127.0.0.1)</td>
+              </tr>
+              <tr>
+                <td><strong>5432</strong></td>
+                <td>TCP</td>
+                <td>PostgreSQL 16 Relational Database Engine</td>
+                <td>Loopback only (127.0.0.1)</td>
+              </tr>
+              <tr>
+                <td><strong>8080</strong></td>
+                <td>TCP</td>
+                <td>Native FileBrowser Storage Engine</td>
+                <td>Loopback (Proxied via files.*)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Caddy Routing -->
+      <section id="caddy-routing">
+        <h2>Caddy Ingress &amp; Routing</h2>
+        <p>
+          Ownbase integrates the official Caddy reverse proxy engine. When new services or custom subdomains are created,
+          Ownbase programmatically commits dynamic routing rules via Caddy's Admin REST API (port 2019):
+        </p>
+        <ul>
+          <li><code>hub.&lt;IP&gt;.nip.io</code> or <code>http://&lt;IP&gt;/</code> &rarr; Main Hub Dashboard &amp; REST Gateway</li>
+          <li><code>files.&lt;IP&gt;.nip.io</code> &rarr; FileBrowser cloud storage with media streaming</li>
+          <li><code>photos.&lt;IP&gt;.nip.io</code> &rarr; Photos Hub &amp; mobile camera roll backup</li>
+          <li><code>ai.&lt;IP&gt;.nip.io</code> &rarr; Ollama LLM inference engine</li>
+          <li><code>s3.&lt;IP&gt;.nip.io</code> &rarr; MinIO Amazon S3-compatible bucket storage</li>
+        </ul>
+      </section>
+
+      <!-- Section: PostgreSQL -->
+      <section id="postgres">
+        <h2>PostgreSQL 16 Cluster</h2>
+        <p>
+          Ownbase includes an embedded portable PostgreSQL 16 engine. Upon first launch, Ownbase automatically:
+        </p>
+        <ol>
+          <li>Initializes a localized database cluster using <code>initdb.exe</code> with UTF-8 encoding.</li>
+          <li>Configures <code>postgresql.conf</code> to bind strictly to <code>127.0.0.1</code>.</li>
+          <li>Generates a secure 256-bit password stored in encrypted secrets and enforces <code>scram-sha-256</code> authentication.</li>
+          <li>Executes automated Prisma schema migrations (<code>prisma migrate deploy</code>).</li>
+        </ol>
+      </section>
+
+      <!-- Section: Media Streaming -->
+      <section id="file-streaming">
+        <h2>HTTP 206 Byte-Range Media Streaming</h2>
+        <p>
+          Playing multi-gigabyte 4K or 1080p video files (MKV, MP4, WebM) on mobile devices often causes buffering or fails if the
+          server attempts to download the entire file first.
+        </p>
+        <p>
+          Ownbase implements a native <strong>HTTP 206 (Partial Content)</strong> byte-range engine:
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>HTTP Request Header Example</span>
+          </div>
+          <pre><code>GET /api/v1/files/stream?path=Movies/4k_nature.mp4
+Range: bytes=1048576-2097151
+
+HTTP/1.1 206 Partial Content
+Content-Range: bytes 1048576-2097151/4294967296
+Content-Length: 1048576
+Content-Type: video/mp4</code></pre>
+        </div>
+        <p>
+          This allows mobile browsers to seek forward instantaneously to any timestamp in a 20 GB video file with zero lag.
+        </p>
+      </section>
+
+      <!-- Section: Photos Hub -->
+      <section id="photos-hub">
+        <h2>Google Photos &amp; Memories Service</h2>
+        <p>
+          Ownbase includes a dedicated Photos Hub designed to deliver a private, self-hosted alternative to Google Photos:
+        </p>
+        <ul>
+          <li><strong>Chronological Timeline:</strong> Automatically groups media into sections ("Today", "Yesterday", "October 2026").</li>
+          <li><strong>1-Tap Mobile Uploads:</strong> Seamlessly upload photos and videos directly from iOS and Android camera rolls.</li>
+          <li><strong>Interactive Lightbox:</strong> Full-screen high-resolution preview with zoom, swipe, and favorite starring.</li>
+          <li><strong>Metadata Extraction:</strong> Automatically reads EXIF orientation and capture dates.</li>
+        </ul>
+      </section>
+
+      <!-- Section: Process Supervisor -->
+      <section id="process-supervisor">
+        <h2>Native Process Supervisor</h2>
+        <p>
+          The Process Supervisor monitors background executables on bare-metal Windows:
+        </p>
+        <ul>
+          <li><strong>Job Objects Isolation:</strong> Groups child processes to enforce RAM/CPU quotas and prevent rogue memory leaks.</li>
+          <li><strong>Auto-Restart Recovery:</strong> Automatically restarts crashed services using exponential backoff.</li>
+          <li><strong>Tree Termination:</strong> Eliminates zombie processes on shutdown using recursive Win32 termination (<code>taskkill /PID &lt;PID&gt; /T /F</code>).</li>
+          <li><strong>Live Console Logs:</strong> Streams real-time stdout and stderr from managed executables directly to the UI.</li>
+        </ul>
+      </section>
+
+      <!-- Section: API Reference -->
+      <section id="api-reference">
+        <h2>REST API &amp; OpenAPI Spec</h2>
+        <p>
+          Every feature in Ownbase is accessible via a standardized REST API. The machine-readable OpenAPI 3.0 specification is available at:
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>OpenAPI 3.0 Endpoint</span>
+          </div>
+          <pre><code>GET http://127.0.0.1:3001/api/openapi.json</code></pre>
+        </div>
+
+        <h3>Core Endpoints Summary</h3>
+        <div class="table-wrapper">
+          <table>
+            <thead>
+              <tr>
+                <th>Method</th>
+                <th>Endpoint</th>
+                <th>Auth</th>
+                <th>Description</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/v1/system/about</code></td>
+                <td>Public</td>
+                <td>Application version, developer contact, runtime engines, and system metadata</td>
+              </tr>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/v1/health</code></td>
+                <td>Public</td>
+                <td>Probes PostgreSQL and daemon cluster health</td>
+              </tr>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/v1/system-info</code></td>
+                <td>User</td>
+                <td>Hardware telemetry (RAM, CPU, LAN, and Tailscale IPs)</td>
+              </tr>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/v1/files/stream</code></td>
+                <td>User</td>
+                <td>High-performance HTTP 206 byte-range media stream</td>
+              </tr>
+              <tr>
+                <td><code>POST</code></td>
+                <td><code>/api/v1/files/upload</code></td>
+                <td>User</td>
+                <td>Multi-file chunked upload engine</td>
+              </tr>
+              <tr>
+                <td><code>GET</code></td>
+                <td><code>/api/v1/photos/timeline</code></td>
+                <td>User</td>
+                <td>Chronological photo and video timeline metadata</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- Section: Building from Source -->
+      <section id="building-source">
+        <h2>Building from Source</h2>
+        <p>Clone the repository and build packages using Node.js v18+ on Windows:</p>
+
+        <div class="code-box">
+          <div class="code-header">
+            <span>Terminal / PowerShell</span>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <pre><code># 1. Clone repository
+git clone https://github.com/rhmunna143/ownbase.git
+cd ownbase
+
+# 2. Install dependencies
+npm install
+
+# 3. Build Next.js Dashboard static export
+npm run build:next
+
+# 4. Compile Electron TypeScript
+npm run build:electron
+
+# 5. Build distribution packages (.exe)
+npm run dist:all</code></pre>
+        </div>
+
+        <p>
+          Generated executables will be placed in the <code>release/</code> folder:
+        </p>
+        <ul>
+          <li><code>release/Ownbase-Setup-v0.1.0.exe</code> (NSIS Installer)</li>
+          <li><code>release/Ownbase-Portable-v0.1.0.exe</code> (Portable Executable)</li>
+        </ul>
+      </section>
+
+      <!-- Section: Troubleshooting -->
+      <section id="troubleshooting">
+        <h2>Troubleshooting &amp; FAQ</h2>
+
+        <h3>1. Mobile Tailscale Connection Timed Out</h3>
+        <p>
+          <strong>Symptoms:</strong> The dashboard opens on your PC at <code>http://localhost/</code>, but fails to connect on your phone via Tailscale.
+        </p>
+        <p>
+          <strong>Fix:</strong> Windows Firewall classifies the Tailscale network adapter as a <code>Public</code> profile.
+          Execute the PowerShell firewall command with <code>-Profile Any</code>:
+        </p>
+        <div class="code-box">
+          <div class="code-header">
+            <span>PowerShell (Admin)</span>
+            <button class="copy-btn">Copy</button>
+          </div>
+          <pre><code>New-NetFirewallRule -Name "Ownbase-Tailscale-Inbound" `
+    -DisplayName "Ownbase Tailscale Remote Access" `
+    -Direction Inbound -Protocol TCP -LocalPort 80,443,3000,3001,8080 `
+    -RemoteAddress 100.64.0.0/10 -Action Allow -Profile Any</code></pre>
+        </div>
+
+        <h3>2. Portable Version: "C:AppData/.../index.html, js not found"</h3>
+        <p>
+          <strong>Cause:</strong> In older packaging configurations, Next.js static files were loaded via Chromium's <code>file://</code> protocol.
+          Because Next.js outputs script tags with absolute paths (<code>/_next/...</code>), Chromium tried to find scripts at <code>C:\_next\...</code>.
+        </p>
+        <p>
+          <strong>Fix:</strong> Ownbase routes all dashboard views through its built-in HTTP server (<code>http://127.0.0.1:3001</code>).
+          This completely eliminates drive root resolution issues across both portable and installed modes.
+        </p>
+
+        <h3>3. Port 80 Already in Use</h3>
+        <p>
+          <strong>Cause:</strong> Windows World Wide Web Publishing Service (IIS), Skype, or another server is bound to port 80.
+        </p>
+        <p>
+          <strong>Fix:</strong> Stop IIS by running <code>net stop w3svc</code> in an elevated command prompt, or change IIS's binding.
+        </p>
+      </section>
+
+      <!-- Section: Developer Info -->
+      <section id="developer-info">
+        <h2>Developer &amp; License</h2>
+        <div class="card" style="background: rgba(15, 23, 42, 0.6);">
+          <h3>Ownbase Open Source Project</h3>
+          <p style="margin-bottom: 1rem;">
+            Ownbase is developed and maintained by <strong>rhmunna143</strong> and open-source contributors.
+          </p>
+          <ul style="margin-left: 1.25rem; margin-bottom: 1.5rem;">
+            <li><strong>Lead Maintainer:</strong> rhmunna143</li>
+            <li><strong>Email:</strong> <a href="mailto:rhmunna19@gmail.com" style="color: var(--accent-blue);">rhmunna19@gmail.com</a></li>
+            <li><strong>Source Code:</strong> <a href="https://github.com/rhmunna143/ownbase" target="_blank" rel="noreferrer" style="color: var(--accent-blue);">github.com/rhmunna143/ownbase</a></li>
+            <li><strong>Online Documentation:</strong> <a href="https://rhmunna143.github.io/ownbase/" target="_blank" rel="noreferrer" style="color: var(--accent-blue);">rhmunna143.github.io/ownbase</a></li>
+            <li><strong>License:</strong> <a href="https://opensource.org/licenses/MIT" target="_blank" rel="noreferrer" style="color: var(--accent-blue);">MIT License</a></li>
+          </ul>
+          <p style="color: var(--text-muted); font-size: 0.85rem;">
+            Copyright &copy; 2026 rhmunna143. All rights reserved.
+          </p>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="container">
+      <p style="margin-bottom: 0.5rem;">
+        <strong>Ownbase Documentation</strong> — Maintained by <a href="mailto:rhmunna19@gmail.com">rhmunna143</a>.
+      </p>
+      <p style="color: var(--text-muted); font-size: 0.85rem;">
+        Deployed with GitHub Pages. <a href="https://github.com/rhmunna143/ownbase" target="_blank" rel="noreferrer">GitHub Repository</a>
+      </p>
+    </div>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>
+

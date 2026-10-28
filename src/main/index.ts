@@ -256,22 +256,21 @@ async function loadFrontend() {
 
 async function loadStaticBundle() {
   if (!mainWindow) return;
-  const candidateHtmlPaths = [
-    path.join(process.cwd(), 'out', 'index.html'),
-    path.join(__dirname, '..', '..', '..', 'out', 'index.html'),
-    path.join(__dirname, '..', '..', 'out', 'index.html'),
-    path.join(app.getAppPath(), 'out', 'index.html'),
-  ];
-
-  for (const htmlPath of candidateHtmlPaths) {
-    if (fs.existsSync(htmlPath)) {
-      logger.info('electron', `Loading static frontend from: ${htmlPath}`);
-      await mainWindow.loadFile(htmlPath);
-      return;
-    }
+  const port = typeof webApiServer !== 'undefined' && webApiServer ? webApiServer.getPort() : 3001;
+  const url = `http://127.0.0.1:${port}`;
+  logger.info('electron', `Loading dashboard from local server gateway: ${url}`);
+  try {
+    await mainWindow.loadURL(url);
+  } catch (err: any) {
+    logger.warn('electron', `Gateway connecting: ${err.message}. Retrying in 1.5s...`);
+    setTimeout(async () => {
+      if (mainWindow) {
+        try {
+          await mainWindow.loadURL(url);
+        } catch {}
+      }
+    }, 1500);
   }
-
-  logger.error('electron', 'Static export out/index.html not found! Please run npm run build:next');
 }
 
 const gotTheLock = app.requestSingleInstanceLock();

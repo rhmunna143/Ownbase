@@ -6,6 +6,7 @@ import { logger } from '../core/logger';
 import { PrismaManager } from '../db/prisma';
 import { TailscaleStatus } from '../../shared/types';
 import { hostBuilder } from '../core/hostBuilder';
+import { firewallManager } from './firewall';
 
 export interface TailscalePeerInfo {
   id: string;
@@ -293,6 +294,8 @@ export class TailscaleManager {
           }
 
           logger.success('tailscale', `Connected to Tailscale mesh. Mesh IPv4: ${ip || 'Active'}`);
+          firewallManager.addInboundRule({ ruleName: 'Ownbase-Tailscale-Inbound', port: 80, scope: 'Tailscale' }).catch(() => {});
+          firewallManager.addInboundRule({ ruleName: 'Ownbase-Tailscale-Inbound-443', port: 443, scope: 'Tailscale' }).catch(() => {});
           resolve({ success: true, ip: ip || undefined });
         }
       );

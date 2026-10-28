@@ -1,4 +1,4 @@
-import { app, BrowserWindow, Tray, Menu, shell, ipcMain } from 'electron';
+import { app, BrowserWindow, Tray, Menu, shell, ipcMain, dialog } from 'electron';
 import path from 'path';
 import fs from 'fs';
 import { exec } from 'child_process';
@@ -266,7 +266,16 @@ async function loadDashboard() {
     await ensurePortableDaemon();
   }
 
-  const runningPort = await findRunningDaemonPort();
+  let runningPort = await findRunningDaemonPort();
+  if (!runningPort) {
+    // Give background daemon up to 6 seconds to complete socket initialization
+    for (let i = 0; i < 12; i++) {
+      await new Promise((r) => setTimeout(r, 500));
+      runningPort = await findRunningDaemonPort();
+      if (runningPort) break;
+    }
+  }
+
   if (runningPort) {
     try {
       await mainWindow.loadURL(getDaemonUrl());
@@ -302,6 +311,26 @@ function createTray() {
         label: 'Open in Browser',
         click: () => {
           shell.openExternal(getDaemonUrl());
+        },
+      },
+      {
+        label: `About Ownbase (v${app.getVersion()})`,
+        click: () => {
+          dialog.showMessageBox({
+            type: 'info',
+            title: 'About Ownbase',
+            message: `Ownbase Server Platform v${app.getVersion()}`,
+            detail: `Native Windows Server Hub - Standalone server orchestration without Docker or WSL2.\n\nDeveloper: rhmunna143 (rhmunna19@gmail.com)\nArchitecture: Windows x64\nLicense: MIT\nDocs: https://rhmunna143.github.io/ownbase/`,
+            buttons: ['OK', 'View Documentation', 'GitHub'],
+            defaultId: 0,
+            cancelId: 0,
+          }).then((res) => {
+            if (res.response === 1) {
+              shell.openExternal('https://rhmunna143.github.io/ownbase/');
+            } else if (res.response === 2) {
+              shell.openExternal('https://github.com/rhmunna143/ownbase');
+            }
+          });
         },
       },
       { type: 'separator' },

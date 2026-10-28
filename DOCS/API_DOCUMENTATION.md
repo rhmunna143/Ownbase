@@ -3,7 +3,7 @@
 **Document Version:** 1.0.0  
 **OpenAPI Specification:** 3.0.3  
 **Base URL:** `http://127.0.0.1:3001` (Direct Gateway) or `http://localhost` (Caddy Ingress Port 80)  
-**Total Endpoints:** 104
+**Total Endpoints:** 105
 
 ---
 
@@ -47,7 +47,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | **Process Supervisor & App Catalog** | 11 | Authenticated (Bearer / API Key) |
 | **Security Audit Stream** | 1 | Authenticated (Bearer / API Key) |
 | **Storage Volumes & Contained File Streaming** | 16 | Authenticated (Bearer / API Key) |
-| **System & Health Telemetry** | 12 | Mixed (Public / Authenticated) |
+| **System & Health Telemetry** | 13 | Mixed (Public / Authenticated) |
 | **Tailscale Mesh Networking** | 3 | Authenticated (Bearer / API Key) |
 
 ---
@@ -214,6 +214,7 @@ READ_ONLY (Viewer: metrics, logs, service status, file reads)
 | :--- | :--- | :--- | :---: | :--- |
 | `GET` | `/api/v1/health` | `Public` | — | Public system health probe |
 | `GET` | `/api/v1/system-info` | `READ_ONLY` | — | Host hardware and network interfaces telemetry |
+| `GET` | `/api/v1/system/about` | `Public` | — | Application, version, runtime, and developer metadata |
 | `GET` | `/api/v1/bootstrap-steps` | `READ_ONLY` | — | Retrieve initial server bootstrapping progress steps |
 | `POST` | `/api/v1/ping-database` | `READ_ONLY` | — | Test database connectivity roundtrip latency |
 | `GET` | `/api/v1/system/drives` | `READ_ONLY` | — | List physical system storage drives and capacities |

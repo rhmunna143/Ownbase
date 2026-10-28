@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu, User, LogOut, LogIn, ChevronRight } from 'lucide-react';
+import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu, User, LogOut, LogIn, ChevronRight, Info } from 'lucide-react';
 import { SystemInfo } from '@/shared/types';
 
 interface HeaderProps {
@@ -12,6 +12,7 @@ interface HeaderProps {
   currentUser?: { username: string; role: string } | null;
   onLoginClick?: () => void;
   onLogoutClick?: () => void;
+  onAboutClick?: () => void;
   activeTab?: string;
 }
 
@@ -40,6 +41,7 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onLoginClick,
   onLogoutClick,
+  onAboutClick,
   activeTab = 'overview',
 }) => {
   return (
@@ -110,6 +112,17 @@ export const Header: React.FC<HeaderProps> = ({
             <RefreshCw className={`w-3.5 h-3.5 text-slate-400 ${isRefreshing ? 'animate-spin text-blue-400' : ''}`} />
             <span className="hidden sm:inline">Sync</span>
           </button>
+
+          {onAboutClick && (
+            <button
+              onClick={onAboutClick}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700/80 text-slate-200 transition-colors shadow-sm min-h-[38px] touch-manipulation"
+              title="About Ownbase, System Specs & Developer Info"
+            >
+              <Info className="w-3.5 h-3.5 text-blue-400" />
+              <span className="hidden sm:inline">About</span>
+            </button>
+          )}
 
           {currentUser ? (
             <div className="flex items-center gap-2 pl-2 border-l border-slate-800">

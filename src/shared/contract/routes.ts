@@ -92,6 +92,12 @@ export const ROUTE_TABLE: RouteDefinition[] = [
   },
   {
     method: 'GET',
+    path: '/api/v1/system/about',
+    auth: 'public',
+    summary: 'Application, version, runtime, and developer metadata',
+  },
+  {
+    method: 'GET',
     path: '/api/v1/postgres-status',
     auth: 'user',
     minRole: 'READ_ONLY',
