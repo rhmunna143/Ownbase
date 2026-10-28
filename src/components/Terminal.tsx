@@ -211,25 +211,25 @@ export function Terminal({ currentUser }: TerminalProps) {
       }`}
     >
       {/* Terminal Title Bar */}
-      <div className="flex items-center justify-between px-4 py-2.5 bg-slate-950 border-b border-slate-800 select-none">
-        <div className="flex items-center space-x-3">
-          <div className="flex space-x-1.5">
+      <div className="flex flex-wrap items-center justify-between px-4 py-2.5 bg-slate-950 border-b border-slate-800 select-none gap-2">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="flex space-x-1.5 shrink-0">
             <div className="w-3 h-3 rounded-full bg-red-500/80 border border-red-600/50" />
             <div className="w-3 h-3 rounded-full bg-yellow-500/80 border border-yellow-600/50" />
             <div className="w-3 h-3 rounded-full bg-green-500/80 border border-green-600/50" />
           </div>
 
-          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300">
-            <TerminalIcon className="w-4 h-4 text-cyan-400" />
-            <span>Ownbase Native ConPTY Terminal</span>
-            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 border border-purple-700/50 text-purple-300">
+          <div className="flex items-center space-x-2 text-xs font-semibold text-slate-300 min-w-0">
+            <TerminalIcon className="w-4 h-4 text-cyan-400 shrink-0" />
+            <span className="truncate">Ownbase Native ConPTY Terminal</span>
+            <span className="px-1.5 py-0.5 rounded text-[10px] font-bold bg-purple-950/80 border border-purple-700/50 text-purple-300 shrink-0">
               ROOT ONLY
             </span>
           </div>
         </div>
 
         {/* Controls and Status Indicator */}
-        <div className="flex items-center space-x-3">
+        <div className="flex flex-wrap items-center gap-2">
           {/* Active Sessions Counter */}
           <button
             onClick={() => {

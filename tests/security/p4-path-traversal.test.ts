@@ -54,4 +54,19 @@ describe('P4: Path Traversal & Containment Guard', () => {
     // Secure expectation: ADS must not be resolved blindly as valid storage file
     expect(resolved).not.toContain('::$DATA');
   });
+
+  it('safely resolves filenames containing literal percent signs (e.g. 100%.txt)', () => {
+    const percentInput = '100%.txt';
+    const resolved = fileManager.safeResolve(percentInput);
+
+    // Must resolve to 100%.txt inside root, NOT clamp to root directory itself
+    expect(resolved).toBe(path.join(root, '100%.txt'));
+    expect(resolved).not.toBe(root);
+  });
+
+  it('strictly forbids renameItem from renaming the root storage directory', () => {
+    expect(() => fileManager.renameItem('', 'renamed_storage')).toThrow(/Cannot rename storage root directory/);
+    expect(() => fileManager.renameItem('.', 'renamed_storage')).toThrow(/Cannot rename storage root directory/);
+  });
 });
+

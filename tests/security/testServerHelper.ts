@@ -6,7 +6,7 @@ export interface TestServerInstance {
   baseUrl: string;
 }
 
-export async function createTestServer(port = 3199): Promise<TestServerInstance> {
+export async function createTestServer(port = 0): Promise<TestServerInstance> {
   const mockPostgresManager: any = {
     getStatus: () => ({ status: 'stopped', port: 5432, isListening: false }),
     isProcessRunning: () => false,
@@ -17,6 +17,16 @@ export async function createTestServer(port = 3199): Promise<TestServerInstance>
     getServices: async () => [],
     getRoutes: async () => [],
     executeQuery: async (sql: string) => [{ result: 'vulnerable_raw_sql_executed', query: sql }],
+    getClient: () => ({
+      $transaction: async (cb: any) =>
+        cb({
+          $executeRawUnsafe: async () => 1,
+          $queryRawUnsafe: async (q: string) => {
+            if (q.includes('count(*)')) return [{ count: 0 }];
+            return [];
+          },
+        }),
+    }),
   };
 
   const mockSupervisor: any = {
@@ -54,10 +64,11 @@ export async function createTestServer(port = 3199): Promise<TestServerInstance>
   );
 
   await server.start();
+  const actualPort = server.getPort();
 
   return {
     server,
-    port,
-    baseUrl: `http://127.0.0.1:${port}`,
+    port: actualPort,
+    baseUrl: `http://127.0.0.1:${actualPort}`,
   };
 }

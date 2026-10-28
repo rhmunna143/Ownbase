@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <linearGradient id="folderBack" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0284c7"/>
+      <stop offset="100%" stop-color="#0369a1"/>
+    </linearGradient>
+    <linearGradient id="folderFront" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38bdf8"/>
+      <stop offset="100%" stop-color="#0284c7"/>
+    </linearGradient>
+    <linearGradient id="docGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#ffffff"/>
+      <stop offset="100%" stop-color="#e2e8f0"/>
+    </linearGradient>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#070e1e"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+  <path d="M12,22 C12,19.8 13.8,18 16,18 L25,18 C27,18 28.5,19.2 29.5,21 L32,25 L48,25 C50.2,25 52,26.8 52,29 L52,46 C52,48.2 50.2,50 48,50 L16,50 C13.8,50 12,48.2 12,46 Z" fill="url(#folderBack)"/>
+  <rect x="20" y="14" width="24" height="24" rx="3" fill="url(#docGrad)"/>
+  <line x1="25" y1="20" x2="39" y2="20" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+  <line x1="25" y1="26" x2="35" y2="26" stroke="#94a3b8" stroke-width="2" stroke-linecap="round"/>
+  <path d="M10,29 C10,26.8 11.8,25 14,25 L50,25 C52.2,25 54,26.8 54,29 L51,47 C50.8,49 49,51 47,51 L17,51 C15,51 13.2,49 13,47 Z" fill="url(#folderFront)"/>
+</svg>

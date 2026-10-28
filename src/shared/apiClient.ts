@@ -22,14 +22,39 @@ export const authStore = {
     if (inMemoryAccessToken) return inMemoryAccessToken;
     if (typeof window !== 'undefined') {
       try {
+        // 1. Check URL query parameters (?token=... or ?access_token=...)
+        if (window.location && window.location.search) {
+          const params = new URLSearchParams(window.location.search);
+          const urlToken = params.get('token') || params.get('access_token');
+          if (urlToken) {
+            inMemoryAccessToken = urlToken;
+            try { localStorage.setItem('ownbase_access_token', urlToken); } catch {}
+            try {
+              document.cookie = `ownbase_access_token=${encodeURIComponent(urlToken)}; path=/; max-age=2592000; SameSite=Lax`;
+            } catch {}
+            return urlToken;
+          }
+        }
         const saved = localStorage.getItem('ownbase_access_token');
         if (saved) {
           inMemoryAccessToken = saved;
           return inMemoryAccessToken;
         }
+        if (typeof document !== 'undefined' && document.cookie) {
+          const match = document.cookie.match(/(?:^|;\s*)ownbase_access_token=([^;]+)/);
+          if (match && match[1]) {
+            const token = decodeURIComponent(match[1]);
+            inMemoryAccessToken = token;
+            try { localStorage.setItem('ownbase_access_token', token); } catch {}
+            return token;
+          }
+        }
       } catch {}
     }
     return null;
+  },
+  getAccessToken: (): string | null => {
+    return authStore.getToken();
   },
   setToken: (token: string | null) => {
     inMemoryAccessToken = token;
@@ -115,6 +140,10 @@ async function refreshAccessToken(): Promise<string | null> {
   activeRefreshPromise = (async () => {
     try {
       const refreshToken = authStore.getRefreshToken();
+      if (!refreshToken && typeof document !== 'undefined' && !document.cookie.includes('ownbase_refresh')) {
+        return authStore.getToken();
+      }
+
       const res = await fetch('/api/v1/auth/refresh', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -132,8 +161,10 @@ async function refreshAccessToken(): Promise<string | null> {
         }
       }
 
-      // If refresh failed with 401/400, clear invalid session
-      authStore.clear();
+      // If refresh failed with 401/400 and we had an explicit refresh token, clear invalid session
+      if (refreshToken) {
+        authStore.clear();
+      }
       return null;
     } catch {
       return null;
@@ -352,6 +383,11 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { success: false, error: 'Failed to connect to server API' };
   },
 
+  deleteService: async (serviceId: string): Promise<{ success: boolean; error?: string }> => {
+    const res = await fetchWithAuth(`/api/v1/services/${serviceId}`, { method: 'DELETE' }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, error: 'Failed to delete service' };
+  },
+
   getServiceLogs: async (serviceId: string): Promise<LogEntry[]> => {
     const res = await fetchWithAuth(`/api/v1/services/${serviceId}/logs`).catch(() => null);
     return res && res.ok ? await res.json() : [];
@@ -379,6 +415,10 @@ export const serverApi = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({ error: `Failed to create route (${res.status})` }));
+      throw new Error(err.error || err.message || `Failed to create route (${res.status})`);
+    }
     return await res.json();
   },
 
@@ -575,6 +615,24 @@ export const serverApi = {
     return res && res.ok ? await res.json() : { success: false };
   },
 
+  copyItem: async (sourcePath: string, destinationDir: string, newName?: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth('/api/v1/files/copy', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationDir, newName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
+  moveItem: async (sourcePath: string, destinationDir: string, newName?: string): Promise<{ success: boolean }> => {
+    const res = await fetchWithAuth('/api/v1/files/move', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ sourcePath, destinationDir, newName }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false };
+  },
+
   deleteItem: async (path: string): Promise<{ success: boolean }> => {
     const res = await fetchWithAuth(`/api/v1/files/delete?path=${encodeURIComponent(path)}`, {
       method: 'DELETE',
@@ -587,13 +645,167 @@ export const serverApi = {
     return res && res.ok ? { content: await res.text() } : { content: '' };
   },
 
-  uploadFile: async (targetPath: string, file: File): Promise<{ success: boolean; path?: string }> => {
-    const res = await fetchWithAuth(`/api/v1/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`, {
+  uploadFile: (
+    targetPath: string,
+    file: File,
+    onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
+  ): Promise<{ success: boolean; path?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const url = `/api/v1/files/upload?targetPath=${encodeURIComponent(targetPath)}&filename=${encodeURIComponent(file.name)}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.withCredentials = true;
+
+      const token = authStore.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            resolve({ success: true });
+          }
+        } else {
+          let errMsg = `Upload failed (${xhr.status})`;
+          try {
+            const errData = JSON.parse(xhr.responseText);
+            if (errData?.error) errMsg = errData.error;
+          } catch {}
+          resolve({ success: false, error: errMsg });
+        }
+      };
+
+      xhr.onerror = () => {
+        resolve({ success: false, error: 'Network error during upload' });
+      };
+
+      xhr.ontimeout = () => {
+        resolve({ success: false, error: 'Upload timed out' });
+      };
+
+      xhr.send(file);
+    });
+  },
+
+  uploadBinary: (
+    file: File,
+    onProgress?: (progress: { loaded: number; total: number; percent: number }) => void
+  ): Promise<{ success: boolean; filename: string; path?: string; error?: string }> => {
+    return new Promise((resolve) => {
+      const url = `/api/v1/services/upload-binary?filename=${encodeURIComponent(file.name)}`;
+      const xhr = new XMLHttpRequest();
+      xhr.open('POST', url, true);
+      xhr.withCredentials = true;
+
+      const token = authStore.getToken();
+      if (token) {
+        xhr.setRequestHeader('Authorization', `Bearer ${token}`);
+      }
+      xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+      xhr.setRequestHeader('x-filename', file.name);
+
+      if (xhr.upload && onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable && e.total > 0) {
+            const percent = Math.min(100, Math.round((e.loaded / e.total) * 100));
+            onProgress({ loaded: e.loaded, total: e.total, percent });
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            const data = JSON.parse(xhr.responseText);
+            resolve(data);
+          } catch {
+            resolve({ success: true, filename: file.name });
+          }
+        } else {
+          try {
+            const err = JSON.parse(xhr.responseText);
+            resolve({ success: false, filename: file.name, error: err.error });
+          } catch {
+            resolve({ success: false, filename: file.name, error: `Upload failed (status ${xhr.status})` });
+          }
+        }
+      };
+
+      xhr.onerror = () => resolve({ success: false, filename: file.name, error: 'Network error during upload' });
+      xhr.ontimeout = () => resolve({ success: false, filename: file.name, error: 'Upload timed out' });
+
+      xhr.send(file);
+    });
+  },
+
+  getBinariesList: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/binaries/list').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getBinaryDownloadUrl: (filename: string): string => {
+    const token = authStore.getToken();
+    return `/api/v1/binaries/download?name=${encodeURIComponent(filename)}${token ? `&token=${encodeURIComponent(token)}` : ''}`;
+  },
+
+  getSystemDrives: async (): Promise<any[]> => {
+    const res = await fetchWithAuth('/api/v1/system/drives').catch(() => null);
+    return res && res.ok ? await res.json() : [];
+  },
+
+  getStorageAllocation: async (): Promise<{ selectedDrive: string; storageRoot: string; mediaRoot: string; backupsRoot: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/storage-allocation').catch(() => null);
+    return res && res.ok ? await res.json() : {
+      selectedDrive: 'C:',
+      storageRoot: 'C:\\ProgramData\\Ownbase\\storage',
+      mediaRoot: 'C:\\ProgramData\\Ownbase\\storage\\Photos',
+      backupsRoot: 'C:\\ProgramData\\Ownbase\\backups',
+    };
+  },
+
+  updateStorageAllocation: async (data: { selectedDrive: string; storageRoot: string; mediaRoot: string; backupsRoot: string }): Promise<any> => {
+    const res = await fetchWithAuth('/api/v1/system/storage-allocation', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/octet-stream' },
-      body: file,
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(data),
     }).catch(() => null);
     return res && res.ok ? await res.json() : { success: false };
+  },
+
+  getSshStatus: async (): Promise<{ installed: boolean; running: boolean; port: number; host: string; username?: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/ssh-status').catch(() => null);
+    return res && res.ok ? await res.json() : { installed: false, running: false, port: 22, host: '127.0.0.1', username: 'Munna' };
+  },
+
+  toggleSsh: async (enable: boolean): Promise<{ success: boolean; running: boolean; error?: string; command?: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/ssh-toggle', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ enable }),
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, running: false, error: 'Failed to communicate with SSH toggle service' };
+  },
+
+  applyFirewallRules: async (): Promise<{ success: boolean; message: string; command?: string }> => {
+    const res = await fetchWithAuth('/api/v1/system/firewall-rules', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }).catch(() => null);
+    return res && res.ok ? await res.json() : { success: false, message: 'Failed to apply rules' };
   },
 
   // Google Photos & Memories operations

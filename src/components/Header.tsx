@@ -1,6 +1,7 @@
 'use client';
 
-import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu, User, LogOut, LogIn } from 'lucide-react';
+import React from 'react';
+import { Server, Cpu, HardDrive, RefreshCw, Wifi, Menu, User, LogOut, LogIn, ChevronRight } from 'lucide-react';
 import { SystemInfo } from '@/shared/types';
 
 interface HeaderProps {
@@ -11,7 +12,25 @@ interface HeaderProps {
   currentUser?: { username: string; role: string } | null;
   onLoginClick?: () => void;
   onLogoutClick?: () => void;
+  activeTab?: string;
 }
+
+const TAB_LABELS: Record<string, string> = {
+  overview: 'Dashboard',
+  files: 'File Explorer',
+  photos: 'Photos & Memories',
+  storage: 'Storage Drives & Allocation',
+  apidocs: 'API Docs & Explorer',
+  services: 'Installed Services',
+  store: '1-Click App Store',
+  routes: 'Websites & Ingress',
+  observability: 'Metrics & Health',
+  terminal: 'PowerShell Terminal',
+  logs: 'System Logs',
+  security: 'Security & Audit',
+  backups: 'Backups & Recovery',
+  settings: 'Daemon Settings',
+};
 
 export const Header: React.FC<HeaderProps> = ({
   systemInfo,
@@ -21,11 +40,12 @@ export const Header: React.FC<HeaderProps> = ({
   currentUser,
   onLoginClick,
   onLogoutClick,
+  activeTab = 'overview',
 }) => {
   return (
     <header className="border-b border-slate-800/80 bg-[#0b0f19]/90 backdrop-blur-md sticky top-0 z-40 px-4 sm:px-6 py-3">
       <div className="flex items-center justify-between gap-3">
-        {/* Left: Mobile Menu Toggle + Branding */}
+        {/* Left: Mobile Toggle / Mobile Brand / Desktop Breadcrumb */}
         <div className="flex items-center space-x-2.5 sm:space-x-3.5 min-w-0">
           {onToggleMobileMenu && (
             <button
@@ -33,38 +53,34 @@ export const Header: React.FC<HeaderProps> = ({
               className="md:hidden p-2 rounded-xl bg-slate-800/80 hover:bg-slate-750 text-slate-300 border border-slate-700/80 touch-manipulation min-h-[40px] min-w-[40px] flex items-center justify-center"
               aria-label="Open Navigation Menu"
             >
-              <Menu className="w-5 h-5" />
+              <Menu className="w-5 h-5" /> 
             </button>
           )}
 
-          <div className="w-9 h-9 sm:w-10 sm:h-10 rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-lg shadow-blue-500/20 shrink-0">
-            <div className="w-full h-full bg-[#0d121f] rounded-[11px] flex items-center justify-center">
-              <Server className="w-4 h-4 sm:w-5 sm:h-5 text-blue-400" />
+          {/* Mobile Only: Show compact brand since desktop sidebar is hidden */}
+          <div className="flex md:hidden items-center space-x-2 min-w-0">
+            <div className="w-7 h-7 rounded-lg bg-gradient-to-tr from-blue-600 via-indigo-600 to-purple-600 p-[1px] shadow-sm shrink-0">
+              <div className="w-full h-full bg-[#0d121f] rounded-[7px] flex items-center justify-center">
+                <Server className="w-3.5 h-3.5 text-blue-400" />
+              </div>
             </div>
+            <span className="text-xs font-bold text-white tracking-tight truncate">Ownbase</span>
           </div>
 
-          <div className="min-w-0">
-            <div className="flex items-center space-x-1.5 sm:space-x-2">
-              <h1 className="text-sm sm:text-base font-semibold tracking-tight text-white truncate">
-                Windows Hub
-              </h1>
-              <span className="text-[9px] sm:text-[10px] font-mono px-1.5 sm:px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/30 shrink-0">
-                24/7 Engine
-              </span>
-            </div>
-            <p className="text-[10px] sm:text-xs text-slate-400 flex items-center gap-1 mt-0.5 truncate">
-              <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 live-indicator-active shrink-0" />
-              <span className="text-emerald-400 font-medium">Native Mode</span>
-              <span className="text-slate-600">•</span>
-              <span className="truncate">No Docker / No WSL2</span>
-            </p>
+          {/* Desktop Breadcrumb Navigation: Replaces redundant logo on desktop */}
+          <div className="hidden md:flex items-center space-x-2 text-xs">
+            <span className="text-slate-400 font-medium">Server</span>
+            <ChevronRight className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+            <span className="text-white font-semibold tracking-wide">
+              {TAB_LABELS[activeTab] || 'Dashboard'}
+            </span>
           </div>
         </div>
 
         {/* Right: System Specs & Refresh */}
         <div className="flex items-center space-x-2 sm:space-x-3 shrink-0">
           {systemInfo && (
-            <div className="hidden lg:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
+            <div className="hidden xl:flex items-center space-x-2 bg-slate-900/60 border border-slate-800 rounded-lg px-3 py-1.5 text-xs text-slate-300">
               <div className="flex items-center gap-1.5 text-slate-400">
                 <Cpu className="w-3.5 h-3.5 text-indigo-400" />
                 <span className="font-mono text-slate-200">

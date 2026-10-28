@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64">
+  <defs>
+    <filter id="photosGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="2" result="blur"/>
+      <feComposite in="SourceGraphic" in2="blur" operator="over"/>
+    </filter>
+  </defs>
+  <rect width="64" height="64" rx="16" fill="#070b14"/>
+  <rect x="2" y="2" width="60" height="60" rx="14" fill="none" stroke="#1e293b" stroke-width="1.5"/>
+  <g transform="translate(32, 32)">
+    <!-- Top-Left (Red / Coral) -->
+    <path d="M0,0 C-11,0 -19,-8 -19,-15 C-19,-22 -11,-22 0,-22 L0,0 Z" fill="#ea4335" filter="url(#photosGlow)"/>
+    <!-- Top-Right (Yellow / Amber) -->
+    <path d="M0,0 C0,-11 8,-19 15,-19 C22,-19 22,-11 22,0 L0,0 Z" fill="#fbbc04" filter="url(#photosGlow)"/>
+    <!-- Bottom-Right (Green / Emerald) -->
+    <path d="M0,0 C11,0 19,8 19,15 C19,22 11,22 0,22 L0,0 Z" fill="#34a853" filter="url(#photosGlow)"/>
+    <!-- Bottom-Left (Blue / Cobalt) -->
+    <path d="M0,0 C0,11 -8,19 -15,19 C-22,19 -22,11 -22,0 L0,0 Z" fill="#4285f4" filter="url(#photosGlow)"/>
+    <!-- Center white core dot -->
+    <circle cx="0" cy="0" r="3.5" fill="#ffffff"/>
+  </g>
+</svg>

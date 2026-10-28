@@ -13,6 +13,11 @@ export class CaddyManager {
   private prismaManager: PrismaManager;
   private lastConfigHash: string = '';
   private autosavePath: string;
+  private daemonPort: number = 3001;
+
+  public setDaemonPort(port: number) {
+    this.daemonPort = port;
+  }
 
   constructor(prismaManager: PrismaManager, adminUrl = 'http://127.0.0.1:2019') {
     this.prismaManager = prismaManager;
@@ -113,32 +118,24 @@ export class CaddyManager {
   public generateFullConfig(routes: any[]): { config: any; hash: string } {
     const caddyRoutes: any[] = [];
 
-    // 1. Core Platform Routes: /api/*, /ws, /_next/*, /favicon.ico -> Daemon Gateway
-    caddyRoutes.push({
-      '@id': 'core-gateway-api',
-      match: [{ path: ['/api/*', '/ws', '/_next/*', '/favicon.ico'] }],
-      handle: [
-        {
-          handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
-        },
-      ],
-    });
+    // 1. User & Service Routes (Evaluated first with terminal: true)
+    const allRoutes = [...routes];
+    if (!allRoutes.some((r) => r.subdomain === 'photos')) {
+      const isDev = process.argv.includes('--dev') || process.env.NODE_ENV === 'development';
+      allRoutes.push({
+        subdomain: 'photos',
+        targetPort: isDev ? 3000 : this.daemonPort,
+        targetHost: '127.0.0.1',
+        exposeLocal: true,
+        exposeLan: true,
+        exposeMesh: true,
+        tlsEnabled: true,
+      });
+    }
 
-    // 2. Core Dashboard SPA Root: / -> Daemon Gateway
-    caddyRoutes.push({
-      '@id': 'core-dashboard-root',
-      match: [{ path: ['/'] }],
-      handle: [
-        {
-          handler: 'reverse_proxy',
-          upstreams: [{ dial: '127.0.0.1:3001' }],
-        },
-      ],
-    });
+    const restrictedHtml = `<!DOCTYPE html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1.0"><title>Ownbase • Access Restricted</title><style>*{box-sizing:border-box;margin:0;padding:0}body{background:#070b12;color:#f8fafc;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;display:flex;align-items:center;justify-content:center;min-height:100vh;padding:20px}.card{background:#0d1322;border:1px solid #1e293b;border-radius:20px;padding:32px 24px;max-width:420px;width:100%;text-align:center;box-shadow:0 25px 50px -12px rgba(0,0,0,0.5)}.badge{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.3);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:0.5px;margin-bottom:16px}h2{font-size:18px;font-weight:700;color:#fff;margin-bottom:8px}p{font-size:13px;color:#94a3b8;line-height:1.5;margin-bottom:24px}.btn{display:inline-flex;align-items:center;justify-content:center;width:100%;padding:12px 20px;background:linear-gradient(135deg,#2563eb,#4f46e5);color:#fff;border-radius:12px;font-size:13px;font-weight:600;text-decoration:none;box-shadow:0 4px 14px rgba(37,99,235,0.3);transition:opacity 0.2s}.btn:hover{opacity:0.9}.note{margin-top:14px;font-size:11px;color:#64748b}</style></head><body><div class="card"><div class="badge">🔒 Authentication Required</div><h2>Access Restricted</h2><p>Sign in to your Ownbase server to access this service on your local network or remote connection.</p><a id="loginBtn" href="/" class="btn">Sign In to Ownbase Hub</a><div class="note">Subdomain access requires an active Ownbase session</div></div><script>(function(){var h=window.location.hostname;var p=h.split('.');var hubUrl='/';if(p.length>=3){p[0]='hub';hubUrl=window.location.protocol+'//'+p.join('.')+(window.location.port?':'+window.location.port:'')+'/'}var target=hubUrl+'?redirect='+encodeURIComponent(window.location.href);document.getElementById('loginBtn').href=target;})();</script></body></html>`;
 
-    // 3. User & Service Routes
-    for (const r of routes) {
+    for (const r of allRoutes) {
       if (r.isActive === false) continue;
 
       const customDomains: string[] = [];
@@ -156,11 +153,12 @@ export class CaddyManager {
         customDomains,
         exposeLocal: r.exposeLocal ?? true,
         exposeLan: r.exposeLan ?? true,
-        exposeMesh: r.exposeMesh ?? false,
+        exposeMesh: r.exposeMesh ?? true,
         tlsEnabled: r.tlsEnabled ?? true,
       };
 
-      const isProtected = ['ai', 'files'].includes(r.subdomain) || r.requiresAuth;
+      // All service subdomains on LAN/remote MUST be protected unless explicitly marked requiresAuth: false or is hub
+      const isProtected = r.subdomain !== 'hub' && r.subdomain !== 'proxy' && r.requiresAuth !== false;
       const built = hostBuilder.build(intent);
 
       if (built.caddyMatchers.length > 0) {
@@ -201,7 +199,7 @@ export class CaddyManager {
               handle: [
                 {
                   handler: 'reverse_proxy',
-                  upstreams: [{ dial: '127.0.0.1:3001' }],
+                  upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
                   rewrite: {
                     method: 'GET',
                     uri: '/api/v1/auth/verify',
@@ -220,21 +218,46 @@ export class CaddyManager {
                       match: {
                         status_code: [200, 201, 204],
                       },
+                      routes: [
+                        {
+                          handle: [
+                            {
+                              handler: 'reverse_proxy',
+                              headers: {
+                                request: {
+                                  set: {
+                                    Host: ['{http.reverse_proxy.upstream.hostport}'],
+                                    'X-Forwarded-Host': ['{http.request.host}'],
+                                    'X-Forwarded-Proto': ['{http.request.scheme}'],
+                                  },
+                                },
+                              },
+                              upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
+                            },
+                          ],
+                        },
+                      ],
+                    },
+                    {
+                      match: {
+                        status_code: [401, 403],
+                      },
+                      routes: [
+                        {
+                          handle: [
+                            {
+                              handler: 'static_response',
+                              status_code: 401,
+                              headers: {
+                                'Content-Type': ['text/html; charset=utf-8'],
+                              },
+                              body: restrictedHtml,
+                            },
+                          ],
+                        },
+                      ],
                     },
                   ],
-                },
-                {
-                  handler: 'reverse_proxy',
-                  headers: {
-                    request: {
-                      set: {
-                        Host: ['{http.reverse_proxy.upstream.hostport}'],
-                        'X-Forwarded-Host': ['{http.request.host}'],
-                        'X-Forwarded-Proto': ['{http.request.scheme}'],
-                      },
-                    },
-                  },
-                  upstreams: [{ dial: `${r.targetHost || '127.0.0.1'}:${r.targetPort}` }],
                 },
               ],
               terminal: true,
@@ -269,6 +292,30 @@ export class CaddyManager {
         }
       }
     }
+
+    // 2. Core Platform Routes: /api/*, /ws, /_next/*, /favicon.ico -> Daemon Gateway
+    caddyRoutes.push({
+      '@id': 'core-gateway-api',
+      match: [{ path: ['/api/*', '/ws', '/_next/*', '/favicon.ico'] }],
+      handle: [
+        {
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
+        },
+      ],
+    });
+
+    // 3. Core Dashboard Catch-All SPA Root -> Daemon Gateway
+    caddyRoutes.push({
+      '@id': 'core-dashboard-root',
+      match: [{ path: ['/*'] }],
+      handle: [
+        {
+          handler: 'reverse_proxy',
+          upstreams: [{ dial: `127.0.0.1:${this.daemonPort}` }],
+        },
+      ],
+    });
 
     const fullConfig = {
       admin: {
@@ -343,7 +390,8 @@ export class CaddyManager {
     return this.autosavePath;
   }
 
-  public async testRoute(host: string): Promise<{ success: boolean; statusCode?: number; error?: string }> {
+  public async testRoute(host: string): Promise<{ success: boolean; statusCode?: number; status?: number; latencyMs: number; error?: string }> {
+    const startTime = Date.now();
     return new Promise((resolve) => {
       const req = http.request(
         {
@@ -355,14 +403,20 @@ export class CaddyManager {
           timeout: 3000,
         },
         (res) => {
-          resolve({ success: (res.statusCode || 0) < 500, statusCode: res.statusCode });
+          const latencyMs = Math.max(1, Date.now() - startTime);
+          const status = res.statusCode || 200;
+          resolve({ success: status < 500, statusCode: status, status, latencyMs });
         }
       );
 
-      req.on('error', (err) => resolve({ success: false, error: err.message }));
+      req.on('error', (err) => {
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        resolve({ success: false, statusCode: 502, status: 502, latencyMs, error: err.message });
+      });
       req.on('timeout', () => {
         req.destroy();
-        resolve({ success: false, error: 'Connection timed out' });
+        const latencyMs = Math.max(1, Date.now() - startTime);
+        resolve({ success: false, statusCode: 504, status: 504, latencyMs, error: 'Connection timed out' });
       });
       req.end();
     });

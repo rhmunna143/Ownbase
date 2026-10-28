@@ -16,17 +16,17 @@ export const BootstrapStepper: React.FC<BootstrapStepperProps> = ({ steps }) => 
 
   return (
     <div className="glass-card rounded-xl p-3.5 border border-slate-800 bg-slate-900/40">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center space-x-3">
-          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center space-x-3 min-w-0">
+          <div className="w-8 h-8 rounded-lg bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400 shrink-0">
             <Cpu className="w-4 h-4" />
           </div>
-          <div>
-            <div className="flex items-center gap-2">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
               <span className="text-xs font-semibold text-white">Engine Architecture</span>
               {allSuccessful && (
                 <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center gap-1">
-                  <Check className="w-3 h-3" /> All 12 Systems Healthy
+                  <Check className="w-3 h-3" /> All {steps.length} Systems Healthy
                 </span>
               )}
               {hasError && (
@@ -40,7 +40,7 @@ export const BootstrapStepper: React.FC<BootstrapStepperProps> = ({ steps }) => 
                 </span>
               )}
             </div>
-            <p className="text-[11px] text-slate-400 mt-0.5">
+            <p className="text-[11px] text-slate-400 mt-0.5 line-clamp-1 sm:line-clamp-none">
               Electron IPC, Portable PostgreSQL 16, Prisma Migrations &amp; ProcessSupervisor.
             </p>
           </div>
@@ -48,7 +48,7 @@ export const BootstrapStepper: React.FC<BootstrapStepperProps> = ({ steps }) => 
 
         <button
           onClick={() => setIsExpanded(!isExpanded)}
-          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors"
+          className="flex items-center gap-1 text-[11px] font-medium px-2.5 py-1 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 transition-colors shrink-0"
         >
           <span>{isExpanded ? 'Collapse' : 'View Architecture Pipeline'}</span>
           {isExpanded ? <ChevronUp className="w-3.5 h-3.5" /> : <ChevronDown className="w-3.5 h-3.5" />}

@@ -72,7 +72,7 @@ async function createWindow() {
     height: 840,
     minWidth: 1000,
     minHeight: 700,
-    title: 'Native Windows Server Hub',
+    title: 'Ownbase',
     backgroundColor: '#090d16',
     icon: iconPath,
     webPreferences: {
@@ -116,7 +116,7 @@ async function createWindow() {
 
 async function startBootstrap() {
   updateStep('electron-init', 'running');
-  logger.info('electron', 'Native Windows Server Hub starting up...');
+  logger.info('electron', 'Ownbase starting up...');
   updateStep('electron-init', 'success', 'Electron shell active');
 
   // Step 2 & 3 & 4 & 5: Postgres
@@ -197,16 +197,21 @@ async function startBootstrap() {
 
   // Step 10: Phase 3 Tailscale Mesh Tunneling
   updateStep('tailscale-mesh', 'running', 'Checking Tailscale mesh state');
-  try {
-    const tsStatus = await tailscaleManager.getStatus();
-    if (tsStatus.connected && tsStatus.ip) {
-      updateStep('tailscale-mesh', 'success', `Connected (Mesh IP: ${tsStatus.ip})`);
-    } else {
-      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (configure Auth Key to connect)');
+  const syncTailscaleMesh = async () => {
+    try {
+      const tsStatus = await tailscaleManager.getStatus();
+      if (tsStatus.connected) {
+        updateStep('tailscale-mesh', 'success', tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network');
+      } else {
+        updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (configure Auth Key to connect)');
+      }
+    } catch {
+      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
     }
-  } catch (err: any) {
-    updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
-  }
+  };
+  await syncTailscaleMesh();
+  setTimeout(syncTailscaleMesh, 2000);
+  setTimeout(syncTailscaleMesh, 5000);
 
   // Step 11: Phase 4 24/7 Server Persistence & Power Suspension Blocker
   updateStep('lifecycle-init', 'running', 'Engaging power suspension blocker & system tray');
@@ -269,10 +274,22 @@ async function loadStaticBundle() {
   logger.error('electron', 'Static export out/index.html not found! Please run npm run build:next');
 }
 
-app.whenReady().then(async () => {
-  if (process.platform === 'win32') {
-    app.setAppUserModelId('com.rhmunna143.nativewindowsserverhub');
-  }
+const gotTheLock = app.requestSingleInstanceLock();
+if (!gotTheLock) {
+  app.quit();
+} else {
+  app.on('second-instance', () => {
+    if (mainWindow) {
+      if (mainWindow.isMinimized()) mainWindow.restore();
+      mainWindow.show();
+      mainWindow.focus();
+    }
+  });
+
+  app.whenReady().then(async () => {
+    if (process.platform === 'win32') {
+      app.setAppUserModelId('com.rhmunna143.nativewindowsserverhub');
+    }
   postgresManager = new PostgresManager(5432);
   prismaManager = new PrismaManager(5432, 'postgres');
   supervisor = new ProcessSupervisor(prismaManager);
@@ -318,6 +335,7 @@ app.whenReady().then(async () => {
     }
   });
 });
+}
 
 // Phase 2 & 4: Graceful Termination with taskkill /pid <PID> /T /F before quit
 app.on('before-quit', async (event) => {

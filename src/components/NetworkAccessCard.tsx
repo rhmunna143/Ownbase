@@ -20,6 +20,8 @@ import {
   Camera,
 } from 'lucide-react';
 import { TailscaleStatus, SystemInfo } from '@/shared/types';
+import { serverApi } from '@/shared/apiClient';
+import { getAccessibleServiceUrl } from '@/shared/serviceUrl';
 
 interface NetworkAccessProps {
   systemInfo: SystemInfo | null;
@@ -40,10 +42,40 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
   const [isConnecting, setIsConnecting] = useState(false);
 
   const localIp = systemInfo?.localIp || '192.168.0.108';
-  const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.')) || '100.84.32.40';
+  const tailscaleIp = systemInfo?.tailscaleIp || tailscaleStatus?.ip || systemInfo?.allIps?.find((ip) => ip.startsWith('100.'));
   const hasTailscale = !!tailscaleIp || !!tailscaleStatus?.connected;
 
-  const firewallCmd = `New-NetFirewallRule -DisplayName "Windows Server Hub" -Direction Inbound -LocalPort 80,443,2019,3000,3001,8080,9000,11434,5432 -Protocol TCP -Action Allow`;
+  const filesLocalUrl = getAccessibleServiceUrl('files', 8080);
+  const photosLocalUrl = getAccessibleServiceUrl('photos', 3001);
+  const aiLocalUrl = getAccessibleServiceUrl('ai', 11434);
+  const s3LocalUrl = getAccessibleServiceUrl('s3', 9000);
+
+  const filesTsUrl = tailscaleIp ? getAccessibleServiceUrl('files', 8080, null, tailscaleIp) : '';
+  const photosTsUrl = tailscaleIp ? getAccessibleServiceUrl('photos', 3001, null, tailscaleIp) : '';
+  const aiTsUrl = tailscaleIp ? getAccessibleServiceUrl('ai', 11434, null, tailscaleIp) : '';
+  const s3TsUrl = tailscaleIp ? getAccessibleServiceUrl('s3', 9000, null, tailscaleIp) : '';
+
+  const [isApplyingFw, setIsApplyingFw] = useState(false);
+  const [fwMessage, setFwMessage] = useState<string | null>(null);
+
+  const firewallCmd = `New-NetFirewallRule -DisplayName "Ownbase Server" -Direction Inbound -LocalPort 80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow`;
+
+  const handleApplyFw = async () => {
+    setIsApplyingFw(true);
+    setFwMessage(null);
+    try {
+      const res = await serverApi.applyFirewallRules();
+      if (res.success) {
+        setFwMessage('Firewall inbound rules applied successfully!');
+      } else {
+        setFwMessage('Run PowerShell as Administrator to apply firewall rules.');
+      }
+    } catch {
+      setFwMessage('Run PowerShell as Administrator to apply firewall rules.');
+    } finally {
+      setIsApplyingFw(false);
+    }
+  };
 
   const copyToClipboard = (text: string, key: string) => {
     navigator.clipboard.writeText(text);
@@ -68,7 +100,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
       {/* 1. Local Network / Wi-Fi Access */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 bg-slate-900/40 flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+          <div className="flex flex-wrap items-center justify-between pb-4 border-b border-slate-800 mb-4 gap-3">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-blue-500/10 border border-blue-500/20 flex items-center justify-center text-blue-400">
                 <Wifi className="w-5 h-5" />
@@ -139,14 +171,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://files.${localIp}.nip.io`, 'files-local')}
+                  onClick={() => copyToClipboard(filesLocalUrl, 'files-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'files-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://files.${localIp}.nip.io`}
+                  href={filesLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
@@ -157,12 +189,12 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
             </div>
 
-            {/* Google Photos & Memories Gallery */}
+            {/* Photos & Memories Gallery */}
             <div className="p-2.5 rounded-xl bg-slate-950/70 border border-slate-800/80 flex items-center justify-between">
               <div>
                 <div className="font-semibold text-white flex items-center gap-1.5">
                   <Camera className="w-3.5 h-3.5 text-amber-400" />
-                  <span>Google Photos & Memories Gallery</span>
+                  <span>Photos &amp; Memories Gallery</span>
                   <span className="text-[9px] font-mono px-1.5 py-0.2 rounded bg-amber-500/20 text-amber-300">Web GUI</span>
                 </div>
                 <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
@@ -171,14 +203,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://photos.${localIp}.nip.io`, 'photos-local')}
+                  onClick={() => copyToClipboard(photosLocalUrl, 'photos-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'photos-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://photos.${localIp}.nip.io`}
+                  href={photosLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
@@ -202,14 +234,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://ai.${localIp}.nip.io`, 'ai-local')}
+                  onClick={() => copyToClipboard(aiLocalUrl, 'ai-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 'ai-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://ai.${localIp}.nip.io`}
+                  href={aiLocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30"
@@ -233,14 +265,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
               </div>
               <div className="flex items-center space-x-1.5">
                 <button
-                  onClick={() => copyToClipboard(`http://s3.${localIp}.nip.io`, 's3-local')}
+                  onClick={() => copyToClipboard(s3LocalUrl, 's3-local')}
                   className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                   title="Copy URL"
                 >
                   {copiedKey === 's3-local' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                 </button>
                 <a
-                  href={`http://s3.${localIp}.nip.io`}
+                  href={s3LocalUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="p-1.5 rounded-lg bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 border border-rose-500/30"
@@ -259,19 +291,34 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
             <div className="flex items-center justify-between text-amber-300 font-semibold mb-1">
               <span className="flex items-center gap-1.5">
                 <ShieldAlert className="w-3.5 h-3.5 text-amber-400" />
-                Windows Firewall Status
+                Windows Firewall &amp; Multi-User Wi-Fi Inbound Rules
               </span>
-              <button
-                onClick={() => copyToClipboard(firewallCmd, 'fw-cmd')}
-                className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-900/40 hover:bg-amber-800/60 text-amber-200 border border-amber-700/50"
-              >
-                {copiedKey === 'fw-cmd' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
-                <span>Copy Inbound Rule</span>
-              </button>
+              <div className="flex items-center gap-1.5">
+                <button
+                  onClick={handleApplyFw}
+                  disabled={isApplyingFw}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-600 hover:bg-amber-500 text-white font-semibold transition-colors disabled:opacity-50"
+                >
+                  {isApplyingFw ? <Loader2 className="w-3 h-3 animate-spin" /> : <ShieldCheck className="w-3 h-3" />}
+                  <span>Apply Rule</span>
+                </button>
+                <button
+                  onClick={() => copyToClipboard(firewallCmd, 'fw-cmd')}
+                  className="flex items-center gap-1 text-[10px] px-2 py-0.5 rounded bg-amber-900/40 hover:bg-amber-800/60 text-amber-200 border border-amber-700/50"
+                >
+                  {copiedKey === 'fw-cmd' ? <Check className="w-3 h-3 text-emerald-400" /> : <Copy className="w-3 h-3" />}
+                  <span>Copy PowerShell</span>
+                </button>
+              </div>
             </div>
             <p className="text-[10px] text-slate-400 leading-relaxed">
-              Inbound ports 80, 8080, 9000, 11434, 3000 are unblocked. Devices on your Wi-Fi can directly reach port 80.
+              Allows multiple Wi-Fi users to connect to Caddy and services without Windows dropping packets (ERR_CONNECTION_REFUSED).
             </p>
+            {fwMessage && (
+              <div className="mt-1 text-[10px] text-amber-300 font-mono">
+                {fwMessage}
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -279,7 +326,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
       {/* 2. Tailscale Mesh VPN (Internet / Remote Access from Anywhere) */}
       <div className="glass-card rounded-2xl p-6 border border-slate-800 bg-slate-900/40 flex flex-col justify-between">
         <div>
-          <div className="flex items-center justify-between pb-4 border-b border-slate-800 mb-4">
+          <div className="flex flex-wrap items-center justify-between pb-4 border-b border-slate-800 mb-4 gap-3">
             <div className="flex items-center space-x-3">
               <div className="w-10 h-10 rounded-xl bg-purple-500/10 border border-purple-500/20 flex items-center justify-center text-purple-400">
                 <Globe className="w-5 h-5" />
@@ -358,14 +405,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://files.${tailscaleIp}.nip.io`, 'files-ts')}
+                    onClick={() => copyToClipboard(filesTsUrl, 'files-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'files-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://files.${tailscaleIp}.nip.io`}
+                    href={filesTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-emerald-600/20 text-emerald-400 hover:bg-emerald-600/30 border border-emerald-500/30"
@@ -381,7 +428,7 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 <div>
                   <div className="font-semibold text-white flex items-center gap-1.5">
                     <Camera className="w-3.5 h-3.5 text-amber-400" />
-                    <span>Google Photos & Memories (Remote)</span>
+                    <span>Photos &amp; Memories (Remote)</span>
                   </div>
                   <div className="text-[11px] font-mono text-amber-300/90 mt-0.5">
                     http://photos.{tailscaleIp}.nip.io
@@ -389,14 +436,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://photos.${tailscaleIp}.nip.io`, 'photos-ts')}
+                    onClick={() => copyToClipboard(photosTsUrl, 'photos-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'photos-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://photos.${tailscaleIp}.nip.io`}
+                    href={photosTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-amber-600/20 text-amber-400 hover:bg-amber-600/30 border border-amber-500/30"
@@ -420,14 +467,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://ai.${tailscaleIp}.nip.io`, 'ai-ts')}
+                    onClick={() => copyToClipboard(aiTsUrl, 'ai-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 'ai-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://ai.${tailscaleIp}.nip.io`}
+                    href={aiTsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-purple-600/20 text-purple-400 hover:bg-purple-600/30 border border-purple-500/30"
@@ -451,14 +498,14 @@ export const NetworkAccessCard: React.FC<NetworkAccessProps> = ({
                 </div>
                 <div className="flex items-center space-x-1.5">
                   <button
-                    onClick={() => copyToClipboard(`http://s3.${tailscaleIp}.nip.io`, 's3-ts')}
+                    onClick={() => copyToClipboard(s3TsUrl, 's3-ts')}
                     className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300"
                     title="Copy URL"
                   >
                     {copiedKey === 's3-ts' ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
                   </button>
                   <a
-                    href={`http://s3.${tailscaleIp}.nip.io`}
+                    href={s3TsUrl}
                     target="_blank"
                     rel="noopener noreferrer"
                     className="p-1.5 rounded-lg bg-rose-600/20 text-rose-400 hover:bg-rose-600/30 border border-rose-500/30"

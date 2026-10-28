@@ -10,6 +10,7 @@ import { CaddyManager } from './network/caddy';
 import { TailscaleManager } from './network/tailscale';
 import { WebApiServer } from './gateway/httpServer';
 import { BootstrapStep } from '../shared/types';
+import { hostBuilder } from './core/hostBuilder';
 
 const bootstrapSteps: BootstrapStep[] = [
   { id: 'paths-init', name: 'Path Environment', description: `Resolved ${paths.mode} mode data root`, status: 'pending' },
@@ -23,7 +24,7 @@ const bootstrapSteps: BootstrapStep[] = [
   { id: 'power-persistence', name: '24/7 Power Persistence', description: 'Windows system suspension blocker', status: 'pending' },
 ];
 
-function updateStep(id: string, status: BootstrapStep['status'], detail?: string) {
+export function updateStep(id: string, status: BootstrapStep['status'], detail?: string) {
   const step = bootstrapSteps.find((s) => s.id === id);
   if (step) {
     step.status = status;
@@ -63,7 +64,10 @@ export async function bootstrapDaemon(): Promise<{
   );
 
   await webApiServer.start();
-  updateStep('gateway-early', 'success', `Listening on 127.0.0.1:${config.ports.daemon}`);
+  const actualPort = webApiServer.getPort();
+  config.ports.daemon = actualPort;
+  caddyManager.setDaemonPort(actualPort);
+  updateStep('gateway-early', 'success', `Listening on 127.0.0.1:${actualPort}`);
 
   // 3. PostgreSQL Database
   updateStep('postgres-init', 'running');
@@ -121,23 +125,38 @@ export async function bootstrapDaemon(): Promise<{
 
   // 7. Tailscale Mesh
   updateStep('tailscale-mesh', 'running');
-  try {
-    const tsStatus = await tailscaleManager.getStatus();
-    if (tsStatus.connected && tsStatus.ip) {
-      updateStep('tailscale-mesh', 'success', `Connected (Mesh IP: ${tsStatus.ip})`);
-    } else {
-      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (awaiting Auth Key)');
+  const syncTailscaleStep = async () => {
+    try {
+      const tsStatus = await tailscaleManager.getStatus();
+      if (tsStatus.connected) {
+        updateStep('tailscale-mesh', 'success', tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network');
+      } else {
+        updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready (awaiting Auth Key)');
+      }
+    } catch {
+      updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
     }
-  } catch {
-    updateStep('tailscale-mesh', 'pending', 'Tailscale CLI ready');
-  }
+  };
+
+  await syncTailscaleStep();
+  setTimeout(syncTailscaleStep, 2000);
+  setTimeout(syncTailscaleStep, 5000);
+
+  // Subscribe to live network interface changes to auto-update step dynamically
+  hostBuilder.onNetworkChange((state) => {
+    if (state.tailscaleIp) {
+      updateStep('tailscale-mesh', 'success', `Connected (Mesh IP: ${state.tailscaleIp})`);
+    } else {
+      syncTailscaleStep();
+    }
+  });
 
   // 8. Power Persistence (24/7 background operation)
   updateStep('power-persistence', 'running');
   powerManager.enablePowerPersistence();
   updateStep('power-persistence', 'success', 'SetThreadExecutionState persistence active');
 
-  logger.success('daemon', `Ownbase Headless Daemon fully initialized on http://127.0.0.1:${config.ports.daemon}`);
+  logger.success('daemon', `Ownbase Headless Daemon fully initialized on http://127.0.0.1:${webApiServer.getPort()}`);
 
   // Graceful shutdown hooks
   const shutdown = async (signal: string) => {

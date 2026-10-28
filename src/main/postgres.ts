@@ -191,62 +191,107 @@ export class PostgresManager {
 
   private startEngine(): Promise<void> {
     return new Promise((resolve) => {
+      const pgCtlExe = path.join(this.binDir, 'pg_ctl.exe');
       const postgresExe = path.join(this.binDir, 'postgres.exe');
-      const args = [
-        '-D', this.dataDir,
-        '-p', this.port.toString(),
-      ];
 
-      logger.info('postgres', `Launching engine: "${postgresExe}" ${args.join(' ')}`);
-
-      // Spawn silently
-      this.childProcess = spawn(postgresExe, args, {
-        windowsHide: true,
-        detached: false,
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-
-      const pid = this.childProcess.pid;
-      this.updateStatus({ pid });
-      logger.info('postgres', `PostgreSQL process spawned with PID: ${pid}`);
-
-      this.childProcess.stdout?.on('data', (data) => {
-        const lines = data.toString().split(/\r?\n/).filter(Boolean);
-        for (const line of lines) {
-          logger.info('postgres', line);
+      if (fs.existsSync(pgCtlExe)) {
+        const logDir = path.join(this.dataDir, '..', 'logs');
+        if (!fs.existsSync(logDir)) {
+          try { fs.mkdirSync(logDir, { recursive: true }); } catch {}
         }
-      });
+        const logFile = path.join(logDir, 'postgres.log');
+        const args = [
+          'start',
+          '-D', this.dataDir,
+          '-l', logFile,
+          '-o', `-p ${this.port} -h 127.0.0.1`,
+        ];
 
-      this.childProcess.stderr?.on('data', (data) => {
-        const lines = data.toString().split(/\r?\n/).filter(Boolean);
-        for (const line of lines) {
-          // PostgreSQL outputs startup info to stderr by default
-          if (line.includes('database system is ready to accept connections')) {
-            logger.success('postgres', line);
-          } else if (line.includes('FATAL') || line.includes('PANIC')) {
-            logger.error('postgres', line);
-          } else {
+        logger.info('postgres', `Launching engine via pg_ctl: "${pgCtlExe}" ${args.join(' ')}`);
+
+        const child = spawn(pgCtlExe, args, {
+          stdio: 'ignore',
+          windowsHide: true,
+        });
+
+        child.on('error', (err) => {
+          logger.warn('postgres', `pg_ctl start spawn notice: ${err.message}`);
+          resolve();
+        });
+
+        child.on('exit', (code) => {
+          logger.info('postgres', `pg_ctl start exited with code ${code}`);
+
+          const pidFile = path.join(this.dataDir, 'postmaster.pid');
+          if (fs.existsSync(pidFile)) {
+            try {
+              const pidContent = fs.readFileSync(pidFile, 'utf-8');
+              const pid = parseInt(pidContent.split(/\r?\n/)[0]?.trim(), 10);
+              if (!isNaN(pid) && pid > 0) {
+                this.updateStatus({ pid });
+                logger.info('postgres', `PostgreSQL process running with PID: ${pid}`);
+              }
+            } catch {}
+          }
+          resolve();
+        });
+      } else {
+        const args = [
+          '-D', this.dataDir,
+          '-p', this.port.toString(),
+        ];
+
+        logger.info('postgres', `Launching engine: "${postgresExe}" ${args.join(' ')}`);
+
+        // Spawn silently
+        this.childProcess = spawn(postgresExe, args, {
+          windowsHide: true,
+          detached: false,
+          stdio: ['ignore', 'pipe', 'pipe'],
+        });
+
+        const pid = this.childProcess.pid;
+        this.updateStatus({ pid });
+        logger.info('postgres', `PostgreSQL process spawned with PID: ${pid}`);
+
+        this.childProcess.stdout?.on('data', (data) => {
+          const lines = data.toString().split(/\r?\n/).filter(Boolean);
+          for (const line of lines) {
             logger.info('postgres', line);
           }
-        }
-      });
-
-      this.childProcess.on('exit', (code, signal) => {
-        logger.warn('postgres', `PostgreSQL process exited with code=${code}, signal=${signal}`);
-        this.updateStatus({
-          state: 'stopped',
-          pid: undefined,
-          isPortListening: false,
-          canConnect: false,
         });
-      });
 
-      this.childProcess.on('error', (err) => {
-        logger.error('postgres', `PostgreSQL process error: ${err.message}`);
-        this.updateStatus({ state: 'error', error: err.message });
-      });
+        this.childProcess.stderr?.on('data', (data) => {
+          const lines = data.toString().split(/\r?\n/).filter(Boolean);
+          for (const line of lines) {
+            // PostgreSQL outputs startup info to stderr by default
+            if (line.includes('database system is ready to accept connections')) {
+              logger.success('postgres', line);
+            } else if (line.includes('FATAL') || line.includes('PANIC')) {
+              logger.error('postgres', line);
+            } else {
+              logger.info('postgres', line);
+            }
+          }
+        });
 
-      resolve();
+        this.childProcess.on('exit', (code, signal) => {
+          logger.warn('postgres', `PostgreSQL process exited with code=${code}, signal=${signal}`);
+          this.updateStatus({
+            state: 'stopped',
+            pid: undefined,
+            isPortListening: false,
+            canConnect: false,
+          });
+        });
+
+        this.childProcess.on('error', (err) => {
+          logger.error('postgres', `PostgreSQL process error: ${err.message}`);
+          this.updateStatus({ state: 'error', error: err.message });
+        });
+
+        resolve();
+      }
     });
   }
 

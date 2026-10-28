@@ -67,6 +67,22 @@ export function registerIpcHandlers(
   });
 
   ipcMain.handle('get-bootstrap-steps', async () => {
+    try {
+      const tsStatus = await tailscaleManager.getStatus();
+      const steps = getBootstrapSteps();
+      const tsStep = steps.find((s) => s.id === 'tailscale-mesh');
+      if (tsStep) {
+        if (tsStatus.connected) {
+          tsStep.status = 'success';
+          tsStep.detail = tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network';
+          tsStep.timestamp = new Date().toISOString();
+        } else if (tsStep.status === 'success') {
+          tsStep.status = 'pending';
+          tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+          tsStep.timestamp = new Date().toISOString();
+        }
+      }
+    } catch {}
     return getBootstrapSteps();
   });
 
@@ -200,17 +216,48 @@ export function registerIpcHandlers(
 
   // Phase 3: Tailscale Mesh Tunneling Handlers
   ipcMain.handle('tailscale:get-status', async () => {
-    return await tailscaleManager.getStatus();
+    const status = await tailscaleManager.getStatus();
+    const tsStep = getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+    if (tsStep) {
+      if (status.connected) {
+        tsStep.status = 'success';
+        tsStep.detail = status.ip ? `Connected (Mesh IP: ${status.ip})` : 'Connected to mesh network';
+        tsStep.timestamp = new Date().toISOString();
+      } else if (tsStep.status === 'success') {
+        tsStep.status = 'pending';
+        tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+        tsStep.timestamp = new Date().toISOString();
+      }
+    }
+    return status;
   });
 
   ipcMain.handle('tailscale:connect', async (_event, authKey: string, hostname?: string) => {
     logger.info('ipc', 'Received tailscale:connect request');
-    return await tailscaleManager.connect(authKey, hostname);
+    const res = await tailscaleManager.connect(authKey, hostname);
+    if (res.success) {
+      const tsStep = getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+      if (tsStep) {
+        tsStep.status = 'success';
+        tsStep.detail = res.ip ? `Connected (Mesh IP: ${res.ip})` : 'Connected to mesh network';
+        tsStep.timestamp = new Date().toISOString();
+      }
+    }
+    return res;
   });
 
   ipcMain.handle('tailscale:disconnect', async () => {
     logger.info('ipc', 'Received tailscale:disconnect request');
-    return await tailscaleManager.disconnect();
+    const res = await tailscaleManager.disconnect();
+    if (res.success) {
+      const tsStep = getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+      if (tsStep) {
+        tsStep.status = 'pending';
+        tsStep.detail = 'Tailscale CLI ready (configure Auth Key to connect)';
+        tsStep.timestamp = new Date().toISOString();
+      }
+    }
+    return res;
   });
 
   // Phase 4: System Integration & App Lifecycle Handlers

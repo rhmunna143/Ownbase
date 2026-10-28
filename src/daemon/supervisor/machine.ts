@@ -26,8 +26,8 @@ export class ServiceStateMachine extends EventEmitter {
 
   private static readonly VALID_TRANSITIONS: Record<ServiceState, ServiceState[]> = {
     stopped: ['starting'],
-    starting: ['running', 'crashed', 'failed', 'stopping'],
-    running: ['stopping', 'crashed', 'failed'],
+    starting: ['running', 'crashed', 'failed', 'stopping', 'stopped'],
+    running: ['stopping', 'crashed', 'failed', 'stopped'],
     stopping: ['stopped', 'failed'],
     backoff: ['starting', 'stopped', 'failed'],
     crashed: ['backoff', 'stopped', 'failed', 'starting'],

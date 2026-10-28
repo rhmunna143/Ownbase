@@ -9,7 +9,7 @@ describe('Phase 1 Acceptance Criteria (A1 - A7)', () => {
   let testServer: TestServerInstance;
 
   beforeAll(async () => {
-    testServer = await createTestServer(3105);
+    testServer = await createTestServer(0);
   });
 
   afterAll(async () => {
@@ -181,6 +181,14 @@ describe('Phase 1 Acceptance Criteria (A1 - A7)', () => {
       await expect(
         tableBrowser.queryTable('pg_shadow')
       ).rejects.toThrow(/not permitted/);
+    });
+
+    it('table browser successfully queries permitted tables inside isolated read-only transaction', async () => {
+      const tableBrowser = testServer.server.getTableBrowser();
+      const res = await tableBrowser.queryTable('services');
+      expect(res).toBeDefined();
+      expect(Array.isArray(res.rows)).toBe(true);
+      expect(typeof res.totalCount).toBe('number');
     });
   });
 

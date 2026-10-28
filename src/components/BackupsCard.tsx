@@ -15,6 +15,7 @@ import {
   FileCheck,
 } from 'lucide-react';
 import { fetchWithAuth } from '@/shared/apiClient';
+import { modalDialog } from '@/components/ModalDialog';
 
 interface BackupJob {
   id: string;
@@ -104,7 +105,13 @@ export function BackupsCard() {
   };
 
   const handleDelete = async (backupId: string) => {
-    if (!confirm('Are you sure you want to permanently delete this backup archive?')) return;
+    const confirmed = await modalDialog.confirm(
+      'Are you sure you want to permanently delete this backup archive?',
+      'Delete Backup Archive',
+      'danger',
+      'Delete Archive'
+    );
+    if (!confirmed) return;
     try {
       const res = await fetchWithAuth(`/api/v1/backups/${backupId}`, { method: 'DELETE' });
       if (res.ok) {

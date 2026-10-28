@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { Lock, User, AlertCircle, Loader2, ShieldCheck } from 'lucide-react';
-import { serverApi } from '@/shared/apiClient';
+import { serverApi, authStore } from '@/shared/apiClient';
 
 interface LoginModalProps {
   isOpen: boolean;
@@ -26,6 +26,19 @@ export const LoginModal: React.FC<LoginModalProps> = ({ isOpen, onLoginSuccess, 
     try {
       const res = await serverApi.login(username, password);
       if (res.ok && res.user) {
+        if (typeof window !== 'undefined') {
+          const params = new URLSearchParams(window.location.search);
+          const redirectTarget = params.get('redirect');
+          const token = res.accessToken || authStore.getToken();
+          if (redirectTarget && token) {
+            try {
+              const targetUrl = new URL(redirectTarget, window.location.origin);
+              targetUrl.searchParams.set('token', token);
+              window.location.replace(targetUrl.toString());
+              return;
+            } catch {}
+          }
+        }
         onLoginSuccess(res.user);
       } else {
         setError(res.error || 'Authentication failed. Please verify credentials.');

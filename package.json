@@ -3,16 +3,17 @@
   "version": "0.1.0",
   "private": true,
   "description": "Native Windows Server Hub - Standalone server orchestration without Docker or WSL2",
+  "author": "rhmunna143",
   "main": "dist/electron/index.js",
   "prisma": {
     "schema": "prisma/schema"
   },
   "scripts": {
-    "dev": "concurrently -k \"npm run dev:daemon\" \"npm run dev:electron\"",
+    "dev": "concurrently -k \"npm run dev:daemon\" \"npm run dev:next\" \"npm run dev:electron\"",
     "dev:next": "next dev -p 3000",
     "dev:all": "concurrently -k \"npm run dev:daemon\" \"npm run dev:next\" \"npm run dev:electron\"",
-    "dev:electron": "wait-on http://127.0.0.1:3001 && tsc -p tsconfig.electron.json && electron . --dev",
-    "dev:daemon": "tsx src/daemon/main.ts",
+    "dev:electron": "wait-on http://127.0.0.1:3001 http://127.0.0.1:3000 && tsc -p tsconfig.electron.json && electron . --dev",
+    "dev:daemon": "tsx watch src/daemon/main.ts",
     "build": "npm run build:next && npm run build:electron",
     "build:next": "next build",
     "build:electron": "tsc -p tsconfig.electron.json",
@@ -32,7 +33,9 @@
     "test:phase5": "vitest run tests/phase5",
     "test:phase6": "vitest run tests/phase6",
     "test:phase7": "vitest run tests/phase7",
+    "test:phase8": "vitest run tests/phase8",
     "compile:jobhost": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\ownbase-jobhost.exe /target:exe tools\\jobhost\\Program.cs",
+    "compile:ollama": "C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe /nologo /out:extraResources\\bin\\ollama.exe /target:exe tools\\mocks\\ollama_server.cs",
     "dist:dir": "npm run build && electron-builder --dir",
     "build:installer": "npm run build && electron-builder --win nsis:x64",
     "build:portable": "npm run build && electron-builder --win portable:x64",
@@ -43,6 +46,7 @@
     "package": "npm run build:installer"
   },
   "dependencies": {
+    "@node-rs/argon2": "^2.2.2",
     "@prisma/client": "^6.4.0",
     "@xterm/addon-fit": "^0.11.0",
     "@xterm/xterm": "^6.0.0",

@@ -45,5 +45,5 @@ Write-Host "`n==================================================================
 Write-Host " [SUCCESS] Portable Windows Executable built successfully!" -ForegroundColor Green
 Write-Host ""
 Write-Host " Output File:" -ForegroundColor White
-Write-Host "   release\Native Windows Server Hub-Portable-0.1.0.exe" -ForegroundColor Green
+Write-Host "   release\Ownbase-Portable-0.1.0.exe" -ForegroundColor Green
 Write-Host "======================================================================" -ForegroundColor Green

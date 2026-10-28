@@ -1,0 +1,26 @@
+{
+  "id": "syncthing",
+  "name": "Syncthing Continuous Sync & Backup",
+  "version": "1.27.12",
+  "category": "Storage",
+  "description": "Continuous, encrypted peer-to-peer file synchronization and backup between Android, iOS, Windows, Mac, and Linux devices.",
+  "icon": "RefreshCw",
+  "runtime": "native",
+  "source": {
+    "type": "binary",
+    "url": "https://github.com/syncthing/syncthing/releases/download/v1.27.12/syncthing-windows-amd64-v1.27.12.zip",
+    "sha256": "4c947c6ec80053702a46e10f135b5a7e6b8c8bc6eb269989f5ce6ae7baee7a19"
+  },
+  "spec": {
+    "command": "syncthing.exe",
+    "args": ["-no-browser", "-no-restart", "-gui-address", "127.0.0.1:8384"],
+    "healthPath": "/",
+    "maxMemoryMb": 512
+  },
+  "defaultPort": 8384,
+  "defaultSubdomain": "syncthing",
+  "env": {},
+  "badge": "P2P Backup Engine",
+  "isPackaged": false,
+  "docs": "Decentralized file sync and backup with TLS encryption, block-level delta sync, and zero cloud lock-in."
+}

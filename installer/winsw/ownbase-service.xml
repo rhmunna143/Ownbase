@@ -34,4 +34,5 @@
   <!-- Service Environment -->
   <env name="NODE_ENV" value="production" />
   <env name="OWNBASE_MODE" value="service" />
+  <env name="ELECTRON_RUN_AS_NODE" value="1" />
 </service>

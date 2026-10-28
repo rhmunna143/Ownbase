@@ -158,7 +158,7 @@ export class HostBuilder {
 
     const exposeLocal = intent.exposeLocal ?? true;
     const exposeLan = intent.exposeLan ?? true;
-    const exposeMesh = intent.exposeMesh ?? false;
+    const exposeMesh = intent.exposeMesh ?? true;
     const isHttps = intent.tlsEnabled ?? true;
 
     const matchers: string[] = [];
@@ -179,23 +179,40 @@ export class HostBuilder {
       });
     }
 
-    // 2. Local LAN (*.<lan-ip>.nip.io)
-    if (exposeLan && state.localIp && state.localIp !== '127.0.0.1') {
-      const lanHost = `${normSubdomain}.${state.localIp}.nip.io`;
-      matchers.push(lanHost);
+    // 2. Local LAN (*.<lan-ip>.nip.io and *.local)
+    if (exposeLan) {
+      const addedLanIps = new Set<string>();
+      if (state.lanIps && state.lanIps.length > 0) {
+        for (const ip of state.lanIps) {
+          if (ip !== '127.0.0.1' && !addedLanIps.has(ip)) {
+            addedLanIps.add(ip);
+            const lanHost = `${normSubdomain}.${ip}.nip.io`;
+            matchers.push(lanHost);
+            urls.push({
+              type: 'lan',
+              hostname: lanHost,
+              url: `http://${lanHost}`,
+              port: 80,
+              protocol: 'http',
+              warning: !intent.requiresAuth ? 'Route is reachable by anyone on your local network without authentication' : undefined,
+            });
+          }
+        }
+      } else if (state.localIp && state.localIp !== '127.0.0.1') {
+        const lanHost = `${normSubdomain}.${state.localIp}.nip.io`;
+        matchers.push(lanHost);
+        urls.push({
+          type: 'lan',
+          hostname: lanHost,
+          url: `http://${lanHost}`,
+          port: 80,
+          protocol: 'http',
+          warning: !intent.requiresAuth ? 'Route is reachable by anyone on your local network without authentication' : undefined,
+        });
+      }
 
-      const warning = !intent.requiresAuth
-        ? 'Route is reachable by anyone on your local network without authentication'
-        : undefined;
-
-      urls.push({
-        type: 'lan',
-        hostname: lanHost,
-        url: `http://${lanHost}`,
-        port: 80,
-        protocol: 'http',
-        warning,
-      });
+      // Also add mDNS *.local host
+      matchers.push(`${normSubdomain}.local`);
     }
 
     // 3. Tailscale mesh (*.ts.net or *.<ts-ip>.nip.io)
@@ -210,7 +227,8 @@ export class HostBuilder {
           port: 443,
           protocol: 'https',
         });
-      } else if (state.tailscaleIp) {
+      }
+      if (state.tailscaleIp) {
         const meshIpHost = `${normSubdomain}.${state.tailscaleIp}.nip.io`;
         matchers.push(meshIpHost);
         urls.push({

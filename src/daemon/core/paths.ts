@@ -94,16 +94,21 @@ export class PathsManager {
     }
 
     // Resolve extraResources directory (for bundled binaries like pgsql, caddy, etc.)
-    const resourcesPath = (process as any).resourcesPath || process.cwd();
+    const resourcesPath =
+      (process as any).resourcesPath ||
+      process.env.RESOURCES_PATH ||
+      (process.env.PORTABLE_EXECUTABLE_DIR ? path.join(path.dirname(process.execPath), 'resources') : '') ||
+      process.cwd();
     const candidateResources = [
       path.join(resourcesPath, 'extraResources'),
-      path.join(process.cwd(), 'extraResources'),
+      path.join(__dirname, '..', '..', '..', '..', 'extraResources'),
       path.join(__dirname, '..', '..', '..', 'extraResources'),
+      path.join(process.cwd(), 'extraResources'),
     ];
 
     let extraResourcesDir = path.join(process.cwd(), 'extraResources');
     for (const cand of candidateResources) {
-      if (fs.existsSync(cand)) {
+      if (cand && fs.existsSync(cand)) {
         extraResourcesDir = cand;
         break;
       }

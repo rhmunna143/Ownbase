@@ -1,6 +1,5 @@
 import http from 'http';
 import { WebSocketServer, WebSocket } from 'ws';
-import cookie from 'cookie';
 import { logger } from '../core/logger';
 import { AuthService } from '../auth/authService';
 import { terminalManager } from './manager';

@@ -206,6 +206,92 @@ export const BUILTIN_RECIPES: Record<string, (service: ServiceRecord) => Partial
       },
     };
   },
+
+  syncthing: (service) => {
+    const dataDir = path.join(paths.dataDir, 'syncthing');
+    if (!fs.existsSync(dataDir)) {
+      try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+    }
+    const port = service.port || 8384;
+    return {
+      templateId: 'syncthing',
+      appType: 'native',
+      executable: 'syncthing.exe',
+      args: ['-home', dataDir, '-gui-address', `127.0.0.1:${port}`, '-no-browser', '-no-restart'],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 5000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 512,
+        cpuLimitPct: 50,
+      },
+    };
+  },
+
+  terminal: (service) => {
+    const port = service.port || 7681;
+    return {
+      templateId: 'terminal',
+      appType: 'native',
+      executable: 'terminal.exe',
+      args: ['--port', port.toString()],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 4000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 256,
+        cpuLimitPct: 50,
+      },
+    };
+  },
+
+  pocketbase: (service) => {
+    const port = service.port || 8090;
+    const dataDir = path.join(paths.dataDir, 'pocketbase');
+    if (!fs.existsSync(dataDir)) {
+      try { fs.mkdirSync(dataDir, { recursive: true }); } catch {}
+    }
+    return {
+      templateId: 'pocketbase',
+      appType: 'native',
+      executable: 'pocketbase.exe',
+      args: ['serve', '--dir', dataDir, '--http', `0.0.0.0:${port}`],
+      cwd: paths.rootDir,
+      port,
+      restartPolicy: 'always',
+      healthProbe: {
+        type: 'http',
+        port,
+        path: '/api/health',
+        intervalMs: 15000,
+        timeoutMs: 4000,
+        startPeriodMs: 4000,
+        failureThreshold: 3,
+      },
+      limits: {
+        maxMemoryMb: 512,
+        cpuLimitPct: 50,
+      },
+    };
+  },
 };
 
 /**

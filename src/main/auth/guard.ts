@@ -3,6 +3,25 @@ import crypto from 'crypto';
 import { AuthService } from './authService';
 import { Role, AuthenticatedUser, hasRequiredRole, RouteDefinition } from '../../shared/contract/types';
 
+export function parseCookies(header: string | undefined): Record<string, string> {
+  const result: Record<string, string> = {};
+  if (!header) return result;
+  const parts = header.split(';');
+  for (const part of parts) {
+    const eq = part.indexOf('=');
+    if (eq > 0) {
+      const key = part.slice(0, eq).trim();
+      const val = part.slice(eq + 1).trim();
+      try {
+        result[key] = decodeURIComponent(val);
+      } catch {
+        result[key] = val;
+      }
+    }
+  }
+  return result;
+}
+
 export interface GuardDecision {
   allowed: boolean;
   statusCode?: number;
@@ -19,7 +38,7 @@ export class AuthGuard {
   }
 
   /**
-   * Authenticates the incoming HTTP request via Bearer JWT, x-api-key, or ?token query param.
+   * Authenticates the incoming HTTP request via Bearer JWT, x-api-key, ?token query param, or Cookie.
    */
   public async authenticate(req: http.IncomingMessage): Promise<AuthenticatedUser | null> {
     const authHeader = req.headers['authorization'];
@@ -47,6 +66,18 @@ export class AuthGuard {
         if (user) return user;
       }
     } catch { }
+
+    // 4. Fallback: Cookie authentication (for browser img/video tags and active sessions)
+    if (req.headers.cookie) {
+      try {
+        const cookies = parseCookies(req.headers.cookie);
+        const cookieToken = cookies.ownbase_access_token || cookies.ownbase_session;
+        if (cookieToken) {
+          const user = await this.authService.verifyAccessToken(cookieToken);
+          if (user) return user;
+        }
+      } catch { }
+    }
 
     return null;
   }

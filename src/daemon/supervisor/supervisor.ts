@@ -52,6 +52,17 @@ export class ProcessSupervisor {
   }
 
   public resolveExecutablePath(executable: string): string | null {
+    if (!executable) return null;
+
+    // Check direct absolute path or working directory relative path
+    if (path.isAbsolute(executable) && fs.existsSync(executable)) {
+      return executable;
+    }
+    const directPath = path.resolve(process.cwd(), executable);
+    if (fs.existsSync(directPath) && fs.statSync(directPath).isFile()) {
+      return directPath;
+    }
+
     const candidatePaths = [
       path.join(paths.extraResourcesDir, 'bin', executable),
       path.join(paths.extraResourcesDir, executable),
@@ -224,44 +235,48 @@ export class ProcessSupervisor {
 
       // Handle process exit
       job.child.on('exit', (code, signal) => {
-        logger.warn(
-          'supervisor',
-          `Service "${managed.name}" (PID: ${managed.pid}) exited with code: ${code}, signal: ${signal}`
-        );
+        try {
+          logger.warn(
+            'supervisor',
+            `Service "${managed.name}" (PID: ${managed.pid}) exited with code: ${code}, signal: ${signal}`
+          );
 
-        managed.healthProber?.stop();
-        managed.job = null;
-        managed.pid = undefined;
+          managed.healthProber?.stop();
+          managed.job = null;
+          managed.pid = undefined;
 
-        if (this.isShuttingDown || managed.status === 'stopping') {
-          managed.stateMachine.transition('stopped', 'Shutdown or stopped by request');
-        } else {
-          // Process exited unexpectedly or crashed
-          const isClean = code === 0;
-          if (isClean) {
-            managed.stateMachine.transition('stopped', 'Process exited with code 0');
+          if (this.isShuttingDown || managed.status === 'stopping') {
+            managed.stateMachine.transition('stopped', 'Shutdown or stopped by request');
           } else {
-            managed.stateMachine.transition('crashed', `Process exited with code ${code}`);
-          }
+            // Process exited unexpectedly or crashed
+            const isClean = code === 0;
+            if (isClean) {
+              managed.stateMachine.transition('stopped', 'Process exited with code 0');
+            } else {
+              managed.stateMachine.transition('crashed', `Process exited with code ${code}`);
+            }
 
-          // Evaluate restart policy
-          const decision = managed.restartController.shouldRestart(code);
-          if (decision.circuitTripped) {
-            managed.stateMachine.transition('failed', 'Crash loop circuit breaker tripped');
-          } else if (decision.restart) {
-            managed.stateMachine.transition(
-              'backoff',
-              `Scheduled restart in ${Math.round(decision.delayMs / 1000)}s`
-            );
-            setTimeout(() => {
-              if (managed.status === 'backoff' && !this.isShuttingDown) {
-                managed.restartCount += 1;
-                this.startService(managed.serviceId).catch((e) => {
-                  logger.warn('supervisor', `Restart attempt notice: ${e.message}`);
-                });
-              }
-            }, decision.delayMs);
+            // Evaluate restart policy
+            const decision = managed.restartController.shouldRestart(code);
+            if (decision.circuitTripped) {
+              managed.stateMachine.transition('failed', 'Crash loop circuit breaker tripped');
+            } else if (decision.restart) {
+              managed.stateMachine.transition(
+                'backoff',
+                `Scheduled restart in ${Math.round(decision.delayMs / 1000)}s`
+              );
+              setTimeout(() => {
+                if (managed.status === 'backoff' && !this.isShuttingDown) {
+                  managed.restartCount += 1;
+                  this.startService(managed.serviceId).catch((e) => {
+                    logger.warn('supervisor', `Restart attempt notice: ${e.message}`);
+                  });
+                }
+              }, decision.delayMs);
+            }
           }
+        } catch (err: any) {
+          logger.error('supervisor', `Error in process exit handler for "${managed.name}": ${err.message}`);
         }
       });
 

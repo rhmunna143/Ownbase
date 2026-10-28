@@ -2,8 +2,8 @@ import http from 'http';
 import os from 'os';
 import fs from 'fs';
 import path from 'path';
-import cookie from 'cookie';
 import { paths } from '../core/paths';
+import { configManager } from '../core/config';
 import { logger } from '../core/logger';
 import { eventBus } from '../core/events';
 import { safeResolvePath } from '../core/pathGuard';
@@ -37,7 +37,7 @@ import {
 import { AuthService } from '../auth/authService';
 import { AuditService } from '../auth/audit';
 import { SetupService } from '../auth/setup';
-import { AuthGuard } from '../auth/guard';
+import { AuthGuard, parseCookies } from '../auth/guard';
 import { loginThrottle } from '../auth/throttle';
 import { TableBrowser } from '../db/browser';
 import { EventStreamGateway } from './events';
@@ -178,7 +178,7 @@ export class WebApiServer {
 
   public start(): Promise<boolean> {
     return new Promise((resolve) => {
-      this.server = http.createServer(async (req, res) => {
+      const requestListener = async (req: http.IncomingMessage, res: http.ServerResponse) => {
         // HTTP Hardening & Security Headers (PRD Item 1.12)
         res.setHeader('X-Content-Type-Options', 'nosniff');
         res.setHeader('X-Frame-Options', 'DENY');
@@ -234,7 +234,14 @@ export class WebApiServer {
           // ==========================================
           // 3. CONTRACT ROUTE MATCHING (PRD Item 1.1)
           // ==========================================
-          const { route, params } = matchRoute(req.method || 'GET', pathname);
+          let targetPathname = pathname;
+          if (pathname.startsWith('/api/') && !pathname.startsWith('/api/v1/')) {
+            targetPathname = '/api/v1/' + pathname.slice(5);
+          }
+          if (targetPathname === '/api/v1/files/download') {
+            targetPathname = '/api/v1/files/stream';
+          }
+          const { route, params } = matchRoute(req.method || 'GET', targetPathname);
           if (!route) {
             this.sendJson(res, { error: `Not found: ${req.method} ${pathname}` }, 404);
             return;
@@ -372,10 +379,37 @@ export class WebApiServer {
               const accessToken = await this.authService.generateAccessToken(authUser);
               const { token: refreshToken } = await this.authService.generateRefreshToken(user.id);
 
-              res.setHeader(
-                'Set-Cookie',
-                `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`
-              );
+              const reqHost = ((req.headers['x-forwarded-host'] as string) || req.headers.host || '').split(':')[0].toLowerCase();
+              let cookieDomain = '';
+              if (reqHost.endsWith('.nip.io') || reqHost.endsWith('.sslip.io')) {
+                const parts = reqHost.split('.');
+                if (parts.length >= 6) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                } else if (parts.length === 5) {
+                  cookieDomain = '; Domain=.' + reqHost;
+                }
+              } else if (reqHost.endsWith('.ts.net')) {
+                const parts = reqHost.split('.');
+                if (parts.length >= 4) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                } else if (parts.length === 3) {
+                  cookieDomain = '; Domain=.' + reqHost;
+                }
+              } else if (reqHost.includes('.') && !/^(\d{1,3}\.){3}\d{1,3}$/.test(reqHost) && reqHost !== 'localhost') {
+                const parts = reqHost.split('.');
+                if (parts.length >= 3) {
+                  cookieDomain = '; Domain=.' + parts.slice(1).join('.');
+                }
+              }
+
+              const cookiesToSet = [
+                `ownbase_refresh=${refreshToken}; Path=/api/v1/auth; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 3600}`,
+                `ownbase_access_token=${accessToken}; Path=/; SameSite=Lax; Max-Age=${24 * 3600}`,
+              ];
+              if (cookieDomain) {
+                cookiesToSet.push(`ownbase_access_token=${accessToken}; Path=/; SameSite=Lax; Max-Age=${24 * 3600}${cookieDomain}`);
+              }
+              res.setHeader('Set-Cookie', cookiesToSet);
 
               await this.auditService.record({
                 actorId: user.id,
@@ -423,7 +457,7 @@ export class WebApiServer {
             const body = await this.parseJsonBody(req);
             let rawToken = body?.refreshToken;
             if (!rawToken && req.headers.cookie) {
-              const cookies = cookie.parse(req.headers.cookie);
+              const cookies = parseCookies(req.headers.cookie);
               rawToken = cookies['ownbase_refresh'];
             }
 
@@ -503,6 +537,22 @@ export class WebApiServer {
           }
 
           if (route.path === '/api/v1/bootstrap-steps') {
+            try {
+              const tsStatus = await this.tailscaleManager.getStatus();
+              const steps = this.getBootstrapSteps();
+              const tsStep = steps.find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                if (tsStatus.connected) {
+                  tsStep.status = 'success';
+                  tsStep.detail = tsStatus.ip ? `Connected (Mesh IP: ${tsStatus.ip})` : 'Connected to mesh network';
+                  tsStep.timestamp = new Date().toISOString();
+                } else if (tsStep.status === 'success') {
+                  tsStep.status = 'pending';
+                  tsStep.detail = 'Tailscale CLI ready (awaiting Auth Key)';
+                  tsStep.timestamp = new Date().toISOString();
+                }
+              }
+            } catch {}
             this.sendJson(res, this.getBootstrapSteps());
             return;
           }
@@ -601,6 +651,26 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/services/:id' && req.method === 'DELETE') {
+            try {
+              await this.supervisor.stopService(params.id).catch(() => {});
+              await this.prismaManager.deleteService(params.id);
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'service.delete',
+                entity: 'service',
+                entityId: params.id,
+                ipAddress: clientIp,
+                status: 'success',
+              });
+              this.sendJson(res, { success: true, id: params.id });
+            } catch (err: any) {
+              this.sendJson(res, { error: `Failed to delete service: ${err.message}` }, 400);
+            }
+            return;
+          }
+
           // --- ROUTING & CADDY EDGE INGRESS ---
           if (route.path === '/api/v1/routes' && req.method === 'GET') {
             this.sendJson(res, await this.prismaManager.getRoutes());
@@ -615,31 +685,66 @@ export class WebApiServer {
               return;
             }
             let serviceId: string = parsed.data.serviceId || 'default-service-id';
-            if (!parsed.data.serviceId) {
-              const client = this.prismaManager.getClient();
-              const firstSvc = client && (client as any).service ? await (client as any).service.findFirst() : null;
-              if (firstSvc) serviceId = firstSvc.id;
+            const client = this.prismaManager.getClient();
+            const isCustomOrFallback =
+              !parsed.data.serviceId ||
+              parsed.data.serviceId === 'custom' ||
+              parsed.data.serviceId === 'default-service-id' ||
+              parsed.data.serviceId === 'ownbase-hub';
+
+            if (isCustomOrFallback) {
+              let targetSvc = client && (client as any).service ? await (client as any).service.findFirst() : null;
+              if (!targetSvc) {
+                targetSvc = await (client as any).service.create({
+                  data: {
+                    name: 'Ownbase Web Hub',
+                    type: 'ownbase',
+                    executable: 'node.exe',
+                    port: 3001,
+                    status: 'running',
+                    autoStart: true,
+                    description: 'Central server management portal and web dashboard',
+                  },
+                });
+              }
+              serviceId = targetSvc.id;
+            } else {
+              const existingSvc = await (client as any).service.findUnique({ where: { id: serviceId } }).catch(() => null);
+              if (!existingSvc) {
+                const firstSvc = await (client as any).service.findFirst().catch(() => null);
+                if (firstSvc) serviceId = firstSvc.id;
+              }
             }
-            const r = await this.prismaManager.createRoute({
-              serviceId,
-              subdomain: parsed.data.subdomain,
-              targetPort: parsed.data.targetPort,
-              tlsEnabled: parsed.data.tlsEnabled,
-              customDomain: parsed.data.customDomain,
-            });
-            await this.caddyManager.syncAllRoutes();
-            await this.auditService.record({
-              actorId: decision.user?.id,
-              actorName: decision.user?.username,
-              action: 'route.create',
-              entity: 'route',
-              entityId: r.id,
-              ipAddress: clientIp,
-              status: 'success',
-              details: { subdomain: r.subdomain, port: r.targetPort },
-            });
-            this.sendJson(res, r, 201);
-            return;
+
+            try {
+              const r = await this.prismaManager.createRoute({
+                serviceId,
+                subdomain: parsed.data.subdomain,
+                targetPort: parsed.data.targetPort,
+                tlsEnabled: parsed.data.tlsEnabled,
+                customDomain: parsed.data.customDomain,
+              });
+              await this.caddyManager.syncAllRoutes();
+              await this.auditService.record({
+                actorId: decision.user?.id,
+                actorName: decision.user?.username,
+                action: 'route.create',
+                entity: 'route',
+                entityId: r.id,
+                ipAddress: clientIp,
+                status: 'success',
+                details: { subdomain: r.subdomain, port: r.targetPort, customDomain: r.customDomain },
+              });
+              this.sendJson(res, r, 201);
+              return;
+            } catch (createErr: any) {
+              const errMsg = createErr.message || 'Failed to create route in database';
+              const userFriendly = errMsg.includes('Unique constraint failed')
+                ? `Route subdomain '${parsed.data.subdomain}' is already in use. Please choose a different subdomain.`
+                : errMsg;
+              this.sendJson(res, { error: userFriendly }, 400);
+              return;
+            }
           }
 
           if (route.path === '/api/v1/routes/:id' && req.method === 'DELETE') {
@@ -689,13 +794,34 @@ export class WebApiServer {
 
           // --- TAILSCALE MESH ---
           if (route.path === '/api/v1/tailscale/status') {
-            this.sendJson(res, await this.tailscaleManager.getStatus());
+            const status = await this.tailscaleManager.getStatus();
+            const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+            if (tsStep) {
+              if (status.connected) {
+                tsStep.status = 'success';
+                tsStep.detail = status.ip ? `Connected (Mesh IP: ${status.ip})` : 'Connected to mesh network';
+                tsStep.timestamp = new Date().toISOString();
+              } else if (tsStep.status === 'success') {
+                tsStep.status = 'pending';
+                tsStep.detail = 'Tailscale CLI ready (awaiting Auth Key)';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
+            this.sendJson(res, status);
             return;
           }
 
           if (route.path === '/api/v1/tailscale/connect') {
             const body = await this.parseJsonBody(req);
             const tsRes = await this.tailscaleManager.connect(body.authKey, body.hostname);
+            if (tsRes.success) {
+              const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                tsStep.status = 'success';
+                tsStep.detail = tsRes.ip ? `Connected (Mesh IP: ${tsRes.ip})` : 'Connected to mesh network';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
             await this.auditService.record({
               actorId: decision.user?.id,
               actorName: decision.user?.username,
@@ -709,6 +835,14 @@ export class WebApiServer {
 
           if (route.path === '/api/v1/tailscale/disconnect') {
             const tsRes = await this.tailscaleManager.disconnect();
+            if (tsRes.success) {
+              const tsStep = this.getBootstrapSteps().find((s) => s.id === 'tailscale-mesh');
+              if (tsStep) {
+                tsStep.status = 'pending';
+                tsStep.detail = 'Tailscale CLI ready (awaiting Auth Key)';
+                tsStep.timestamp = new Date().toISOString();
+              }
+            }
             await this.auditService.record({
               actorId: decision.user?.id,
               actorName: decision.user?.username,
@@ -724,10 +858,33 @@ export class WebApiServer {
           if (route.path === '/api/v1/lifecycle/status') {
             const powerState = await powerManager.getPowerState();
             this.sendJson(res, {
+              trayActive: false,
+              isMinimizedToTray: false,
               isQuitting: false,
+              powerBlocker: {
+                active: powerState.preventSuspensionActive,
+                blockerId: null,
+                type: 'prevent-app-suspension',
+              },
+              autoStart: {
+                enabled: false,
+                openAsHidden: false,
+              },
               preventAppSuspension: powerState.preventSuspensionActive,
               openAtLogin: false,
               activePowerScheme: powerState.schemeName,
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/lifecycle/autostart') {
+            const body = await this.parseJsonBody(req);
+            this.sendJson(res, {
+              success: true,
+              autoStart: {
+                enabled: !!body.enabled,
+                openAsHidden: !!body.openAsHidden,
+              },
             });
             return;
           }
@@ -740,7 +897,15 @@ export class WebApiServer {
               powerManager.disablePowerPersistence();
             }
             const powerState = await powerManager.getPowerState();
-            this.sendJson(res, { success: true, preventSuspensionActive: powerState.preventSuspensionActive });
+            this.sendJson(res, {
+              success: true,
+              preventSuspensionActive: powerState.preventSuspensionActive,
+              powerBlocker: {
+                active: powerState.preventSuspensionActive,
+                blockerId: null,
+                type: 'prevent-app-suspension',
+              },
+            });
             return;
           }
 
@@ -779,6 +944,36 @@ export class WebApiServer {
           if (route.path === '/api/v1/files/rename') {
             const body = await this.parseJsonBody(req);
             const ok = this.fileManager.renameItem(body.oldPath, body.newName);
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/copy') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.copyItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.copy',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
+            this.sendJson(res, { success: ok });
+            return;
+          }
+
+          if (route.path === '/api/v1/files/move') {
+            const body = await this.parseJsonBody(req);
+            const ok = this.fileManager.moveItem(body.sourcePath, body.destinationDir, body.newName);
+            await this.auditService.record({
+              actorId: decision.user?.id,
+              actorName: decision.user?.username,
+              action: 'file.move',
+              ipAddress: clientIp,
+              status: ok ? 'success' : 'failure',
+              details: { source: body.sourcePath, destination: body.destinationDir },
+            });
             this.sendJson(res, { success: ok });
             return;
           }
@@ -1477,6 +1672,416 @@ export class WebApiServer {
             return;
           }
 
+          if (route.path === '/api/v1/services/upload-binary' && req.method === 'POST') {
+            const rawFilename = (req.headers['x-filename'] as string) ||
+              new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`).searchParams.get('filename') ||
+              `app_${Date.now()}.exe`;
+            const baseName = path.basename(rawFilename).replace(/[^a-zA-Z0-9_\-\.]/g, '_');
+            const cleanFilename = baseName.toLowerCase().endsWith('.exe') || baseName.toLowerCase().endsWith('.bat') || baseName.toLowerCase().endsWith('.cmd')
+              ? baseName
+              : `${baseName}.exe`;
+
+            const binDir = path.join(paths.extraResourcesDir, 'bin');
+            if (!fs.existsSync(binDir)) {
+              try { fs.mkdirSync(binDir, { recursive: true }); } catch {}
+            }
+
+            try {
+              const uploadRes = await uploadEngine.handleUpload(req, {
+                targetDirectory: binDir,
+                filename: cleanFilename,
+              });
+              logger.info('supervisor', `Uploaded executable binary "${cleanFilename}" to ${binDir}`);
+              this.sendJson(res, {
+                success: true,
+                filename: cleanFilename,
+                path: path.join(binDir, cleanFilename),
+                sizeBytes: uploadRes.bytesWritten,
+              }, 201);
+            } catch (uploadErr: any) {
+              this.sendJson(res, { error: uploadErr.message }, 400);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/binaries/list' && req.method === 'GET') {
+            const binDir = path.join(paths.extraResourcesDir, 'bin');
+            const mockDir = path.join(process.cwd(), 'tools', 'mocks');
+            const services = await this.prismaManager.getServices();
+
+            const TEMPLATES = [
+              {
+                id: 'filebrowser',
+                name: 'FileBrowser Cloud Drive',
+                filename: 'filebrowser.exe',
+                category: 'Storage',
+                description: 'Personal cloud storage, file explorer & media streaming drive with user access control.',
+                defaultPort: 8080,
+                defaultSubdomain: 'files',
+                badge: 'Built-in Portable',
+              },
+              {
+                id: 'ollama',
+                name: 'Ollama AI Engine',
+                filename: 'ollama.exe',
+                category: 'AI / LLM',
+                description: 'Dynamic local/hybrid AI inference server with Hermes/Llama models & OpenAI-compatible API.',
+                defaultPort: 11434,
+                defaultSubdomain: 'ai',
+                badge: 'Dynamic AI',
+              },
+              {
+                id: 'minio',
+                name: 'MinIO S3 Object Storage',
+                filename: 'minio.exe',
+                category: 'Storage',
+                description: 'High-performance S3-compatible cloud object storage with web console & bucket CRUD.',
+                defaultPort: 9000,
+                defaultSubdomain: 's3',
+                badge: 'S3 Compatible',
+              },
+              {
+                id: 'caddy',
+                name: 'Caddy Reverse Proxy & TLS',
+                filename: 'caddy.exe',
+                category: 'Web',
+                description: 'High-performance reverse proxy, automatic TLS, and domain router for *.localhost.',
+                defaultPort: 2019,
+                defaultSubdomain: 'proxy',
+                badge: 'Reverse Proxy',
+              },
+              {
+                id: 'redis',
+                name: 'Redis / Memurai Cache',
+                filename: 'redis-server.exe',
+                category: 'Databases',
+                description: 'Ultra-fast in-memory key-value data structure store, caching layer & message broker.',
+                defaultPort: 6379,
+                defaultSubdomain: 'redis',
+                badge: 'Key-Value Cache',
+              },
+              {
+                id: 'pocketbase',
+                name: 'PocketBase Realtime Backend & DB',
+                filename: 'pocketbase.exe',
+                category: 'Databases',
+                description: 'All-in-one embedded SQLite database, realtime subscriptions, authentication & REST API.',
+                defaultPort: 8090,
+                defaultSubdomain: 'pocketbase',
+                badge: 'Realtime DB',
+              },
+              {
+                id: 'syncthing',
+                name: 'Syncthing Continuous Sync & Backup',
+                filename: 'syncthing.exe',
+                category: 'Storage',
+                description: 'Continuous, decentralized peer-to-peer file synchronization and cross-device backup.',
+                defaultPort: 8384,
+                defaultSubdomain: 'syncthing',
+                badge: 'P2P Backup Engine',
+              },
+              {
+                id: 'terminal',
+                name: 'Web Terminal & Shell Console',
+                filename: 'terminal.exe',
+                category: 'Tools',
+                description: 'Browser-based interactive PowerShell and Command Prompt web console at terminal.localhost.',
+                defaultPort: 7681,
+                defaultSubdomain: 'terminal',
+                badge: 'Browser Terminal',
+              },
+              {
+                id: 'tailscale',
+                name: 'Tailscale Mesh VPN',
+                filename: 'tailscale.exe',
+                category: 'Tools',
+                description: 'Zero-configuration WireGuard mesh networking for secure remote machine access.',
+                defaultPort: 41641,
+                defaultSubdomain: 'mesh',
+                badge: 'Mesh VPN',
+              },
+            ];
+
+            const result: any[] = TEMPLATES.map((tmpl) => {
+              const binPath = path.join(binDir, tmpl.filename);
+              const mockPath = path.join(mockDir, tmpl.filename);
+              let exists = false;
+              let sizeBytes = 0;
+
+              if (fs.existsSync(binPath)) {
+                exists = true;
+                try { sizeBytes = fs.statSync(binPath).size; } catch {}
+              } else if (fs.existsSync(mockPath)) {
+                exists = true;
+                try { sizeBytes = fs.statSync(mockPath).size; } catch {}
+              }
+
+              const matchingSvc = services.find(
+                (s) => s.type === tmpl.id || s.executable.toLowerCase().includes(tmpl.filename.toLowerCase())
+              );
+
+              return {
+                ...tmpl,
+                existsOnDisk: exists,
+                sizeBytes,
+                downloadUrl: `/api/v1/binaries/download?name=${encodeURIComponent(tmpl.filename)}`,
+                installed: !!matchingSvc,
+                serviceId: matchingSvc?.id,
+                serviceStatus: matchingSvc?.status,
+              };
+            });
+
+            if (fs.existsSync(binDir)) {
+              try {
+                const files = fs.readdirSync(binDir);
+                const knownFiles = new Set(TEMPLATES.map((t) => t.filename.toLowerCase()));
+                for (const file of files) {
+                  const lower = file.toLowerCase();
+                  if (
+                    lower.endsWith('.exe') &&
+                    !knownFiles.has(lower) &&
+                    !lower.includes('.old.') &&
+                    !lower.includes('.original.') &&
+                    !lower.includes('.real.') &&
+                    !lower.includes('_server') &&
+                    !lower.startsWith('ownbase-') &&
+                    !lower.startsWith('test_')
+                  ) {
+                    const fullPath = path.join(binDir, file);
+                    let sizeBytes = 0;
+                    try { sizeBytes = fs.statSync(fullPath).size; } catch {}
+                    const base = path.basename(file, '.exe');
+                    const matchingSvc = services.find(
+                      (s) => s.executable.toLowerCase().includes(file.toLowerCase())
+                    );
+                    result.push({
+                      id: base.toLowerCase(),
+                      name: `Custom (${file})`,
+                      filename: file,
+                      category: 'Custom',
+                      description: `User-uploaded executable binary in extraResources\\bin\\${file}`,
+                      defaultPort: 8085,
+                      defaultSubdomain: base.toLowerCase().replace(/[^a-z0-9-]/g, ''),
+                      badge: 'Custom Binary',
+                      existsOnDisk: true,
+                      sizeBytes,
+                      downloadUrl: `/api/v1/binaries/download?name=${encodeURIComponent(file)}`,
+                      installed: !!matchingSvc,
+                      serviceId: matchingSvc?.id,
+                      serviceStatus: matchingSvc?.status,
+                    });
+                  }
+                }
+              } catch {}
+            }
+
+            this.sendJson(res, result);
+            return;
+          }
+
+          if (route.path === '/api/v1/binaries/download' && req.method === 'GET') {
+            const url = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
+            const requestedName = url.searchParams.get('name');
+            if (!requestedName) {
+              this.sendJson(res, { error: 'Binary filename is required' }, 400);
+              return;
+            }
+            const cleanName = path.basename(requestedName);
+            const binDir = path.join(paths.extraResourcesDir, 'bin');
+            let targetFilePath = path.join(binDir, cleanName);
+
+            if (!fs.existsSync(targetFilePath)) {
+              const mockDir = path.join(process.cwd(), 'tools', 'mocks');
+              const mockPath = path.join(mockDir, cleanName);
+              if (fs.existsSync(mockPath)) {
+                targetFilePath = mockPath;
+              } else {
+                this.sendJson(res, { error: `Binary file "${cleanName}" not found on server` }, 404);
+                return;
+              }
+            }
+
+            try {
+              const stats = fs.statSync(targetFilePath);
+              res.writeHead(200, {
+                'Content-Type': 'application/octet-stream',
+                'Content-Disposition': `attachment; filename="${cleanName}"`,
+                'Content-Length': stats.size,
+                'Cache-Control': 'no-cache',
+              });
+              const readStream = fs.createReadStream(targetFilePath);
+              readStream.pipe(res);
+            } catch (err: any) {
+              this.sendJson(res, { error: `Failed to stream binary: ${err.message}` }, 500);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/system/drives' && req.method === 'GET') {
+            const volumes = await volumeManager.discoverVolumes(false);
+            const serialized = volumes.map((v) => {
+              const total = v.totalBytes;
+              const free = v.freeBytes;
+              const freePct = total > 0n ? Number((free * 100n) / total) : 0;
+              return {
+                driveLetter: v.driveLetter,
+                label: v.label || (v.isSystemDrive ? 'System Drive' : 'Local Disk'),
+                fileSystem: v.fileSystem || 'NTFS',
+                totalBytes: total.toString(),
+                freeBytes: free.toString(),
+                isSystemDrive: v.isSystemDrive,
+                freePercentage: freePct,
+              };
+            });
+            this.sendJson(res, serialized);
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'GET') {
+            const cfg = configManager.getConfig();
+            const currentAlloc = (cfg as any)?.storageAllocation || {};
+            const systemDrive = process.env.SystemDrive || 'C:';
+            this.sendJson(res, {
+              selectedDrive: currentAlloc.selectedDrive || systemDrive,
+              storageRoot: currentAlloc.storageRoot || paths.storageDir,
+              mediaRoot: currentAlloc.mediaRoot || path.join(paths.storageDir, 'Photos'),
+              backupsRoot: currentAlloc.backupsRoot || paths.backupsDir,
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/storage-allocation' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const selectedDrive = body.selectedDrive ? `${body.selectedDrive.replace(':', '')}:` : (process.env.SystemDrive || 'C:');
+            const storageRoot = body.storageRoot || paths.storageDir;
+            const mediaRoot = body.mediaRoot || path.join(storageRoot, 'Photos');
+            const backupsRoot = body.backupsRoot || paths.backupsDir;
+
+            for (const d of [storageRoot, mediaRoot, backupsRoot]) {
+              if (d && !fs.existsSync(d)) {
+                try { fs.mkdirSync(d, { recursive: true }); } catch {}
+              }
+            }
+
+            configManager.updateConfig({
+              storageAllocation: {
+                selectedDrive,
+                storageRoot,
+                mediaRoot,
+                backupsRoot,
+              },
+            } as any);
+
+            this.sendJson(res, {
+              success: true,
+              storageAllocation: {
+                selectedDrive,
+                storageRoot,
+                mediaRoot,
+                backupsRoot,
+              },
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-status' && req.method === 'GET') {
+            let isInstalled = false;
+            let isRunning = false;
+            try {
+              const { execSync } = require('child_process');
+              const statusOut = execSync('powershell.exe -NoProfile -Command "(Get-Service sshd -ErrorAction SilentlyContinue).Status"', { encoding: 'utf-8', timeout: 3000 }).trim();
+              if (statusOut) {
+                isInstalled = true;
+                isRunning = statusOut.toLowerCase() === 'running';
+              }
+            } catch {}
+            let hostIp = '127.0.0.1';
+            const nets = os.networkInterfaces();
+            for (const name of Object.keys(nets)) {
+              for (const net of nets[name] || []) {
+                if (net.family === 'IPv4' && !net.internal) {
+                  hostIp = net.address;
+                  break;
+                }
+              }
+            }
+            let currentUser = 'Munna';
+            try {
+              currentUser = os.userInfo().username || process.env.USERNAME || 'Munna';
+            } catch {}
+
+            this.sendJson(res, {
+              installed: isInstalled,
+              running: isRunning,
+              port: 22,
+              host: hostIp,
+              username: currentUser,
+            });
+            return;
+          }
+
+          if (route.path === '/api/v1/system/ssh-toggle' && req.method === 'POST') {
+            const body = await this.parseJsonBody(req);
+            const enable = body.enable !== false;
+            try {
+              const { execSync } = require('child_process');
+              if (enable) {
+                const serviceExists = execSync('powershell.exe -NoProfile -Command "[bool](Get-Service sshd -ErrorAction SilentlyContinue)"', { encoding: 'utf-8', timeout: 4000 }).trim();
+                if (serviceExists.toLowerCase() !== 'true') {
+                  try {
+                    execSync('powershell.exe -NoProfile -Command "Start-Process powershell -Verb RunAs -Wait -ArgumentList \\"-NoProfile -Command Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd; Set-Service -Name sshd -StartupType Automatic; ssh-keygen -A\\""', { timeout: 15000 });
+                  } catch {
+                    this.sendJson(res, {
+                      success: false,
+                      error: 'OpenSSH Server requires Administrator privilege to install. Run the command below in an elevated PowerShell terminal.',
+                      requiresAdmin: true,
+                      command: 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd; Set-Service -Name sshd -StartupType Automatic',
+                    });
+                    return;
+                  }
+                } else {
+                  execSync('powershell.exe -NoProfile -Command "ssh-keygen -A -ErrorAction SilentlyContinue; Start-Service sshd -ErrorAction SilentlyContinue; Set-Service -Name sshd -StartupType Automatic -ErrorAction SilentlyContinue"', { timeout: 8000 });
+                }
+              } else {
+                execSync('powershell.exe -NoProfile -Command "Stop-Service sshd -ErrorAction SilentlyContinue"', { timeout: 8000 });
+              }
+
+              const checkOut = execSync('powershell.exe -NoProfile -Command "(Get-Service sshd -ErrorAction SilentlyContinue).Status"', { encoding: 'utf-8', timeout: 3000 }).trim();
+              const isRunning = checkOut.toLowerCase() === 'running';
+
+              this.sendJson(res, {
+                success: enable ? isRunning : !isRunning,
+                running: isRunning,
+                error: (enable && !isRunning) ? 'Failed to start sshd service. Windows Administrator privilege may be required.' : undefined,
+                command: (enable && !isRunning) ? 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd' : undefined,
+              });
+            } catch (err: any) {
+              this.sendJson(res, {
+                success: false,
+                error: err.message || 'Error configuring SSH service',
+                command: 'Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0; Start-Service sshd',
+              }, 200);
+            }
+            return;
+          }
+
+          if (route.path === '/api/v1/system/firewall-rules' && req.method === 'POST') {
+            const firewallCmd = `New-NetFirewallRule -DisplayName 'Ownbase Server' -Direction Inbound -LocalPort 22,80,443,2019,3000,3001,5432,6379,7681,8080,8090,8384,9000,11434 -Protocol TCP -Action Allow`;
+            try {
+              const { execSync } = require('child_process');
+              const cmd = `powershell.exe -NoProfile -Command "${firewallCmd} -ErrorAction SilentlyContinue"`;
+              execSync(cmd, { timeout: 8000 });
+              this.sendJson(res, { success: true, message: 'Windows Firewall inbound rule applied for Ownbase server ports' });
+            } catch (err: any) {
+              this.sendJson(res, {
+                success: false,
+                message: 'Administrator rights required to configure Windows Firewall. Run the command in PowerShell as Administrator.',
+                command: firewallCmd,
+              }, 200);
+            }
+            return;
+          }
+
           if (route.path === '/api/v1/files/stream' && req.method === 'GET') {
             const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || 'localhost'}`);
             const filePathParam = parsedUrl.searchParams.get('path');
@@ -1548,8 +2153,10 @@ export class WebApiServer {
             const clientIp = this.getClientIp(req);
 
             let user: AuthenticatedUser | null = null;
+            let verifiedToken = '';
             if (typeof authHeader === 'string' && authHeader.startsWith('Bearer ')) {
-              user = await this.authService.verifyAccessToken(authHeader.slice(7).trim());
+              verifiedToken = authHeader.slice(7).trim();
+              user = await this.authService.verifyAccessToken(verifiedToken);
             } else if (typeof apiKeyHeader === 'string') {
               user = await this.authService.verifyApiKey(apiKeyHeader);
             } else if (req.headers.cookie) {
@@ -1558,8 +2165,23 @@ export class WebApiServer {
                 const token = parsedCookies.ownbase_access_token || parsedCookies.ownbase_session;
                 if (token) {
                   user = await this.authService.verifyAccessToken(token);
+                  if (user) verifiedToken = token;
                 }
               } catch {}
+            }
+
+            if (!user) {
+              const forwardedUri = (req.headers['x-forwarded-uri'] as string) || req.url || '';
+              if (forwardedUri.includes('token=')) {
+                try {
+                  const parsedUrl = new URL(forwardedUri, 'http://127.0.0.1');
+                  const queryToken = parsedUrl.searchParams.get('token') || parsedUrl.searchParams.get('access_token');
+                  if (queryToken) {
+                    user = await this.authService.verifyAccessToken(queryToken);
+                    if (user) verifiedToken = queryToken;
+                  }
+                } catch {}
+              }
             }
 
             // Determine if target host is a LAN host requiring authentication (PRD Criterion A3)
@@ -1582,6 +2204,9 @@ export class WebApiServer {
             if (user) {
               res.setHeader('X-Forwarded-User', user.username);
               res.setHeader('X-Forwarded-Role', user.role);
+              if (verifiedToken) {
+                res.setHeader('Set-Cookie', `ownbase_access_token=${verifiedToken}; Path=/; SameSite=Lax; Max-Age=86400`);
+              }
               this.sendJson(res, { verified: true, user });
             } else {
               this.sendJson(res, { verified: true, access: 'loopback' });
@@ -1743,28 +2368,63 @@ export class WebApiServer {
             message: safeMessage,
           }, err.statusCode || 500);
         }
-      });
+      };
 
-      // WebSocket HTTP Upgrade handler for Audited ConPTY Web Terminal (PRD §6.5 & A4)
-      this.server.on('upgrade', (req, socket, head) => {
-        const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
-        if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
-          this.terminalWsBridge.handleUpgrade(req, socket, head);
-        } else {
-          socket.destroy();
-        }
-      });
+      const candidatePorts = Array.from(
+        new Set([
+          Number(process.env.OWNBASE_PORT || process.env.DAEMON_PORT || this.port),
+          this.port,
+          3400,
+          3500,
+          3600,
+          3700,
+          3800,
+        ])
+      );
 
-      // Decision D3: Daemon binds strictly to loopback 127.0.0.1!
-      this.server.listen(this.port, '127.0.0.1', () => {
-        logger.success('web-api', `Ownbase Daemon Web API listening on http://127.0.0.1:${this.port} (loopback only)`);
-        resolve(true);
-      });
+      let portIndex = 0;
 
-      this.server.on('error', (err) => {
-        logger.error('web-api', `Web API server error: ${err.message}`);
-        resolve(false);
-      });
+      const tryListen = (port: number) => {
+        const server = http.createServer(requestListener);
+        this.server = server;
+
+        server.on('upgrade', (req, socket, head) => {
+          const parsedUrl = new URL(req.url || '/', `http://${req.headers.host || '127.0.0.1'}`);
+          if (parsedUrl.pathname === '/api/v1/terminal/ws' || parsedUrl.pathname === '/ws/terminal') {
+            this.terminalWsBridge.handleUpgrade(req, socket, head);
+          } else {
+            socket.destroy();
+          }
+        });
+
+        server.once('error', (err: any) => {
+          try { server.close(); } catch {}
+          if ((err.code === 'EACCES' || err.code === 'EADDRINUSE') && portIndex + 1 < candidatePorts.length) {
+            logger.warn(
+              'web-api',
+              `Port ${port} unavailable (${err.code}). Trying fallback port ${candidatePorts[portIndex + 1]}...`
+            );
+            portIndex++;
+            tryListen(candidatePorts[portIndex]);
+            return;
+          }
+          logger.error('web-api', `Web API server error: ${err.message}`);
+          resolve(false);
+        });
+
+        // Decision D3: Daemon binds strictly to loopback 127.0.0.1!
+        server.listen(port, '127.0.0.1', () => {
+          this.port = port;
+          try {
+            fs.mkdirSync(paths.dataDir, { recursive: true });
+            fs.writeFileSync(path.join(paths.dataDir, 'daemon.port'), String(port), 'utf-8');
+          } catch {}
+          logger.success('web-api', `Ownbase Daemon Web API listening on http://127.0.0.1:${this.port} (loopback only)`);
+          resolve(true);
+        });
+      };
+
+      tryListen(candidatePorts[portIndex]);
     });
   }
 
@@ -1792,7 +2452,7 @@ export class WebApiServer {
   }
 
   private sendJson(res: http.ServerResponse, data: any, statusCode = 200) {
-    const json = JSON.stringify(data);
+    const json = JSON.stringify(data, (_, v) => (typeof v === 'bigint' ? Number(v) : v));
     res.writeHead(statusCode, {
       'Content-Type': 'application/json; charset=utf-8',
       'X-Content-Type-Options': 'nosniff',
@@ -1842,11 +2502,24 @@ export class WebApiServer {
   }
 
   private async serveStaticFile(req: http.IncomingMessage, res: http.ServerResponse, pathname: string): Promise<boolean> {
+    const resPath =
+      process.env.RESOURCES_PATH ||
+      (process as any).resourcesPath ||
+      path.join(path.dirname(process.execPath), 'resources') ||
+      '';
+
     const candidateDirs = [
-      path.join(process.cwd(), 'out'),
+      resPath ? path.join(resPath, 'out') : '',
+      resPath ? path.join(resPath, 'app.asar.unpacked', 'out') : '',
+      path.join(path.dirname(process.execPath), 'resources', 'out'),
+      path.join(path.dirname(process.execPath), 'resources', 'app.asar.unpacked', 'out'),
+      path.join(path.dirname(process.execPath), 'out'),
+      process.env.PORTABLE_EXECUTABLE_DIR ? path.join(process.env.PORTABLE_EXECUTABLE_DIR, 'out') : '',
+      path.join(__dirname, '..', '..', '..', '..', 'out'),
       path.join(__dirname, '..', '..', '..', 'out'),
       path.join(__dirname, '..', '..', 'out'),
-    ];
+      path.join(process.cwd(), 'out'),
+    ].filter(Boolean);
 
     let outDir: string | null = null;
     for (const d of candidateDirs) {
@@ -1860,7 +2533,11 @@ export class WebApiServer {
 
     let relPath = pathname.replace(/^\/+/, '');
     const host = (req.headers.host || '').toLowerCase();
-    if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
+    if (relPath === 'favicon.ico' || relPath === 'favicon.svg') {
+      if (host.startsWith('photos.')) {
+        relPath = relPath === 'favicon.svg' ? 'photos-favicon.svg' : 'photos-favicon.ico';
+      }
+    } else if ((!relPath || relPath === '/') && host.startsWith('photos.')) {
       if (fs.existsSync(path.join(outDir, 'photos', 'index.html'))) {
         relPath = 'photos/index.html';
       } else if (fs.existsSync(path.join(outDir, 'photos.html'))) {

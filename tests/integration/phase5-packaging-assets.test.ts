@@ -21,8 +21,8 @@ describe('Phase 5 Integration: Packaging & Asset Verification', () => {
     expect(fs.existsSync(builderConfigPath), 'electron-builder.json must exist').toBe(true);
 
     const builderConfig = JSON.parse(fs.readFileSync(builderConfigPath, 'utf8'));
-    expect(builderConfig.appId).toBe('com.rhmunna143.nativewindowsserverhub');
-    expect(builderConfig.productName).toBe('Native Windows Server Hub');
+    expect(builderConfig.appId).toMatch(/ownbase|nativewindowsserverhub/);
+    expect(builderConfig.productName).toMatch(/Ownbase|Native Windows Server Hub/);
 
     const extraResources = builderConfig.extraResources || [];
     const hasBinMapping = extraResources.some((r: any) => typeof r.from === 'string' && r.from.includes('extraResources/bin'));

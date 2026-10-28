@@ -42,16 +42,48 @@ try {
 
 # 4. Service Registration
 Write-Host "[3/4] Registering Ownbase Windows Service..." -ForegroundColor Yellow
+
+# Resolve daemon script path (packaged vs source)
+$candidateScripts = @(
+    (Join-Path $scriptDir "..\..\app.asar.unpacked\dist\daemon\main.js"),
+    (Join-Path $scriptDir "..\..\dist\daemon\main.js"),
+    (Join-Path $scriptDir "..\app.asar.unpacked\dist\daemon\main.js"),
+    (Join-Path $scriptDir "..\dist\daemon\main.js")
+)
+$distDaemon = $null
+foreach ($cand in $candidateScripts) {
+    if (Test-Path $cand) {
+        $distDaemon = (Resolve-Path $cand).Path
+        break
+    }
+}
+if (-not $distDaemon) {
+    $distDaemon = (Join-Path $scriptDir "..\..\app.asar.unpacked\dist\daemon\main.js")
+}
+
+# Resolve Node.js / Electron host executable
+$candidateExecutables = @(
+    (Get-Command node.exe -ErrorAction SilentlyContinue).Source,
+    (Join-Path $scriptDir "..\..\..\Ownbase.exe"),
+    (Join-Path $scriptDir "..\..\Ownbase.exe"),
+    (Join-Path $scriptDir "..\..\..\Native Windows Server Hub.exe"),
+    (Join-Path $scriptDir "..\..\Native Windows Server Hub.exe")
+)
+$nodeExe = $null
+foreach ($cand in $candidateExecutables) {
+    if ($cand -and (Test-Path $cand)) {
+        $nodeExe = (Resolve-Path $cand).Path
+        break
+    }
+}
+if (-not $nodeExe) {
+    $nodeExe = "node.exe"
+}
+
 if (Test-Path $winSwExe) {
     & $winSwExe install
 } else {
     # Direct sc.exe fallback if standalone WinSW binary is not pre-copied
-    $distDaemon = Join-Path $scriptDir "..\..\dist\daemon\main.js"
-    $nodeExe = (Get-Command node.exe -ErrorAction SilentlyContinue).Source
-    if (-not $nodeExe) {
-        $nodeExe = "node.exe"
-    }
-
     $serviceExists = Get-Service -Name "ownbase" -ErrorAction SilentlyContinue
     if ($serviceExists) {
         sc.exe stop ownbase | Out-Null

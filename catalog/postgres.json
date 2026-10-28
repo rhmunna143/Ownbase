@@ -1,0 +1,21 @@
+{
+  "id": "postgres",
+  "name": "PostgreSQL 16 Database Server",
+  "version": "16.2",
+  "category": "Database",
+  "description": "Enterprise-grade SQL database for web services, microservices, and apps with ACID compliance and full JSONB support.",
+  "icon": "Database",
+  "runtime": "native",
+  "spec": {
+    "command": "postgres.exe",
+    "args": ["-p", "5432", "-h", "0.0.0.0"],
+    "healthPath": "/",
+    "maxMemoryMb": 1024
+  },
+  "defaultPort": 5432,
+  "defaultSubdomain": "postgres",
+  "env": {},
+  "badge": "Relational DB",
+  "isPackaged": true,
+  "docs": "High-performance native Windows PostgreSQL 16 database server listening on port 5432."
+}
